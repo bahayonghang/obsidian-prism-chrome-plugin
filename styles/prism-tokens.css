@@ -80,8 +80,23 @@ html[data-op-enabled="true"][data-op-effective-palette="obsidian"] {
   --op-error: #E5534B;
   --op-warning: #F2B84B;
   --op-success: #50A37B;
+  --op-code-surface: #0D0F14;
   --op-code-well: #08090C;
   --op-code-header: #11131A;
+  --op-code-header-fg: #CBD5E1;
+  --op-code-header-icon: #B8C4D9;
+  --op-code-fg: #E6EAF2;
+  --op-code-inline-bg: #171B26;
+  --op-code-inline-fg: #DDE6F5;
+  --op-code-inline-border: rgba(255, 255, 255, 0.14);
+  --op-syn-keyword: #9D8CFF;
+  --op-syn-string: #6EE7B7;
+  --op-syn-number: #F7B955;
+  --op-syn-function: #7CB4FF;
+  --op-syn-type: #5ED4E8;
+  --op-syn-comment: #8B93A7;
+  --op-syn-operator: #B4C0D4;
+  --op-syn-attr: #F497B8;
 }
 
 /* 1B. Warm Basalt (暖炭玄岩 — Dark, warm neutral) */
@@ -110,8 +125,23 @@ html[data-op-enabled="true"][data-op-effective-palette="warm"] {
   --op-error: #E5534B;
   --op-warning: #E5A93B;
   --op-success: #56A87E;
+  --op-code-surface: #141312;
   --op-code-well: #0E0D0C;
   --op-code-header: #181614;
+  --op-code-header-fg: #D8D1C5;
+  --op-code-header-icon: #C4BCB0;
+  --op-code-fg: #EDE7DC;
+  --op-code-inline-bg: #23201D;
+  --op-code-inline-fg: #EFE8DC;
+  --op-code-inline-border: rgba(242, 239, 233, 0.16);
+  --op-syn-keyword: #F09374;
+  --op-syn-string: #90D49B;
+  --op-syn-number: #F2C063;
+  --op-syn-function: #8AB8EB;
+  --op-syn-type: #6FC9C4;
+  --op-syn-comment: #9B9488;
+  --op-syn-operator: #C9C0B3;
+  --op-syn-attr: #D6A2E8;
 }
 
 /* 1C. Daylight Crystal (白昼冷晶 — Light) */
@@ -140,8 +170,23 @@ html[data-op-enabled="true"][data-op-effective-palette="crystal"] {
   --op-error: #DC2626;
   --op-warning: #D97706;
   --op-success: #059669;
+  --op-code-surface: #E6EDF7;
   --op-code-well: #EAF0F8;
   --op-code-header: #DFE8F4;
+  --op-code-header-fg: #1E293B;
+  --op-code-header-icon: #334155;
+  --op-code-fg: #0F172A;
+  --op-code-inline-bg: #E2EAF5;
+  --op-code-inline-fg: #1E293B;
+  --op-code-inline-border: rgba(15, 23, 42, 0.16);
+  --op-syn-keyword: #6D28D9;
+  --op-syn-string: #065F46;
+  --op-syn-number: #9A3412;
+  --op-syn-function: #1D4ED8;
+  --op-syn-type: #155E75;
+  --op-syn-comment: #475569;
+  --op-syn-operator: #334155;
+  --op-syn-attr: #9D174D;
 }
 
 /* 1D. Warm Alabaster (暖白画册 — Light, paper contrast) */
@@ -170,8 +215,23 @@ html[data-op-enabled="true"][data-op-effective-palette="alabaster"] {
   --op-error: #DC2626;
   --op-warning: #D97706;
   --op-success: #15803D;
+  --op-code-surface: #E7E1D4;
   --op-code-well: #ECE7DC;
   --op-code-header: #E2DDD0;
+  --op-code-header-fg: #26201A;
+  --op-code-header-icon: #3F372E;
+  --op-code-fg: #1C1814;
+  --op-code-inline-bg: #E6E0D3;
+  --op-code-inline-fg: #26201A;
+  --op-code-inline-border: rgba(28, 24, 20, 0.16);
+  --op-syn-keyword: #9A3412;
+  --op-syn-string: #166534;
+  --op-syn-number: #854D0E;
+  --op-syn-function: #1E40AF;
+  --op-syn-type: #0F5E63;
+  --op-syn-comment: #575046;
+  --op-syn-operator: #3F3830;
+  --op-syn-attr: #7E22CE;
 }
 
 /* ==========================================================================
@@ -333,7 +393,9 @@ html[data-op-enabled="true"][data-op-effective-palette="host"][data-op-scheme="d
   --op-fg: #f3f3f3; --op-fg-secondary: #d1d1d1; --op-fg-muted: #a8a8a8;
   --op-placeholder: #a0a0a0; --op-border: #ffffff1a; --op-border-strong: #ffffff30;
   --op-primary: #8ab4f8; --op-primary-fg: #121820; --op-link: #a3c9ff;
-  --op-code-well: #171717; --op-code-header: #262626;
+  --op-code-surface: #1d1d1d; --op-code-well: #171717; --op-code-header: #262626;
+  --op-code-header-fg: #e2e2e2; --op-code-header-icon: #c8c8c8; --op-code-fg: #f3f3f3;
+  --op-code-inline-bg: #292929; --op-code-inline-fg: #f3f3f3; --op-code-inline-border: #ffffff26;
   --op-error: #ff8a80; --op-warning: #f6cb75; --op-success: #81c995;
 }
 html[data-op-enabled="true"][data-op-effective-palette="host"][data-op-scheme="light"] {
@@ -344,6 +406,8 @@ html[data-op-enabled="true"][data-op-effective-palette="host"][data-op-scheme="l
   --op-fg: #202124; --op-fg-secondary: #444; --op-fg-muted: #666;
   --op-placeholder: #777; --op-border: #0000001a; --op-border-strong: #00000030;
   --op-primary: #1a73e8; --op-primary-fg: #fff; --op-link: #1558b0;
-  --op-code-well: #f4f4f4; --op-code-header: #eaeaea;
+  --op-code-surface: #efefef; --op-code-well: #f4f4f4; --op-code-header: #eaeaea;
+  --op-code-header-fg: #202124; --op-code-header-icon: #444444; --op-code-fg: #202124;
+  --op-code-inline-bg: #ececec; --op-code-inline-fg: #202124; --op-code-inline-border: #00000024;
   --op-error: #b3261e; --op-warning: #995500; --op-success: #137333;
 }

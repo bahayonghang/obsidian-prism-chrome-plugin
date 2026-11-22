@@ -506,3 +506,79 @@ html[data-op-visibility="hidden"] #op-ambient-stage * { animation-play-state: pa
   html[data-op-enabled="true"] pre.op-code-folded { max-height: none !important;overflow: visible !important;mask-image: none !important; }
   html[data-op-enabled="true"] .op-thought-hidden { display: revert !important; }
 }
+
+/* === Code Surface Readability (v0.3.0) === */
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) {
+  background: var(--op-code-surface) !important;
+  border: 1px solid var(--op-border-strong) !important;
+  border-radius: var(--op-radius-md) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], user-query, model-response, [data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) :is(.formatted-code-block-internal-container, pre, pre code),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"],
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code {
+  background: var(--op-code-well) !important;
+  color: var(--op-code-fg) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) :is(.formatted-code-block-internal-container, pre) {
+  border: 0 !important;
+  border-radius: 0 0 var(--op-radius-md) var(--op-radius-md) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, [data-message-author-role] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) {
+  background: var(--op-code-header) !important;
+  color: var(--op-code-header-fg) !important;
+  border-bottom: 1px solid var(--op-border) !important;
+  border-radius: var(--op-radius-md) var(--op-radius-md) 0 0;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, [data-message-author-role] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(span, p, label, strong) {
+  color: var(--op-code-header-fg) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, [data-message-author-role] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, [data-message-author-role] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a) span {
+  color: var(--op-code-header-icon) !important;
+  border-color: var(--op-border-strong) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, [data-message-author-role] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg {
+  color: var(--op-code-header-icon) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, [data-message-author-role] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg :is(path, rect, circle, polygon, line, polyline)[stroke]:not([stroke="none"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, [data-message-author-role] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[stroke]:not([stroke="none"]) {
+  stroke: currentColor !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, [data-message-author-role] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg :is(path, rect, circle, polygon)[fill]:not([fill="none"]):not([fill="transparent"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, [data-message-author-role] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[fill]:not([fill="none"]):not([fill="transparent"]) {
+  fill: currentColor !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], user-query, model-response, [data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) pre code span {
+  color: var(--op-code-fg) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], user-query, model-response, [data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-deletion, .token.keyword, .token.atrule, .token.important, .token.deleted) {
+  color: var(--op-syn-keyword) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], user-query, model-response, [data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-template-tag, .hljs-template-variable, .token.string, .token.char, .token.regex, .token.inserted) {
+  color: var(--op-syn-string) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], user-query, model-response, [data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet, .token.number, .token.boolean, .token.constant, .token.symbol) {
+  color: var(--op-syn-number) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], user-query, model-response, [data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-title, .hljs-title.function_, .hljs-section, .hljs-name, .token.function, .token.function-name, .token.selector) {
+  color: var(--op-syn-function) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], user-query, model-response, [data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-type, .hljs-title.class_, .hljs-class .hljs-title, .hljs-variable.constant_, .hljs-meta, .token.class-name, .token.builtin, .token.namespace) {
+  color: var(--op-syn-type) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], user-query, model-response, [data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-comment, .hljs-quote, .hljs-doctag, .token.comment, .token.prolog, .token.doctype, .token.cdata) {
+  color: var(--op-syn-comment) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], user-query, model-response, [data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-operator, .hljs-punctuation, .hljs-subst, .token.operator, .token.punctuation, .token.entity, .token.url) {
+  color: var(--op-syn-operator) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], user-query, model-response, [data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-attr, .hljs-attribute, .hljs-property, .hljs-variable, .hljs-params, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id, .token.attr-name, .token.attr-value, .token.property, .token.variable, .token.tag) {
+  color: var(--op-syn-attr) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], user-query, model-response) :not(pre) > code:not(pre *):not([data-op-owned] *) {
+  background: var(--op-code-inline-bg) !important;
+  color: var(--op-code-inline-fg) !important;
+  border: 1px solid var(--op-code-inline-border) !important;
+  padding: 0.12em 0.42em;
+  border-radius: 6px;
+}
