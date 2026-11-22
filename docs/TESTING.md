@@ -64,4 +64,16 @@ Use a current Chrome and Firefox with a test conversation. These checks require 
 
 ## Execution record
 
-Record actual commands, browser versions, outcomes and environment limitations in the implementation Issue or delivery note. Do not replace an unexecuted live-site or browser check with a checkmark based on syntax validation alone. No real API key or paid translation request is required by this project's automated tests.
+Completed on 2026-11-21 (America/New_York) for implementation commit `3ddda204b15f2f6bb07ef315995947eb22ea9006`.
+
+[GitHub Actions run 44983614734](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/actions/runs/44983614734) completed successfully with all three jobs passing:
+
+| Job | Actual outcome |
+|---|---|
+| `validate` | Static/manifest/resource checks passed; all 49 Node tests passed; both browser packages built; repeated builds produced identical SHA-256 hashes. |
+| `browser-fixtures (chromium)` | Playwright 1.62.1 / Chrome for Testing 151.0.7922.34. A real unpacked extension loaded its service worker and settings page; serialized changes propagated to content scripts; keyboard tabs worked. Both offline website fixtures passed lifecycle, folding, navigation/search, startup-race, reduced-motion, observer-idle, explicit-translation, body-replacement and shutdown checks. |
+| `browser-fixtures (firefox)` | Playwright 1.62.1 / Firefox 153.0. Both offline website fixtures passed the shared DOM runtime checks, using Firefox Promise-style API test doubles. This did not install a native Firefox extension or exercise its real permission prompts. |
+
+The authoring workspace denied browser-process socket creation, so it was not counted as a local browser pass. Browser execution was completed in GitHub Actions. Settings dark/light screenshots and representative host fixture screenshots were inspected. The fixtures are synthetic interaction samples, not visual replicas of production pages; their plain navigation sidebar does not establish live sidebar selector coverage.
+
+No authenticated ChatGPT/Gemini session, real translation API key, paid API request, store submission or Mozilla signing was used. The declared minimum versions (Chrome 111 / Firefox 140) were not executed as separate browser versions. The live-site acceptance boxes above remain intentionally unchecked. This documentation update records the completed run; it does not claim an additional CI run for the documentation-only change.

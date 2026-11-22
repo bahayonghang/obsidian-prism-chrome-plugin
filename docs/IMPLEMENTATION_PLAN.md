@@ -64,7 +64,14 @@
 - [x] 实现主题、双站点适配、代码折叠、大纲、估算、伙伴和可选光效。
 - [x] 添加权限/存储/生命周期回归测试，构建双浏览器包。
 - [x] 记录实际验证结果与无法覆盖的真实登录态场景。
-- [ ] 提交并推送实现，回填提交与验证证据后关闭 Issue。
+- [x] 提交并推送实现，回填提交与验证证据后关闭 Issue。
+
+## 完成记录
+
+- 实现提交：`3ddda204b15f2f6bb07ef315995947eb22ea9006`。
+- [PR #2](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/pull/2) 已合并至 `main`，合并提交为 `a8033453b0c8da08057d26c5f3a6a2dab48d4801`；[Issue #1](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/issues/1) 已按完成关闭。
+- [CI run 44983614734](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/actions/runs/44983614734) 的静态校验、49 项单元测试、重复构建和 Chromium / Firefox 浏览器任务全部通过。
+- Chromium 验证了真实解包扩展及离线页面；Firefox 验证了离线页面中的共享运行时。真实登录网站、Firefox 原生安装与数据许可弹窗、商店签名不在已执行结果内。详细执行记录见 [TESTING.md](TESTING.md)。
 
 ## 验证标准
 
