@@ -20,6 +20,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
       isConnected: true,
       parentElement: null,
       children: [],
+      childNodes: [],
       dataset: {},
       className: attrs.class || '',
       type: attrs.type || '',
@@ -52,7 +53,8 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
               this.append(...n.children);
             } else {
               n.parentElement = this;
-              this.children.push(n);
+              this.childNodes.push(n);
+              if (n.nodeType !== 3) this.children.push(n);
             }
           }
         }
@@ -66,14 +68,19 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
           }
         }
         for (const n of added) n.parentElement = this;
-        this.children.unshift(...added);
+        this.childNodes.unshift(...added);
+        this.children.unshift(...added.filter(n => n.nodeType !== 3));
       },
-      replaceChildren(...nodes) { this.children = []; this.append(...nodes); },
+      replaceChildren(...nodes) { this.children = []; this.childNodes = []; this.append(...nodes); },
       remove() {
         this.isConnected = false;
         if (this.parentElement && Array.isArray(this.parentElement.children)) {
           const idx = this.parentElement.children.indexOf(this);
           if (idx >= 0) this.parentElement.children.splice(idx, 1);
+          if (Array.isArray(this.parentElement.childNodes)) {
+            const cnIdx = this.parentElement.childNodes.indexOf(this);
+            if (cnIdx >= 0) this.parentElement.childNodes.splice(cnIdx, 1);
+          }
           this.parentElement = null;
         }
       },
@@ -173,6 +180,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     body,
     hidden: false,
     createElement: tag => makeEl(tag),
+    createTextNode: text => ({ nodeType: 3, nodeValue: String(text), textContent: String(text), parentElement: null }),
     createDocumentFragment: () => {
       const frag = makeEl('fragment');
       Object.defineProperty(frag, 'childNodes', { get() { return frag.children; } });
@@ -403,4 +411,100 @@ test('syncRail uses cleanTurnText to strip sr-only and button chrome from outlin
   assert.equal(itemText, 'Clean question text');
   assert.equal(ctx.body.querySelector('.op-rail-tick').title, 'Clean question text');
   ctx.runtime.stop();
+});
+
+test('ADR-0002: runtime never reparents composer/model controls, never mutates native text nodes, and creates zero fake repo/branch capsules', async () => {
+  for (const host of ['chatgpt', 'gemini']) {
+    const ctx = createRuntimeDom({ themeMode: 'dark', palette: 'obsidian', composerRestyle: true }, { host });
+    const e = Object.fromEntries(ctx.elements);
+    const doc = ctx.h.context.document;
+    const topbar = doc.createElement('header');
+    const editor = doc.createElement('div');
+    const toolsRow = doc.createElement('div');
+    const modelNameSpan = doc.createElement('span');
+    const modelTierSpan = doc.createElement('span');
+    modelTierSpan.className = host === 'chatgpt' ? 'model-tier' : 'mode-tier';
+
+    const editorText = doc.createTextNode('Draft prompt text');
+    const modelNameText = doc.createTextNode(host === 'chatgpt' ? 'ChatGPT' : 'Gemini 2.5');
+    const modelTierText = doc.createTextNode(host === 'chatgpt' ? '5.2' : 'Pro');
+    const chipText = doc.createTextNode(host === 'chatgpt' ? 'Search' : 'Deep Research');
+
+    editor.append(editorText);
+    modelNameSpan.append(modelNameText);
+    modelTierSpan.append(modelTierText);
+    e.modelBtn.append(modelNameSpan, modelTierSpan);
+    e.chip.append(chipText);
+
+    toolsRow.append(e.addBtn, e.chip);
+    if (host === 'chatgpt') {
+      topbar.append(e.modelBtn);
+    } else {
+      toolsRow.append(e.modelBtn);
+    }
+    e.composer.append(editor, toolsRow);
+    e.composerCol.append(e.composer);
+    e.primary.append(topbar, e.composerCol);
+    e.body.append(e.primary);
+
+    const modelParent = host === 'chatgpt' ? topbar : toolsRow;
+    const composerChildCount = e.composer.children.length;
+    const toolsChildCount = toolsRow.children.length;
+    const modelChildCount = e.modelBtn.children.length;
+    const topbarChildCount = topbar.children.length;
+
+    const assertAdrInvariants = phase => {
+      assert.equal(e.composer.parentElement, e.composerCol, `${host} (${phase}): composer parentElement must never change`);
+      assert.equal(e.addBtn.parentElement, toolsRow, `${host} (${phase}): addBtn parentElement must never change`);
+      assert.equal(e.modelBtn.parentElement, modelParent, `${host} (${phase}): modelBtn parentElement must never change`);
+      assert.equal(e.chip.parentElement, toolsRow, `${host} (${phase}): chip parentElement must never change`);
+
+      assert.equal(editor.childNodes[0], editorText, `${host} (${phase}): editor text node reference must remain intact`);
+      assert.equal(editorText.nodeValue, 'Draft prompt text');
+      assert.equal(editorText.textContent, 'Draft prompt text');
+      assert.equal(modelNameSpan.childNodes[0], modelNameText, `${host} (${phase}): model name text node reference must remain intact`);
+      assert.equal(modelNameText.nodeValue, host === 'chatgpt' ? 'ChatGPT' : 'Gemini 2.5');
+      assert.equal(modelTierSpan.childNodes[0], modelTierText, `${host} (${phase}): model tier text node reference must remain intact`);
+      assert.equal(modelTierText.nodeValue, host === 'chatgpt' ? '5.2' : 'Pro');
+      assert.equal(e.chip.childNodes[0], chipText, `${host} (${phase}): chip text node reference must remain intact`);
+      assert.equal(chipText.nodeValue, host === 'chatgpt' ? 'Search' : 'Deep Research');
+
+      assert.equal(e.composer.children.length, composerChildCount, `${host} (${phase}): no extra DOM nodes injected into composer`);
+      assert.equal(toolsRow.children.length, toolsChildCount, `${host} (${phase}): no fake repo/branch capsule injected into composer tools`);
+      assert.equal(e.modelBtn.children.length, modelChildCount, `${host} (${phase}): no DOM dot node injected into modelBtn`);
+      assert.equal(topbar.children.length, topbarChildCount, `${host} (${phase}): no extra DOM nodes injected into topbar`);
+      assert.equal(e.composer.querySelector('[data-op-owned]'), null, `${host} (${phase}): no owned wrapper inside composer`);
+      assert.equal(
+        e.body.querySelector('.op-repo-capsule, .op-branch-capsule, [data-op-repo-capsule], [data-op-branch-capsule]'),
+        null,
+        `${host} (${phase}): never fabricate fake repo/branch capsules`
+      );
+    };
+
+    await new Promise(resolve => setTimeout(resolve, 25));
+    assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'true');
+    assert.equal(e.addBtn.getAttribute('data-op-composer-add'), 'true');
+    assert.equal(e.modelBtn.getAttribute('data-op-model-capsule'), 'true');
+    assert.equal(e.chip.getAttribute('data-op-composer-chip'), 'true');
+    assertAdrInvariants('dark-obsidian');
+
+    const transitions = [
+      ['light-crystal', { themeMode: 'light', lightPreset: 'crystal', palette: 'obsidian', composerRestyle: true }],
+      ['host-palette', { themeMode: 'dark', palette: 'host', composerRestyle: true }],
+      ['composer-restyle-off', { themeMode: 'dark', palette: 'obsidian', composerRestyle: false }],
+      ['composer-restyle-on', { themeMode: 'dark', palette: 'obsidian', composerRestyle: true }],
+      ['disabled', { enabled: false }],
+      ['re-enabled', { enabled: true, themeMode: 'dark', palette: 'obsidian', composerRestyle: true }]
+    ];
+    for (const [label, patch] of transitions) {
+      await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+        [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, ...patch }
+      });
+      await new Promise(resolve => setTimeout(resolve, 15));
+      assertAdrInvariants(label);
+    }
+
+    ctx.runtime.stop();
+    assertAdrInvariants('stopped');
+  }
 });
