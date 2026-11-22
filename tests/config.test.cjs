@@ -160,7 +160,7 @@ test('locale dictionaries cover identical visible setting keys', () => {
   assert.deepEqual(Object.keys(S.I18N['zh-CN']).sort(), Object.keys(S.I18N['en-US']).sort());
   for (const key of [
     'contextWindow', 'contextWindowAuto', 'vialCapacity',
-    'vialSourceAutoMatched', 'vialSourceAutoFallback', 'vialSourceManual',
+    'vialSourceAutoMatched', 'vialSourceAutoFallback', 'vialSourceManual', 'vialSourceUnrecognized',
     'vialUncountedAttachments', 'vialAttachmentsUnit', 'vialAttachmentNote'
   ]) {
     assert.equal(Object.hasOwn(S.I18N['zh-CN'], key), true, `zh-CN missing ${key}`);

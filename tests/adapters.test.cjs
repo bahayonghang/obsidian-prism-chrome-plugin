@@ -195,11 +195,12 @@ function matchCompound(node, compound) {
       if (!m || !node.classList.contains(m[1])) return false;
       rest = rest.slice(m[0].length);
     } else if (rest.startsWith('[')) {
-      const m = rest.match(/^\[([a-zA-Z0-9_:-]+)(?:(\^=|\*=|=)"([^"]*)")?\]/);
+      const m = rest.match(/^\[([a-zA-Z0-9_:-]+)(?:(\^=|\*=|\$=|=)"([^"]*)")?\]/);
       if (!m) return false;
       const val = node.getAttribute(m[1]);
       if (m[2] === '=' && val !== m[3]) return false;
       if (m[2] === '^=' && (!val || !val.startsWith(m[3]))) return false;
+      if (m[2] === '$=' && (!val || !val.endsWith(m[3]))) return false;
       if (m[2] === '*=' && (!val || !val.includes(m[3]))) return false;
       if (!m[2] && val === null) return false;
       rest = rest.slice(m[0].length);
@@ -429,12 +430,12 @@ test('estimateTurnTokens separates prose and code without double counting', () =
 test('resolveReferenceCapacity maps ChatGPT and Gemini models, falls back cleanly, and honors manual overrides', () => {
   const A = adapters();
   assert.deepEqual({ ...A.resolveReferenceCapacity('chatgpt', 'ChatGPT 5.2', 128000) }, {
-    tokens: 128000, mode: 'manual', matched: true, modelLabel: 'ChatGPT 5.2'
+    tokens: 128000, mode: 'manual', matched: true, unrecognized: false, modelLabel: 'ChatGPT 5.2'
   });
 
   // Gemini auto mappings
   assert.deepEqual({ ...A.resolveReferenceCapacity('gemini', 'Gemini 1.5 Pro', 'auto') }, {
-    tokens: 2000000, mode: 'auto', matched: true, modelLabel: 'Gemini 1.5 Pro'
+    tokens: 2000000, mode: 'auto', matched: true, unrecognized: false, modelLabel: 'Gemini 1.5 Pro'
   });
   for (const label of ['Gemini 2.5 Pro', 'Gemini 2.0 Flash', 'Gemini 3', '2.5 Flash', 'Thinking', 'Gemini Ultra']) {
     const res = A.resolveReferenceCapacity('gemini', label, 'auto');
@@ -451,7 +452,7 @@ test('resolveReferenceCapacity maps ChatGPT and Gemini models, falls back cleanl
 
   // ChatGPT auto mappings
   assert.deepEqual({ ...A.resolveReferenceCapacity('chatgpt', 'GPT-4.1', 'auto') }, {
-    tokens: 1000000, mode: 'auto', matched: true, modelLabel: 'GPT-4.1'
+    tokens: 1000000, mode: 'auto', matched: true, unrecognized: false, modelLabel: 'GPT-4.1'
   });
   for (const label of ['ChatGPT 5.2', 'ChatGPT 5.1', 'GPT-5', 'ChatGPT 5']) {
     const res = A.resolveReferenceCapacity('chatgpt', label, 'auto');
@@ -479,6 +480,125 @@ test('resolveReferenceCapacity maps ChatGPT and Gemini models, falls back cleanl
     assert.equal(res.mode, 'auto', label);
     assert.equal(res.matched, false, label);
   }
+});
+
+function withDocumentOrder(body) {
+  const preorder = [];
+  const walk = node => { preorder.push(node); for (const child of node.children || []) walk(child); };
+  walk(body);
+  for (const node of preorder) {
+    node.compareDocumentPosition = other => {
+      const a = preorder.indexOf(node), b = preorder.indexOf(other);
+      if (a < 0 || b < 0 || a === b) return 0;
+      return a < b ? 4 : 2;
+    };
+  }
+}
+
+// Mirrors tests/fixtures/chatgpt-live.html (2026-11-22 probe): turn-key containers, role in the
+// content-search-unit-key suffix, and virtualized placeholders that carry no search-unit key.
+function liveChatGPTThread(el) {
+  const transcript = el('div', { class: 'flex flex-col transcriptContent_q8xz' });
+  const placeholder = () => {
+    const turn = el('div', { 'data-turn-key': 'placeholder' });
+    const virtual = el('div', { 'data-virtualized-turn': '' });
+    virtual.append(el('div', { class: 'turn-placeholder' }));
+    turn.append(virtual);
+    return turn;
+  };
+  const unit = (index, role, body) => {
+    const turn = el('div', { 'data-turn-key': `turn-${index}` });
+    const virtual = el('div', { 'data-virtualized-turn': '' });
+    const node = el('div', { 'data-content-search-unit-key': `conv:${index}:${role}` });
+    node.append(el(role === 'user' ? 'h5' : 'h6', { class: 'sr-only' }, { textContent: role === 'user' ? 'You said:' : 'ChatGPT said:' }), body);
+    virtual.append(node);
+    turn.append(virtual);
+    return { turn, node };
+  };
+  const u2 = unit(2, 'user', el('div', { 'data-user-message-bubble': 'true', class: 'user-message-bubble-color' }, { textContent: 'First synthetic question' }));
+  const a3 = unit(3, 'assistant', el('div', { 'data-markdown-text-style': 'assistant-message', class: 'markdown' }, { textContent: 'First synthetic reply' }));
+  const u4 = unit(4, 'user', el('div', { 'data-user-message-bubble': 'true' }, { textContent: 'Follow-up' }));
+  const a5 = unit(5, 'assistant', el('div', { 'data-markdown-text-style': 'assistant-message' }, { textContent: 'Second reply' }));
+  transcript.append(placeholder(), placeholder(), u2.turn, a3.turn, u4.turn, a5.turn);
+  return { transcript, users: [u2.node, u4.node], assistants: [a3.node, a5.node] };
+}
+
+test('ChatGPT live markers: role suffix turns are recognized in document order and virtualized placeholders are not counted', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const { transcript, users, assistants } = liveChatGPTThread(el);
+  main.append(transcript);
+  body.append(main);
+  withDocumentOrder(body);
+
+  const adapter = A.forHost('chatgpt', doc);
+  assert.deepEqual([...adapter.userTurns()], users);
+  assert.deepEqual([...adapter.assistantTurns()], assistants);
+  assert.equal(adapter.isAssistantNode(assistants[0].children[1]), true);
+  assert.equal(adapter.isAssistantNode(users[0].children[1]), false);
+});
+
+test('ChatGPT live markers: a bubble or assistant markdown without a search-unit key still counts once', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const turnA = el('div', { 'data-turn-key': 'a' });
+  const bubble = el('div', { 'data-user-message-bubble': 'true' }, { textContent: 'Question only marked by its bubble' });
+  turnA.append(bubble);
+  const turnB = el('div', { 'data-turn-key': 'b' });
+  const markdown = el('div', { 'data-markdown-text-style': 'assistant-message' }, { textContent: 'Reply only marked by its markdown style' });
+  turnB.append(markdown);
+  const emptyTurn = el('div', { 'data-turn-key': 'c' });
+  emptyTurn.append(el('div', { 'data-virtualized-turn': '' }));
+  main.append(turnA, turnB, emptyTurn);
+  body.append(main);
+  withDocumentOrder(body);
+
+  const adapter = A.forHost('chatgpt', doc);
+  assert.deepEqual([...adapter.userTurns()], [bubble]);
+  assert.deepEqual([...adapter.assistantTurns()], [markdown]);
+});
+
+test('ChatGPT empty thread with only virtualized placeholders has no turns (Home State signal)', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  for (const key of ['p1', 'p2']) {
+    const turn = el('div', { 'data-turn-key': key });
+    turn.append(el('div', { 'data-virtualized-turn': '' }));
+    main.append(turn);
+  }
+  body.append(main);
+  const adapter = A.forHost('chatgpt', doc);
+  assert.equal(adapter.userTurns().length, 0);
+  assert.equal(adapter.assistantTurns().length, 0);
+});
+
+test('ChatGPT tier labels resolve the Reference Capacity; unknown labels fall back to 128K flagged as unrecognized', () => {
+  const A = adapters();
+  for (const label of ['Pro', 'Thinking', 'High', 'xHigh', 'Extra High', 'GPT-5 Thinking']) {
+    const res = A.resolveReferenceCapacity('chatgpt', label, 'auto');
+    assert.equal(res.tokens, 400000, label);
+    assert.equal(res.matched, true, label);
+    assert.equal(res.unrecognized, false, label);
+  }
+  const instant = A.resolveReferenceCapacity('chatgpt', 'Instant', 'auto');
+  assert.deepEqual([instant.tokens, instant.matched, instant.unrecognized], [128000, true, false]);
+  for (const label of ['Auto', 'Highlight', 'Select ChatGPT model', '']) {
+    const res = A.resolveReferenceCapacity('chatgpt', label, 'auto');
+    assert.deepEqual([res.tokens, res.mode, res.matched, res.unrecognized], [128000, 'auto', false, true], label);
+  }
+  // A manual capacity always wins and is never flagged.
+  const manual = A.resolveReferenceCapacity('chatgpt', 'Mystery tier', 200000);
+  assert.deepEqual([manual.tokens, manual.mode, manual.unrecognized], [200000, 'manual', false]);
+  assert.equal(A.resolveReferenceCapacity('chatgpt', 'Instant', 400000).tokens, 400000);
+});
+
+test('Gemini custom mode names keep the 1M auto fallback without the unrecognized flag', () => {
+  const A = adapters();
+  const res = A.resolveReferenceCapacity('gemini', 'Neon High', 'auto');
+  assert.deepEqual([res.tokens, res.mode, res.matched, res.unrecognized], [1000000, 'auto', false, false]);
 });
 
 test('ChatGPT adapter sorts mixed turns in DOM order, recognizes zh .sr-only fallbacks, filters pre-tail spacers, and prefers icon add trigger', () => {

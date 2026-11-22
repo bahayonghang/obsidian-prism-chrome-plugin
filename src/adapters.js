@@ -5,9 +5,13 @@
 
   const HOSTS = Object.freeze({
     chatgpt: {
-      users: '[data-message-author-role="user"], article[data-turn="user"], [data-testid="user-message"]',
-      assistants: '[data-message-author-role="assistant"], article[data-turn="assistant"], [data-testid="assistant-message"], .agent-turn',
-      turnContainers: 'article[data-testid^="conversation-turn-"]',
+      /* v0.3.1 #18 live turn markers (2026-11-22 probe): the role is the content-search-unit-key
+       * suffix, with the question bubble / assistant markdown style as secondary markers and
+       * [data-turn-key] as the turn container. The v0.3.0 selectors after them remain a fallback.
+       * Virtualized placeholders carry none of these markers and are not counted (ADR-0001). */
+      users: '[data-content-search-unit-key$=":user"], [data-user-message-bubble="true"], [data-message-author-role="user"], article[data-turn="user"], [data-testid="user-message"]',
+      assistants: '[data-content-search-unit-key$=":assistant"], [data-markdown-text-style="assistant-message"], [data-message-author-role="assistant"], article[data-turn="assistant"], [data-testid="assistant-message"], .agent-turn',
+      turnContainers: '[data-turn-key], article[data-testid^="conversation-turn-"]',
       conversation: 'main',
       primary: ['main', '[role="main"]', '[data-testid="conversation-pane"]', '[data-testid="chat-main"]', '#main-content'],
       editors: ['#prompt-textarea', '[data-testid="prompt-textarea"]', 'textarea[name="prompt-textarea"]', 'main [contenteditable="true"][role="textbox"]', 'main textarea'],
@@ -160,28 +164,33 @@
     }
     return { prose, code, total: prose + code };
   }
+  // `unrecognized` marks an auto fallback the user should check (ChatGPT only, v0.3.1 #18):
+  // the capsule shows `?` and the popover suggests a manual capacity. A Gemini custom mode
+  // name is an expected 1M site fallback, so it stays unflagged.
   function resolveReferenceCapacity(host, modelLabel, configured) {
     const rawLabel = String(modelLabel || '').trim();
+    const result = (tokens, mode, matched, unrecognized = false) => ({ tokens, mode, matched, unrecognized, modelLabel: rawLabel });
     if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
-      return { tokens: configured, mode: 'manual', matched: true, modelLabel: rawLabel };
+      return result(configured, 'manual', true);
     }
     const label = rawLabel.toLowerCase();
     if (host === 'gemini') {
-      if (/\b1\.5\s*pro\b/.test(label)) return { tokens: 2000000, mode: 'auto', matched: true, modelLabel: rawLabel };
-      if (/\b(?:3(?:\.\d+)?|2\.5|2\.0|flash|pro|thinking|ultra)\b/.test(label)) {
-        return { tokens: 1000000, mode: 'auto', matched: true, modelLabel: rawLabel };
-      }
-      return { tokens: 1000000, mode: 'auto', matched: false, modelLabel: rawLabel };
+      if (/\b1\.5\s*pro\b/.test(label)) return result(2000000, 'auto', true);
+      if (/\b(?:3(?:\.\d+)?|2\.5|2\.0|flash|pro|thinking|ultra)\b/.test(label)) return result(1000000, 'auto', true);
+      return result(1000000, 'auto', false);
     }
     if (host === 'chatgpt') {
-      if (/\b4\.1\b/.test(label)) return { tokens: 1000000, mode: 'auto', matched: true, modelLabel: rawLabel };
-      if (/\b(?:gpt-?5|chatgpt\s*5|5\.[12])\b/.test(label)) return { tokens: 400000, mode: 'auto', matched: true, modelLabel: rawLabel };
-      if (/\bo[134]\b/.test(label)) return { tokens: 200000, mode: 'auto', matched: true, modelLabel: rawLabel };
-      if (/\b4o\b|gpt-?4/.test(label)) return { tokens: 128000, mode: 'auto', matched: true, modelLabel: rawLabel };
-      if (/\b3\.5\b/.test(label)) return { tokens: 32000, mode: 'auto', matched: true, modelLabel: rawLabel };
-      return { tokens: 128000, mode: 'auto', matched: false, modelLabel: rawLabel };
+      if (/\b4\.1\b/.test(label)) return result(1000000, 'auto', true);
+      if (/\b(?:gpt-?5|chatgpt\s*5|5\.[12])\b/.test(label)) return result(400000, 'auto', true);
+      if (/\bo[134]\b/.test(label)) return result(200000, 'auto', true);
+      if (/\b4o\b|gpt-?4/.test(label)) return result(128000, 'auto', true);
+      if (/\b3\.5\b/.test(label)) return result(32000, 'auto', true);
+      // v0.3.1 #18: the live model button shows only the tier (probe 2026-11-22).
+      if (/\b(?:pro|thinking|x-?high|extra\s+high|high)\b/.test(label)) return result(400000, 'auto', true);
+      if (/\binstant\b/.test(label)) return result(128000, 'auto', true);
+      return result(128000, 'auto', false, true);
     }
-    return { tokens: 128000, mode: 'auto', matched: false, modelLabel: rawLabel };
+    return result(128000, 'auto', false);
   }
   function scrollContainer(element) {
     for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
@@ -190,7 +199,8 @@
     }
     return element?.ownerDocument.scrollingElement || document.scrollingElement;
   }
-  const MESSAGE_AREAS = '[data-message-author-role],[data-turn="user"],[data-turn="assistant"],article[data-testid^="conversation-turn-"],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response,[data-test-id="model-response"],.model-response-text';
+  // v0.3.1 #18: live ChatGPT message markers lead; the rest are the v0.3.0 markers.
+  const MESSAGE_AREAS = '[data-content-search-unit-key],[data-user-message-bubble],[data-markdown-text-style="assistant-message"],[data-message-author-role],[data-turn="user"],[data-turn="assistant"],article[data-testid^="conversation-turn-"],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response,[data-test-id="model-response"],.model-response-text';
   function firstVisible(selectors, root, predicate = () => true) {
     for (const selector of selectors) {
       const found = [...root.querySelectorAll(selector)].find(node => !isOwned(node) && isVisible(node) && predicate(node));
