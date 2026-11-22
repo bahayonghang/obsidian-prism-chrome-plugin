@@ -85,7 +85,7 @@ v0.3.0 升级了 2026 双端页面 DOM 适配器，新增「标准 / 加宽 / �
 
 会话大纲仅索引当前网页已加载的提问。快捷键在输入框、编辑区域和对话框内让位给网页原生操作。页面变窄或功能未能识别时，增强组件应安静退让。
 
-代码字体使用电脑已有字体，缺失时自动回退到等宽字体；扩展不从第三方字体服务下载文件。v0.2.0已完整移除像素宠物，旧版本配置中的宠物字段也不会使其恢复。
+代码字体使用电脑已有字体，缺失时自动回退到等宽字体；扩展不从第三方字体服务下载文件。非原生配色下，对话里的 h1–h4 跟随所在消息正文的字体、使用当前配色的主前景色，字重按 h1 > h2 > h3 > h4 排出层级；扩展不提供阅读字体选项，正文字体仍由宿主或用户决定。v0.2.0已完整移除像素宠物，旧版本配置中的宠物字段也不会使其恢复。
 
 ### 环境光与侧栏
 
@@ -141,6 +141,7 @@ npm run test:browser
 ### Included
 
 - Four light/dark palettes plus host colors; five accents, system appearance, rounded corners, installed code fonts, ligatures and compact sidebars.
+- Outside the host palette, conversation headings (h1–h4) follow the message body font, use the palette's primary foreground and keep a clear h1 > h2 > h3 > h4 weight hierarchy. There is no reading-font option; the body font stays the host's or yours.
 - A compact bilingual popup and full settings workspace with persistent navigation, motion preview, scene presets, live settings and sanitized JSON import/export.
 - Glass/solid/native sidebar surfaces and an elevated, in-place reversible Composer Surface with circular add trigger, Model Capsule, unified chips, and feathered Composer Scrim without DOM reparenting or text rewriting (ADR-0002).
 - Three Content Width Presets (`standard`, `wide`, `full`) synced between Reading settings and an independent Bottom Dock quick toggle, >= 4.5:1 WCAG AA Code Surface contrast across all four optical palettes, manual long-code folding, sticky headers, a searchable conversation outline and `Alt+Up/Down` navigation.
