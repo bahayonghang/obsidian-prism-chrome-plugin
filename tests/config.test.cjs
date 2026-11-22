@@ -23,6 +23,44 @@ test('configuration admits only known own fields with strict value types', () =>
   assert.deepEqual(plain(S.sanitizePatch({ enabled: false, ambientIntensity: NaN })), { enabled: false });
 });
 
+test('contentWidth preset defaults to standard, validates enums, falls back for legacy configs, applies root attr and persists via saveContentWidth', async () => {
+  const h = harness({ background: true });
+  const S = h.schema;
+  assert.equal(S.DEFAULT_CONFIG.contentWidth, 'standard');
+  assert.deepEqual(plain(S.ENUMS.contentWidth), ['standard', 'wide', 'full']);
+  assert.deepEqual(plain(S.sanitizePatch({ contentWidth: 'wide' })), { contentWidth: 'wide' });
+  assert.deepEqual(plain(S.sanitizePatch({ contentWidth: 'full' })), { contentWidth: 'full' });
+  assert.deepEqual(plain(S.sanitizePatch({ contentWidth: 'ultra-wide' })), {});
+  assert.deepEqual(plain(S.sanitizePatch({ contentWidth: 123 })), {});
+
+  // Legacy JSON without contentWidth falls back smoothly to standard
+  h.state.storage[S.STORAGE_KEY] = { enabled: true, palette: 'warm' };
+  const loaded = await S.loadConfig();
+  assert.equal(loaded.contentWidth, 'standard');
+
+  // applyConfigToRoot sets data-op-content-width and restores cleanly on disable
+  const root = rootElement();
+  S.applyConfigToRoot({ ...S.DEFAULT_CONFIG, contentWidth: 'wide' }, root);
+  assert.equal(root.getAttribute('data-op-content-width'), 'wide');
+  S.applyConfigToRoot({ ...S.DEFAULT_CONFIG, contentWidth: 'full' }, root);
+  assert.equal(root.getAttribute('data-op-content-width'), 'full');
+  S.applyConfigToRoot({ ...S.DEFAULT_CONFIG, enabled: false, contentWidth: 'full' }, root);
+  assert.equal(root.getAttribute('data-op-content-width'), null);
+  S.applyConfigToRoot({ ...S.DEFAULT_CONFIG, enableChatGPT: false, contentWidth: 'wide' }, root);
+  assert.equal(root.getAttribute('data-op-content-width'), null);
+
+  // I18N includes all width keys in both languages
+  for (const key of ['contentWidth', 'contentWidthHint', 'widthStandard', 'widthWide', 'widthFull', 'widthToggleLabel']) {
+    assert.equal(typeof S.I18N['zh-CN'][key], 'string', `zh-CN.${key}`);
+    assert.equal(typeof S.I18N['en-US'][key], 'string', `en-US.${key}`);
+  }
+
+  // saveContentWidth sends OP_CONTENT_WIDTH_SET and returns updated config
+  const saved = await S.saveContentWidth('wide');
+  assert.equal(saved.contentWidth, 'wide');
+  assert.equal(h.state.storage[S.STORAGE_KEY].contentWidth, 'wide');
+});
+
 test('light-field controls accept supported choices and reject accidental string booleans', () => {
   const { schema: S } = harness();
   const configured = plain(S.sanitizeConfig({ ambientStyle: 'spotlight', ambientTexture: 'grid', motionSpeed: 'fast', composerGlow: false, sidebarStyle: 'solid' }));

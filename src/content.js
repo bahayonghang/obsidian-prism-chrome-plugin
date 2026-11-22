@@ -337,6 +337,7 @@
     jump(index + (event.key === 'ArrowUp' ? -1 : 1));
   }
 
+  const WIDTH_LABELS = {standard:'widthStandard', wide:'widthWide', full:'widthFull'};
   function setDockOpen(open) {
     if (!dock) return;
     const popover = dock.querySelector('.op-vial-popover');
@@ -344,9 +345,28 @@
     dock.querySelector('.op-vial-pill')?.setAttribute('aria-expanded',String(open));
   }
   function syncDock() {
-    if (!cfg.contextVial) { dock?.remove(); dock=null; return; }
     if (!dock) { dock=own(make('aside','op-dock')); dock.id='op-bottom-dock'; document.body.append(dock); }
     if (!dock.isConnected) document.body.append(dock);
+    let widthBtn = dock.querySelector('.op-width-toggle');
+    if (!widthBtn) {
+      widthBtn = make('button','op-width-toggle');
+      widthBtn.addEventListener('click', event => {
+        if (!event.isTrusted || !enabled) return;
+        const presets = Schema.ENUMS.contentWidth;
+        const next = presets[(presets.indexOf(cfg.contentWidth) + 1) % presets.length];
+        Schema.saveContentWidth(next).then(updated => {
+          if (updated && !stopped && cfg.contentWidth !== updated.contentWidth) configure(updated);
+        }).catch(() => {});
+      });
+      dock.prepend(widthBtn);
+    }
+    const preset = WIDTH_LABELS[cfg.contentWidth] ? cfg.contentWidth : 'standard';
+    const widthLabel = t(WIDTH_LABELS[preset]);
+    const widthTip = `${t('widthToggleLabel')}: ${widthLabel}`;
+    setText(widthBtn, widthLabel);
+    widthBtn.setAttribute('data-width-preset', preset);
+    widthBtn.title = widthTip;
+    widthBtn.setAttribute('aria-label', widthTip);
     let vial = dock.querySelector('.op-vial-pill');
     if (!cfg.contextVial) { vial?.remove(); dock.querySelector('.op-vial-popover')?.remove(); return; }
     if (!vial) {

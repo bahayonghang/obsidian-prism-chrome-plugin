@@ -3,13 +3,15 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { harness } = require('./helpers.cjs');
 
-function createRuntimeDom(initialConfig = {}) {
+function createRuntimeDom(initialConfig = {}, harnessOpts = {}) {
   const h = harness({
+    ...harnessOpts,
     storage: { obsidianPrismWebConfig_v1: { enabled: true, themeMode: 'dark', palette: 'obsidian', composerRestyle: true, ...initialConfig } }
   });
   const elements = new Map();
   function makeEl(tag, attrs = {}) {
     const map = new Map(Object.entries(attrs).map(([k, v]) => [k, String(v)]));
+    const listeners = new Map();
     const el = {
       nodeType: 1,
       tagName: tag.toUpperCase(),
@@ -18,6 +20,8 @@ function createRuntimeDom(initialConfig = {}) {
       children: [],
       dataset: {},
       className: attrs.class || '',
+      type: attrs.type || '',
+      id: attrs.id || '',
       value: '',
       hidden: false,
       style: {
@@ -51,15 +55,49 @@ function createRuntimeDom(initialConfig = {}) {
           }
         }
       },
+      prepend(...nodes) {
+        const added = [];
+        for (const n of nodes) {
+          if (n && typeof n === 'object') {
+            if (n.tagName === 'FRAGMENT') added.push(...n.children);
+            else added.push(n);
+          }
+        }
+        for (const n of added) n.parentElement = this;
+        this.children.unshift(...added);
+      },
       replaceChildren(...nodes) { this.children = []; this.append(...nodes); },
-      remove() { this.isConnected = false; },
-      addEventListener() {},
-      removeEventListener() {},
+      remove() {
+        this.isConnected = false;
+        if (this.parentElement && Array.isArray(this.parentElement.children)) {
+          const idx = this.parentElement.children.indexOf(this);
+          if (idx >= 0) this.parentElement.children.splice(idx, 1);
+          this.parentElement = null;
+        }
+      },
+      addEventListener(type, fn) {
+        if (!listeners.has(type)) listeners.set(type, []);
+        listeners.get(type).push(fn);
+      },
+      removeEventListener(type, fn) {
+        const list = listeners.get(type);
+        if (!list) return;
+        const idx = list.indexOf(fn);
+        if (idx >= 0) list.splice(idx, 1);
+      },
+      dispatchEvent(event) {
+        for (const fn of [...(listeners.get(event.type) || [])]) fn(event);
+      },
+      contains(target) {
+        if (target === this) return true;
+        return this.children.some(c => c && typeof c.contains === 'function' && c.contains(target));
+      },
       querySelectorAll(sel) {
         const out = [];
         const walk = cur => {
           for (const c of cur.children || []) {
             if (sel.startsWith('.') && String(c.className || '').split(/\s+/).includes(sel.slice(1))) out.push(c);
+            else if (sel.startsWith('#') && c.id === sel.slice(1)) out.push(c);
             else if (sel === '[data-turn]' && c.dataset && c.dataset.turn !== undefined) out.push(c);
             walk(c);
           }
@@ -214,4 +252,64 @@ test('runtime marks all v0.3.0 surfaces reversibly, respects host palette and co
   assert.equal(e.threadCol.getAttribute('data-op-thread-column'), null);
   assert.equal(e.composerCol.getAttribute('data-op-composer-column'), null);
   assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'host-orig');
+});
+
+test('bottom dock decouples .op-width-toggle from contextVial and cycles contentWidth presets on trusted clicks', async () => {
+  const { h, elements, runtime } = createRuntimeDom({ contextVial: false }, { background: true });
+  // Route content script runtime messages as trusted top-frame chat sender
+  const sendBridge = message => h.dispatch(message, h.chatSender);
+  h.api.runtime.sendMessage = (message, callback) => {
+    Promise.resolve().then(() => sendBridge(message)).then(callback);
+  };
+  await new Promise(resolve => setTimeout(resolve, 25));
+  const body = elements.get('body');
+  const docEl = elements.get('docEl');
+
+  const dock = body.querySelector('#op-bottom-dock');
+  assert.ok(dock, 'bottom dock renders even when contextVial is false');
+  assert.equal(dock.querySelector('.op-vial-pill'), null, 'vial pill stays absent when contextVial is false');
+  assert.equal(dock.querySelector('.op-vial-popover'), null, 'vial popover stays absent when contextVial is false');
+
+  const widthBtn = dock.querySelector('.op-width-toggle');
+  assert.ok(widthBtn, '.op-width-toggle renders inside #op-bottom-dock');
+  assert.equal(widthBtn.tagName, 'BUTTON');
+  assert.equal(widthBtn.type, 'button');
+  assert.equal(widthBtn.getAttribute('data-width-preset'), 'standard');
+  assert.equal(docEl.getAttribute('data-op-content-width'), 'standard');
+
+  // Untrusted synthetic click is ignored
+  widthBtn.dispatchEvent({ type: 'click', isTrusted: false });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(docEl.getAttribute('data-op-content-width'), 'standard');
+
+  // Trusted clicks cycle standard -> wide -> full -> standard and persist
+  widthBtn.dispatchEvent({ type: 'click', isTrusted: true });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(docEl.getAttribute('data-op-content-width'), 'wide');
+  assert.equal(widthBtn.getAttribute('data-width-preset'), 'wide');
+  assert.equal(h.state.storage[h.schema.STORAGE_KEY].contentWidth, 'wide');
+
+  widthBtn.dispatchEvent({ type: 'click', isTrusted: true });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(docEl.getAttribute('data-op-content-width'), 'full');
+  assert.equal(widthBtn.getAttribute('data-width-preset'), 'full');
+
+  widthBtn.dispatchEvent({ type: 'click', isTrusted: true });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(docEl.getAttribute('data-op-content-width'), 'standard');
+  assert.equal(widthBtn.getAttribute('data-width-preset'), 'standard');
+
+  // Enabling contextVial adds vial pill alongside .op-width-toggle, and disabling removes only vial
+  await h.schema.callApi(h.api.storage.local, 'set', { [h.schema.STORAGE_KEY]: { ...h.schema.DEFAULT_CONFIG, enabled: true, contextVial: true } });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(dock.querySelector('.op-vial-pill'));
+  assert.ok(dock.querySelector('.op-width-toggle'));
+
+  await h.schema.callApi(h.api.storage.local, 'set', { [h.schema.STORAGE_KEY]: { ...h.schema.DEFAULT_CONFIG, enabled: true, contextVial: false } });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(dock.querySelector('.op-vial-pill'), null);
+  assert.equal(dock.querySelector('.op-vial-popover'), null);
+  assert.ok(dock.querySelector('.op-width-toggle'));
+
+  runtime.stop();
 });

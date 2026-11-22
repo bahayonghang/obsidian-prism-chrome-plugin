@@ -17,7 +17,7 @@
     motionLevel: 'subtle', streamChoreography: true,
     semanticAura: true, composerRestyle: true, sidebarCompact: false,
     stickyCodeHeader: true, longCodeFold: true, railOutline: true,
-    turnJumpShortcuts: true, contextVial: true, contextWindowTokens: 128000,
+    turnJumpShortcuts: true, contentWidth: 'standard', contextVial: true, contextWindowTokens: 128000,
     thoughtTranslate: false, thoughtView: 'bilingual',
     thoughtEndpoint: '', thoughtModel: ''
   });
@@ -29,6 +29,7 @@
     motionLevel: ['ultra', 'subtle', 'off'],
     ambientStyle: ['aurora', 'spotlight', 'none'], ambientTexture: ['off', 'grid', 'glyphs'],
     motionSpeed: ['slow', 'normal', 'fast'], sidebarStyle: ['glass', 'solid', 'native'],
+    contentWidth: ['standard', 'wide', 'full'],
     thoughtView: ['bilingual', 'immersive']
   });
   const SCENE_PRESETS = Object.freeze({
@@ -50,6 +51,7 @@
       readingTitle:'把长对话读得轻松一点',readingHint:'增强控件仅作用于支持的网站。',
       stickyCodeHeader:'固定代码标题栏',longCodeFold:'手动折叠长代码',longCodeFoldHint:'48 行起显示折叠按钮，原文保持完整。',
       railOutline:'会话大纲',railHint:'按提问查找与跳转。',turnJumpShortcuts:'Alt + ↑ / ↓ 跳转提问',shortcutHint:'输入文字时不会抢占按键。',
+      contentWidth:'内容宽度',contentWidthHint:'切换标准、加宽与全栏阅读列。',widthStandard:'标准',widthWide:'加宽',widthFull:'全栏',widthToggleLabel:'切换内容宽度',
       contextVial:'上下文估算',contextHint:'仅估算已加载的对话，不代表实际用量、额度或模型容量。',contextWindow:'手动参考容量',
       codeFont:'代码字体',fontDefault:'系统等宽字体',fontHint:'使用本机已安装字体；找不到时自动回退。',codeLigatures:'代码连字',
       sidebarCompact:'紧凑侧栏',composerRestyle:'输入框外观',motionTitle:'让背景有光，也有呼吸',motionHint:'极光、聚光与纹理可以独立调节。系统减少动态效果时，保留静态光影。',
@@ -89,6 +91,7 @@
       readingTitle:'Make long conversations easier',readingHint:'Extra controls only appear on supported sites.',
       stickyCodeHeader:'Sticky code headers',longCodeFold:'Fold long code manually',longCodeFoldHint:'Adds a button at 48 lines; original text stays intact.',
       railOutline:'Conversation outline',railHint:'Find and jump to a question.',turnJumpShortcuts:'Alt + ↑ / ↓ between questions',shortcutHint:'Never takes over shortcuts while typing.',
+      contentWidth:'Content width',contentWidthHint:'Switch between standard, wide, and full reading columns.',widthStandard:'Standard',widthWide:'Wide',widthFull:'Full',widthToggleLabel:'Toggle content width',
       contextVial:'Context estimate',contextHint:'Estimates loaded messages only, not actual usage, quota or model capacity.',contextWindow:'Manual reference capacity',
       codeFont:'Code font',fontDefault:'System monospace',fontHint:'Uses locally installed fonts, with a system fallback.',codeLigatures:'Code ligatures',
       sidebarCompact:'Compact sidebar',composerRestyle:'Composer styling',motionTitle:'Light with room to breathe',motionHint:'Tune the light, texture and movement separately. Reduced motion keeps a still atmosphere.',
@@ -217,7 +220,8 @@
       'sidebar-compact':String(cfg.sidebarCompact), composer:String(cfg.composerRestyle),
       'sticky-code':String(cfg.stickyCodeHeader), lang:cfg.language,
       'ambient-style':cfg.ambientStyle, texture:cfg.ambientTexture, 'motion-speed':cfg.motionSpeed,
-      'composer-glow':String(cfg.composerGlow), 'sidebar-style':cfg.sidebarStyle
+      'composer-glow':String(cfg.composerGlow), 'sidebar-style':cfg.sidebarStyle,
+      'content-width':cfg.contentWidth
     };
     for (const [key,value] of Object.entries(attributes)) if (root.getAttribute('data-op-'+key) !== value) root.setAttribute('data-op-'+key,value);
     const alpha = (cfg.ambientIntensity/100).toFixed(3);
@@ -236,6 +240,7 @@
     return result;
   }
   async function saveConfig(patch) { return (await sendMessage({type:'OP_CONFIG_PATCH',patch:sanitizePatch(patch)})).config; }
+  async function saveContentWidth(contentWidth) { return (await sendMessage({type:'OP_CONTENT_WIDTH_SET',contentWidth})).config; }
   function subscribe(listener) {
     const api = getExtApi();
     if (!api || !api.storage || !api.storage.onChanged) return () => {};
@@ -256,5 +261,5 @@
     if (api && api.runtime && typeof api.runtime.getBrowserInfo === 'function') value.data_collection = DATA_PERMISSIONS.slice();
     return value;
   }
-  global.ObsidianPrismSchema = Object.freeze({STORAGE_KEY,SECRETS_KEY,DATA_PERMISSIONS,DEFAULT_CONFIG,ENUMS,SCENE_PRESETS,I18N,getExtApi,callApi,validEndpoint,sanitizePatch,sanitizeConfig,detectHost,resolveScheme,resolvePalette,applyConfigToRoot,loadConfig,saveConfig,subscribe,t,sendMessage,permissionRequest});
+  global.ObsidianPrismSchema = Object.freeze({STORAGE_KEY,SECRETS_KEY,DATA_PERMISSIONS,DEFAULT_CONFIG,ENUMS,SCENE_PRESETS,I18N,getExtApi,callApi,validEndpoint,sanitizePatch,sanitizeConfig,detectHost,resolveScheme,resolvePalette,applyConfigToRoot,loadConfig,saveConfig,saveContentWidth,subscribe,t,sendMessage,permissionRequest});
 })(globalThis);
