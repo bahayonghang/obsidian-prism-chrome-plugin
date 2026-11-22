@@ -1,93 +1,36 @@
 #!/usr/bin/env python3
-"""Smoke-test an installed Firefox action popup, without privileged UI access.
+"""Test a native Firefox action popup with an isolated, test-only background harness.
 
-Run in a fresh Xvfb display; never point this test at a personal browser profile.
-Dependencies: selenium==4.53.0, geckodriver 0.37.1, Firefox >= 149.
-The extension directory is installed unchanged. No popup viewport is assigned.
-Only public WebExtension APIs and the visible about:debugging Manifest URL are
-used. Optional ImageMagick `import` captures the actual Xvfb desktop, since a
-WebDriver tab screenshot does not establish that a native popup is visible.
+Run under a dedicated Xvfb display. Requires selenium==4.53.0, geckodriver
+0.37.1, Firefox >= 149. Published files are copied and hash-checked; only the
+temporary manifest receives an additional test background script. Firefox 153
+WebDriver navigation restrictions remain enabled. WebDriver launches Firefox
+and installs the temporary add-on; it never navigates to or evaluates scripts
+in privileged pages. The extension reports synthetic measurements through
+ordinary CORS fetch to a token-protected loopback HTTP server, without adding
+or requesting extension permissions. No action-popup viewport is assigned.
 """
 
 import argparse
+from copy import deepcopy
 import hashlib
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import os
 from pathlib import Path
+import secrets
 import shutil
 import subprocess
+import tempfile
+import threading
 import traceback
-from urllib.parse import urlsplit
 
 from selenium import webdriver
 from selenium.webdriver.firefox.service import Service
-from selenium.webdriver.support.ui import WebDriverWait
 
 
-# Find the link displayed beside this add-on's ID, not a guessed/preset UUID or
-# a Firefox preference/internal WebExtensionPolicy. Ancestor matching avoids
-# depending on localized labels or private React state in about:debugging.
-MANIFEST_LINK = r"""
-const id = arguments[0];
-const links = [...document.querySelectorAll('a[href]')].filter(link => {
-  try {
-    const url = new URL(link.href);
-    return url.protocol === 'moz-extension:' && url.pathname === '/manifest.json';
-  } catch (_) { return false; }
-});
-return [...new Set(links.filter(link => {
-  for (let parent = link.parentElement; parent; parent = parent.parentElement) {
-    if (parent.textContent.includes(id) &&
-        links.filter(candidate => parent.contains(candidate)).length === 1) return true;
-  }
-  return false;
-}).map(link => link.href))];
-"""
-
-POPUP_SNAPSHOT = r"""
-const views = browser.extension.getViews({type: 'popup'});
-if (views.length !== 1) return {count: views.length, ready: false};
-const win = views[0], doc = win.document;
-if (!doc.body) return {count: 1, ready: false};
-function box(selector) {
-  const node = doc.querySelector(selector);
-  if (!node) return null;
-  const rect = node.getBoundingClientRect(), css = win.getComputedStyle(node);
-  let left = 0, top = 0, right = win.innerWidth, bottom = win.innerHeight;
-  for (let parent = node.parentElement; parent; parent = parent.parentElement) {
-    const style = win.getComputedStyle(parent), bounds = parent.getBoundingClientRect();
-    if (/(auto|scroll|hidden|clip)/.test(style.overflowX)) {
-      left = Math.max(left, bounds.left); right = Math.min(right, bounds.right);
-    }
-    if (/(auto|scroll|hidden|clip)/.test(style.overflowY)) {
-      top = Math.max(top, bounds.top); bottom = Math.min(bottom, bounds.bottom);
-    }
-  }
-  return {x: rect.x, y: rect.y, width: rect.width, height: rect.height,
-    visible: rect.width > 0 && rect.height > 0 && css.display !== 'none' &&
-      css.visibility === 'visible' && Number(css.opacity) > 0 &&
-      rect.left >= left - 1 && rect.right <= right + 1 &&
-      rect.top >= top - 1 && rect.bottom <= bottom + 1};
-}
-const fields = doc.getElementById('settings-fields');
-const status = doc.getElementById('status-msg');
-return {
-  count: 1, ready: doc.readyState === 'complete' && fields && !fields.disabled,
-  width: win.innerWidth, height: win.innerHeight, timeOrigin: win.performance.timeOrigin,
-  bodyWidth: doc.body.getBoundingClientRect().width,
-  bodyHeight: doc.body.getBoundingClientRect().height,
-  scrollWidth: doc.documentElement.scrollWidth,
-  activeTab: doc.body.dataset.activeTab, optionsMode: doc.body.classList.contains('is-options-page'),
-  visible: !doc.hidden, saveStatus: status?.textContent, saveError: status?.dataset.error,
-  ambientStyle: doc.getElementById('cfg-ambientStyle')?.value,
-  ambientIntensity: doc.getElementById('cfg-ambientIntensity')?.value,
-  spotlightPressed: doc.querySelector('[data-choice="ambientStyle"][data-value="spotlight"]')?.getAttribute('aria-pressed'),
-  previewStyle: doc.getElementById('chat-preview')?.dataset.ambient,
-  boxes: Object.fromEntries(['header.brand', 'nav.tabs', '#settings-scroll', 'footer',
-    '#cfg-enabled', '#tab-motion', '#cfg-ambientStyle', '#cfg-ambientIntensity',
-    '[data-choice="ambientStyle"][data-value="spotlight"]'].map(s => [s, box(s)]))
-};
-"""
+HARNESS_PATH = "__prism_native_test__/harness.js"
+MAX_REPORT_BYTES = 128 * 1024
 
 
 def require(condition, message, detail=None):
@@ -95,54 +38,137 @@ def require(condition, message, detail=None):
         raise AssertionError(message + (f": {json.dumps(detail, ensure_ascii=False)}" if detail is not None else ""))
 
 
-def call_async(driver, source):
-    result = driver.execute_async_script(
-        "const done = arguments[arguments.length - 1];"
-        "(async () => {" + source + "})().then("
-        "value => done({ok: true, value}), error => done({ok: false, error: String(error), stack: error.stack}));"
-    )
-    require(result.get("ok"), "Extension API call failed", result)
-    return result.get("value")
+def file_hashes(directory):
+    return {str(path.relative_to(directory)): hashlib.sha256(path.read_bytes()).hexdigest()
+            for path in sorted(directory.rglob("*")) if path.is_file()}
 
 
-def snapshot(driver):
-    return driver.execute_script(POPUP_SNAPSHOT)
-
-
-def wait_popup(driver):
-    return WebDriverWait(driver, 20, poll_frequency=0.15).until(
-        lambda current: (state if (state := snapshot(current)).get("ready") else False),
-        "The installed action popup did not become ready",
-    )
-
-
-def check_layout(state, motion=False):
-    require(state["count"] == 1 and state["visible"] and not state["optionsMode"],
-            "Expected a visible native action popup", state)
-    require(438 <= state["width"] <= 442 and 598 <= state["height"] <= 602,
-            "Native action popup did not acquire its natural 440 x 600 size", state)
-    require(state["scrollWidth"] <= state["width"] + 1, "Popup has horizontal overflow", state)
-    selectors = ["header.brand", "nav.tabs", "#settings-scroll", "footer", "#cfg-enabled", "#tab-motion"]
-    if motion:
-        selectors += ["#cfg-ambientStyle", "#cfg-ambientIntensity",
-                      '[data-choice="ambientStyle"][data-value="spotlight"]']
-    for selector in selectors:
-        require(state["boxes"][selector] and state["boxes"][selector]["visible"],
-                f"Popup control is clipped or missing: {selector}", state)
-    require(state["saveError"] != "true" and bool(state["saveStatus"]),
-            "Popup did not finish loading settings successfully", state)
+def stage_extension(source, target, report_url, report):
+    original = file_hashes(source)
+    manifest = json.loads((source / "manifest.json").read_text(encoding="utf-8"))
+    require(HARNESS_PATH not in original, "Published artifact unexpectedly contains the test harness")
+    require(isinstance(manifest.get("background", {}).get("scripts"), list),
+            "Expected the Firefox artifact's background.scripts manifest")
+    shutil.copytree(source, target)
+    staged_manifest = deepcopy(manifest)
+    staged_manifest["background"]["scripts"].append(HARNESS_PATH)
+    (target / "manifest.json").write_text(json.dumps(staged_manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    harness_source = Path(__file__).with_name("firefox-popup-harness.js").read_text(encoding="utf-8")
+    config = {"reportUrl": report_url, "extensionId": report["extensionId"], "version": report["version"]}
+    harness = target / HARNESS_PATH
+    harness.parent.mkdir()
+    harness.write_text("globalThis.PRISM_NATIVE_TEST = Object.freeze(" + json.dumps(config) + ");\n" + harness_source,
+                       encoding="utf-8")
+    staged = file_hashes(target)
+    require(set(staged) == set(original) | {HARNESS_PATH}, "Unexpected files in test-only staging")
+    for path, digest in original.items():
+        if path != "manifest.json":
+            require(staged[path] == digest, f"Published file changed in test staging: {path}")
+    restored_manifest = deepcopy(staged_manifest)
+    require(restored_manifest["background"]["scripts"].pop() == HARNESS_PATH, "Missing test background script")
+    require(restored_manifest == manifest, "Test staging changed another manifest field")
+    report["testStaging"] = {
+        "mode": "installed-addon-with-test-only-background-harness",
+        "manifestChange": f"Append {HARNESS_PATH} to background.scripts only",
+        "publishedFilesVerified": len(original) - 1,
+        "permissionsChanged": False,
+        "publishedFileSha256": original,
+        "testHarnessSha256": staged[HARNESS_PATH],
+    }
+    return original
 
 
 def capture_desktop(artifacts, name, report):
     capture = shutil.which("import")
     if not capture:
-        report.setdefault("screenshotNotes", []).append("ImageMagick import unavailable; DOM measurements remain authoritative.")
+        note = "ImageMagick import unavailable; no native desktop screenshot captured."
+        if note not in report.setdefault("screenshotNotes", []):
+            report["screenshotNotes"].append(note)
         return
     try:
         subprocess.run([capture, "-window", "root", str(artifacts / f"{name}.png")],
                        check=True, timeout=10, capture_output=True)
     except (subprocess.SubprocessError, OSError) as error:
         report.setdefault("screenshotNotes", []).append(f"Desktop capture failed: {error}")
+
+
+def make_reporter(artifacts, report):
+    ready, done = threading.Event(), threading.Event()
+    lock = threading.Lock()
+    route = "/" + secrets.token_urlsafe(32)
+
+    class Reporter(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def reply(self, status, data):
+            body = json.dumps(data).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Access-Control-Allow-Origin", "*")
+            self.send_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+            self.send_header("Access-Control-Allow-Headers", "Content-Type")
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def do_OPTIONS(self):
+            self.reply(200 if self.path in (route, route + "/ready") else 404, {})
+
+        def do_GET(self):
+            if self.path != route + "/ready":
+                self.reply(404, {"error": "Unknown route"})
+                return
+            self.reply(200, {"ready": ready.is_set()})
+
+        def do_POST(self):
+            if self.path != route:
+                self.reply(404, {"error": "Unknown route"})
+                return
+            try:
+                length = int(self.headers.get("Content-Length", "0"))
+                if not 0 < length <= MAX_REPORT_BYTES:
+                    self.reply(413, {"error": "Invalid report size"})
+                    return
+                message = json.loads(self.rfile.read(length))
+                if (not isinstance(message, dict) or message.get("kind") not in ("stage", "result") or
+                        not isinstance(message.get("stage"), str) or not isinstance(message.get("data"), dict)):
+                    self.reply(400, {"error": "Invalid report"})
+                    return
+                with lock:
+                    if done.is_set():
+                        self.reply(409, {"error": "Run already finished"})
+                        return
+                    report["stage"] = message["stage"]
+                    report.setdefault("events", []).append(message)
+                    print("Firefox native harness: " + message["stage"], flush=True)
+                    # The extension awaits this response, so its popup remains
+                    # open throughout the desktop capture; no timing sleep.
+                    captures = {
+                        "initial": "native-firefox-popup-appearance",
+                        "motion": "native-firefox-popup-motion",
+                        "reopened": "native-firefox-popup-reopened",
+                        "failed": "native-firefox-failure",
+                    }
+                    if message["stage"] in captures:
+                        capture_desktop(artifacts, captures[message["stage"]], report)
+                    if message["kind"] == "result":
+                        report["harness"] = message["data"]
+                        report["status"] = "passed" if message["data"].get("status") == "passed" else "failed"
+                    (artifacts / "native-firefox-popup.json").write_text(
+                        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+                    self.reply(200, {"ok": True})
+                    if message["kind"] == "result":
+                        done.set()
+            except (ValueError, UnicodeError) as error:
+                self.reply(400, {"error": str(error)})
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Reporter)
+    server.daemon_threads = True
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    return server, ready, done, f"http://127.0.0.1:{server.server_port}{route}"
 
 
 def main():
@@ -161,135 +187,70 @@ def main():
     artifacts = args.artifact_dir.resolve()
     artifacts.mkdir(parents=True, exist_ok=True)
     report = {"status": "running", "extensionId": addon_id, "version": manifest["version"],
-              "manifestSha256": hashlib.sha256(manifest_bytes).hexdigest(), "steps": {}}
-    driver = None
+              "manifestSha256": hashlib.sha256(manifest_bytes).hexdigest()}
+    driver, server, original_hashes = None, None, None
     try:
-        options = webdriver.FirefoxOptions()
-        options.binary_location = str(Path(args.firefox_binary).resolve())
-        # geckodriver creates a disposable profile. Do not use a user's profile,
-        # --allow-system-access, signature bypasses, or additional add-on grants.
-        for name, value in {
-            "app.update.auto": False,
-            "app.update.enabled": False,
-            "app.update.service.enabled": False,
-            "extensions.update.enabled": False,
-            "extensions.systemAddon.update.enabled": False,
-            "datareporting.healthreport.uploadEnabled": False,
-            "datareporting.policy.dataSubmissionEnabled": False,
-            "toolkit.telemetry.enabled": False,
-            "toolkit.telemetry.unified": False,
-            "toolkit.telemetry.archive.enabled": False,
-            "browser.newtabpage.enabled": False,
-            "browser.startup.page": 0,
-            "browser.startup.homepage": "about:blank",
-            "browser.shell.checkDefaultBrowser": False,
-        }.items():
-            options.set_preference(name, value)
-        service = Service(executable_path=args.geckodriver, log_output=str(artifacts / "geckodriver.log"))
-        print("Launching isolated headed Firefox; popup size will be chosen by Firefox", flush=True)
-        driver = webdriver.Firefox(options=options, service=service)
-        driver.set_page_load_timeout(30)
-        driver.set_script_timeout(25)
-        # This is the containing browser window, not the action popup viewport.
-        driver.set_window_rect(x=0, y=0, width=1280, height=1000)
-        report["firefoxVersion"] = driver.capabilities["browserVersion"]
-        report["geckodriverVersion"] = driver.capabilities.get("moz:geckodriverVersion")
-        require(int(report["firefoxVersion"].split(".")[0]) >= 149,
-                "Firefox 149+ is needed for public action.openPopup without a user gesture")
-        report["stage"] = "temporary-install"
-        require(driver.install_addon(str(extension), temporary=True) == addon_id, "Unexpected installed add-on ID")
-        print("Installed unchanged Firefox artifact; discovering its public Manifest URL", flush=True)
-        report["stage"] = "discover-manifest-url"
-        driver.get("about:debugging#/runtime/this-firefox")
-        links = WebDriverWait(driver, 20).until(
-            lambda current: (urls if len(urls := current.execute_script(MANIFEST_LINK, addon_id)) == 1 else False),
-            "Could not identify the installed extension's Manifest URL in about:debugging",
-        )
-        (artifacts / "about-debugging.html").write_text(driver.page_source, encoding="utf-8")
-        url = urlsplit(links[0])
-        require(url.scheme == "moz-extension" and bool(url.netloc) and url.path == "/manifest.json",
-                "Unexpected Manifest URL", links)
-        origin = f"{url.scheme}://{url.netloc}"
-        report["observedManifestUrl"] = links[0]
-        report["stage"] = "options-api-bridge"
-        driver.get(origin + "/" + manifest["options_ui"]["page"].lstrip("/"))
-        WebDriverWait(driver, 20).until(lambda current: current.execute_script(
-            "return document.body.classList.contains('is-options-page') && "
-            "document.getElementById('settings-fields')?.disabled === false;"))
-        require(driver.execute_script("return browser.runtime.id") == addon_id, "Options page belongs to another extension")
-        require(driver.execute_script("return typeof browser.action.openPopup") == "function", "action.openPopup unavailable")
-
-        def open_popup():
-            call_async(driver, "await browser.action.openPopup(); return true;")
-            return wait_popup(driver)
-
-        def motion_tab():
-            driver.execute_script("browser.extension.getViews({type:'popup'})[0].document.getElementById('tab-motion').click();")
-            return WebDriverWait(driver, 10, poll_frequency=0.15).until(
-                lambda current: (state if (state := snapshot(current)).get("activeTab") == "motion" and
-                                 state["boxes"]["#cfg-ambientIntensity"]["visible"] else False))
-
-        report["stage"] = "first-native-open"
-        initial = open_popup()
-        check_layout(initial)
-        report["steps"]["initial"] = initial
-        capture_desktop(artifacts, "native-firefox-popup-appearance", report)
-        report["stage"] = "native-motion-controls"
-        motion = motion_tab()
-        check_layout(motion, motion=True)
-        report["steps"]["motion"] = motion
-        capture_desktop(artifacts, "native-firefox-popup-motion", report)
-        driver.execute_script("""
-            const win = browser.extension.getViews({type:'popup'})[0], doc = win.document;
-            doc.querySelector('[data-choice="ambientStyle"][data-value="spotlight"]').click();
-            const range = doc.getElementById('cfg-ambientIntensity');
-            range.value = '77';
-            range.dispatchEvent(new win.Event('input', {bubbles:true}));
-            range.dispatchEvent(new win.Event('change', {bubbles:true}));
-        """)
-        report["stage"] = "persist-popup-controls"
-        saved = WebDriverWait(driver, 20, poll_frequency=0.2).until(lambda current: (
-            value if (value := call_async(current, """
-                const key = ObsidianPrismSchema.STORAGE_KEY;
-                const values = await browser.storage.local.get(key);
-                const cfg = values[key];
-                return cfg ? {ambientStyle:cfg.ambientStyle, ambientIntensity:cfg.ambientIntensity,
-                  thoughtTranslate:cfg.thoughtTranslate} : null;
-            """)) and value["ambientStyle"] == "spotlight" and value["ambientIntensity"] == 77 else False
-        ), "Changes made through native popup controls were not saved")
-        require(saved["thoughtTranslate"] is False, "Optional remote translation must remain disabled")
-        report["steps"]["savedConfig"] = saved
-        driver.execute_script("browser.extension.getViews({type:'popup'})[0].close();")
-        WebDriverWait(driver, 10).until(lambda current: current.execute_script("return browser.extension.getViews({type:'popup'}).length === 0;"))
-        report["stage"] = "native-close-and-reopen"
-        reopened = open_popup()
-        check_layout(reopened)
-        require(reopened["timeOrigin"] != initial["timeOrigin"], "Popup was not recreated after close")
-        require(reopened["ambientStyle"] == "spotlight" and reopened["ambientIntensity"] == "77" and
-                reopened["previewStyle"] == "spotlight" and reopened["spotlightPressed"] == "true",
-                "Reopened popup did not restore the saved controls and preview", reopened)
-        report["steps"]["reopened"] = reopened
-        reopened_motion = motion_tab()
-        check_layout(reopened_motion, motion=True)
-        report["steps"]["reopenedMotion"] = reopened_motion
-        capture_desktop(artifacts, "native-firefox-popup-reopened", report)
-        report["status"] = "passed"
-        print("PASS: native Firefox popup size, visible controls, saving, and reopening", flush=True)
+        server, ready, done, report_url = make_reporter(artifacts, report)
+        with tempfile.TemporaryDirectory(prefix="prism-firefox-native-test-") as temporary:
+            staged = Path(temporary) / "addon"
+            original_hashes = stage_extension(extension, staged, report_url, report)
+            options = webdriver.FirefoxOptions()
+            options.binary_location = str(Path(args.firefox_binary).resolve())
+            # geckodriver creates a fresh disposable profile. No system access,
+            # permission grants, UUID overrides, or protection bypasses.
+            for name, value in {
+                "app.update.auto": False,
+                "app.update.enabled": False,
+                "app.update.service.enabled": False,
+                "extensions.update.enabled": False,
+                "extensions.systemAddon.update.enabled": False,
+                "datareporting.healthreport.uploadEnabled": False,
+                "datareporting.policy.dataSubmissionEnabled": False,
+                "toolkit.telemetry.enabled": False,
+                "toolkit.telemetry.unified": False,
+                "toolkit.telemetry.archive.enabled": False,
+                "browser.newtabpage.enabled": False,
+                "browser.startup.page": 0,
+                "browser.startup.homepage": "about:blank",
+                "browser.shell.checkDefaultBrowser": False,
+            }.items():
+                options.set_preference(name, value)
+            service = Service(executable_path=args.geckodriver, log_output=str(artifacts / "geckodriver.log"))
+            print("Launching isolated Firefox with a verified test-only background harness", flush=True)
+            driver = webdriver.Firefox(options=options, service=service)
+            # Size the containing browser window only. The action popup chooses
+            # its own dimensions; neither Python nor the harness overrides them.
+            driver.set_window_rect(x=0, y=0, width=1280, height=1000)
+            report["firefoxVersion"] = driver.capabilities["browserVersion"]
+            report["geckodriverVersion"] = driver.capabilities.get("moz:geckodriverVersion")
+            require(int(report["firefoxVersion"].split(".")[0]) >= 149,
+                    "Firefox 149+ is required for public action.openPopup without a user gesture")
+            report["stage"] = "temporary-install"
+            require(driver.install_addon(str(staged), temporary=True) == addon_id, "Unexpected installed add-on ID")
+            ready.set()
+            print("Installed test fixture; waiting for extension-owned native-popup measurements", flush=True)
+            require(done.wait(120), "Native Firefox harness did not report a result within 120 seconds", report.get("stage"))
+            require(report["status"] == "passed", "Native Firefox popup checks failed", report.get("harness"))
+            require(file_hashes(extension) == original_hashes, "Published Firefox artifact changed during the smoke test")
+            report["publishedArtifactUnchanged"] = True
+            print("PASS: native Firefox popup size, visible controls, saving, and reopening (test-only harness)", flush=True)
+            driver.quit()
+            driver = None
     except Exception as error:
         report["status"] = "failed"
         report["error"] = {"type": type(error).__name__, "message": str(error), "traceback": traceback.format_exc()}
         if driver:
-            try:
-                report["currentUrl"] = driver.current_url
-                (artifacts / "failure-page.html").write_text(driver.page_source, encoding="utf-8")
-                capture_desktop(artifacts, "native-firefox-failure", report)
-            except Exception as diagnostic_error:
-                report["diagnosticError"] = str(diagnostic_error)
+            capture_desktop(artifacts, "native-firefox-failure", report)
         raise
     finally:
+        if original_hashes is not None:
+            report["publishedArtifactUnchanged"] = file_hashes(extension) == original_hashes
         (artifacts / "native-firefox-popup.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         if driver:
             driver.quit()
+        if server:
+            server.shutdown()
+            server.server_close()
 
 
 if __name__ == "__main__":

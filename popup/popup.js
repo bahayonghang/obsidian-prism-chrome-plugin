@@ -1,4 +1,4 @@
-/** Community adaptation of Obsidian Prism. Modified 2026-11-21. SPDX-License-Identifier: GPL-3.0-only */
+/** Community adaptation of Obsidian Prism. Modified 2026-11-22. SPDX-License-Identifier: GPL-3.0-only */
 (function () {
   'use strict';
   // Separate viewport-responsive options from the intrinsically sized action

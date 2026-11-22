@@ -1,5 +1,5 @@
 /* Obsidian Prism Web — site adapters. Copyright (c) 2026 bahayonghang.
- * Modified 2026-11-21. GPL-3.0-only. See NOTICE and MODIFICATIONS.md. */
+ * Modified 2026-11-22. GPL-3.0-only. See NOTICE and MODIFICATIONS.md. */
 (function (global) {
   'use strict';
 

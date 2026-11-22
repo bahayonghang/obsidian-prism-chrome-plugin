@@ -1,5 +1,5 @@
 /* Obsidian Prism Web — reversible, event-driven workbench.
- * Community port of RMvdesi/obsidian-prism. Modified 2026-11-21.
+ * Community port of RMvdesi/obsidian-prism. Modified 2026-11-22.
  * SPDX-License-Identifier: GPL-3.0-only. See NOTICE / MODIFICATIONS.md. */
 (function (global) {
   'use strict';

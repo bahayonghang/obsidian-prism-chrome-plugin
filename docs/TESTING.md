@@ -1,6 +1,6 @@
 # Validation and manual acceptance
 
-Updated 2026-11-21. This document distinguishes implemented checks from completed execution. The commands below are reproducible procedures, not a claim that every check has already run in every browser.
+Updated 2026-11-22. This document distinguishes implemented checks from completed execution. The commands below are reproducible procedures, not a claim that every check has already run in every browser.
 
 ## Automated commands
 

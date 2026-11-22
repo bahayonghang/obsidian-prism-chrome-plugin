@@ -1,6 +1,6 @@
 # Browser extension architecture
 
-Modified 2026-11-21 for the independent Obsidian Prism Web community port. GPL-3.0-only.
+Modified 2026-11-22 for the independent Obsidian Prism Web community port. GPL-3.0-only.
 
 ## Execution boundaries
 

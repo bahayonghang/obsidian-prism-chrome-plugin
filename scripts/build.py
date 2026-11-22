@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproducible, dependency-free browser packages. Modified 2026-11-21; GPL-3.0-only."""
+"""Reproducible, dependency-free browser packages. Modified 2026-11-22; GPL-3.0-only."""
 from __future__ import annotations
 
 import hashlib

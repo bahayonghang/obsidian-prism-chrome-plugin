@@ -22,9 +22,22 @@ PRISM_BROWSER=chromium PRISM_ACTION_HEADED=1 xvfb-run -a npm run test:browser
 PRISM_BROWSER=firefox npm run test:browser
 ```
 
-The Firefox run uses Firefox's browser engine with Promise-only WebExtension API doubles. **It does not install or sign an actual Firefox add-on.** Firefox installation and store validation remain separate checks.
+The Playwright Firefox run uses Firefox's browser engine with Promise-only WebExtension API doubles. **That command does not install or sign an actual Firefox add-on.**
 
-All HTTP requests in the browser suite are intercepted: the two fixture URLs receive local HTML, and every other HTTP request is blocked. Translation responses are test doubles. No real conversations, credentials, model calls, or signed-in websites are used.
+CI additionally runs `tests/native-firefox-popup.py` with Selenium 4.53.0, geckodriver 0.37.1 and the same Firefox binary under Xvfb. This separate test copies `dist/firefox` to a temporary directory, verifies that product files are unchanged, and appends a test-only background script to the temporary manifest. The installed add-on opens its own real action popup through public WebExtension APIs, measures the browser-selected size, operates settings, and checks saving and reopening. The report identifies this instrumentation; it is not an untouched-package installation or signing check. The release manifest, permissions and ZIPs do not contain the harness.
+
+Firefox 153 [restricts ordinary WebDriver navigation to privileged pages, including extension pages](https://bugzilla.mozilla.org/show_bug.cgi?id=2048451). The native test therefore does not navigate to `about:debugging` or `moz-extension:` pages, enable system access, or disable protections. Its test script runs within its own extension and sends synthetic measurements to a temporary loopback report server. No user profile is used.
+
+```sh
+python3 -m pip install selenium==4.53.0
+# Install geckodriver 0.37.1 separately and provide its executable path.
+xvfb-run -a --server-args="-screen 0 1600x1200x24" python3 tests/native-firefox-popup.py \
+  --firefox-binary "$(node -p "require('playwright').firefox.executablePath()")" \
+  --geckodriver /path/to/geckodriver \
+  --extension-dir dist/firefox --artifact-dir test-artifacts/native-firefox
+```
+
+All HTTP requests in the Playwright fixture suite are intercepted: the two fixture URLs receive local HTML, and every other HTTP request is blocked. Translation responses are test doubles. The separate native Firefox harness communicates only synthetic test measurements to its loopback reporter. No real conversations, credentials, model calls, or signed-in websites are used.
 
 Useful environment variables:
 

@@ -1,5 +1,5 @@
 /* Obsidian Prism Web — scoped host bridge and owned controls.
- * Adapted from RMvdesi/obsidian-prism. Modified 2026-11-21. GPL-3.0-only.
+ * Adapted from RMvdesi/obsidian-prism. Modified 2026-11-22. GPL-3.0-only.
  * No document-wide animation reset, text wrapping, remote fonts, or page blur. */
 
 /* Theme bridges live on recognized surfaces, never on the entire html/body.

@@ -564,6 +564,9 @@ async function exerciseFixture(browser, host) {
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
     await assertReadableSurface(page, bubbleSelector, `${host} light user bubble`);
     await assertComposerBackdrops(page, originalSurfaces);
+    await assertSingleSidebarHighlight(page);
+    await settleFixtureScreenshot(page);
+    await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-conversation-light.png`), fullPage: true });
     await page.evaluate(() => __prismFixture.patch({ themeMode: 'dark', palette: 'host' }));
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'host');
     await settledSurfaceStyle(page, bubbleSelector, 'backgroundColor');
