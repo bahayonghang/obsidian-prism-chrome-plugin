@@ -3,7 +3,7 @@
 **Project:** Obsidian Prism Web — Community Edition  
 **Maintainer:** bahayonghang  
 **Date:** 2026-11-22\
-**Version:** 0.2.1
+**Version:** 0.3.0
 
 **License:** GPL-3.0-only
 
@@ -34,6 +34,10 @@ Issue #3 responds to installed-extension feedback: remove the pixel pets, restor
 ## v0.2.1 regression fixes
 
 Issues #5 and #6 address installed-browser regressions: give the toolbar popup an intrinsic size independent of its initial viewport, keep full-page options responsive, identify and clear only verified composer backdrop layers, and draw sidebar selection once per navigation item. Validation now distinguishes an actual Chromium action popup from a page with a forced viewport and adds opaque footer / nested-selection fixtures. No permissions, host access, translation behavior or remote dependencies are added.
+
+## v0.3.0 workbench refresh
+
+Spec #8 (#9–#14) updates the ChatGPT and Gemini DOM adapters, adds three Content Width Presets (`standard`, `wide`, `full`) synced with a decoupled Bottom Dock quick toggle via a scoped `OP_CONTENT_WIDTH_SET` channel, enforces >= 4.5:1 WCAG AA Code Surface and syntax token contrast across all four optical palettes without altering Native Palette (`host`), calibrates local DOM Context Vial heuristics with `auto` model-matched Reference Capacity and uncounted-attachment indicators (ADR-0001), tightens active ChatGPT bottom whitespace while adding a canvas-matched feathered Composer Scrim across both hosts, and introduces an elevated reference Composer Surface with in-place circular add trigger, Model Capsule, and unified chips without DOM reparenting or text mutation (ADR-0002). No new permissions, host access, or remote network dependencies are added.
 
 ## File attribution
 
