@@ -12,6 +12,8 @@ import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { checkRealActionPopup, checkPopupIntrinsicSize } from './popup-regressions.mjs';
+import { checkLiveFixtureBaselines } from './live-fixtures.mjs';
+import { paragraphWidth } from './measure.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ARTIFACTS = path.join(ROOT, 'test-artifacts');
@@ -33,6 +35,9 @@ const source = async relative => fs.readFile(path.join(ROOT, relative), 'utf8');
 const fixtures = { chatgpt: await source('tests/fixtures/chatgpt.html'), gemini: await source('tests/fixtures/gemini.html') };
 const homeFixtures = { chatgpt: await source('tests/fixtures/chatgpt-home.html'), gemini: await source('tests/fixtures/gemini-home.html') };
 const fixtureURLs = { chatgpt: 'https://chatgpt.com/prism-offline-fixture', gemini: 'https://gemini.google.com/prism-offline-fixture' };
+// Probe-derived fixtures (see tests/live-fixtures.mjs and .trellis/research/live-host-dom.md).
+const liveFixtures = { chatgpt: await source('tests/fixtures/chatgpt-live.html'), gemini: await source('tests/fixtures/gemini-live.html') };
+const probeSource = await source('tools/structure-probe.js');
 const scriptFiles = ['src/config-schema.js', 'src/early-boot.js', 'src/adapters.js', 'src/content.js'];
 const scripts = await Promise.all(scriptFiles.map(source));
 const styles = await Promise.all(['styles/prism-tokens.css', 'styles/hosts.css'].map(source));
@@ -43,6 +48,7 @@ async function interceptFixtures(context) {
     const host = url.hostname === 'chatgpt.com' ? 'chatgpt' : url.hostname === 'gemini.google.com' ? 'gemini' : null;
     if (host && url.pathname === '/prism-offline-fixture') return route.fulfill({ status: 200, contentType: 'text/html', body: fixtures[host] });
     if (host && url.pathname === '/prism-offline-home') return route.fulfill({ status: 200, contentType: 'text/html', body: homeFixtures[host] });
+    if (host && url.pathname === '/prism-live-fixture') return route.fulfill({ status: 200, contentType: 'text/html', body: liveFixtures[host] });
     // Every non-fixture HTTP request is blocked, including translation endpoints.
     return route.abort('blockedbyclient');
   });
@@ -1025,6 +1031,9 @@ async function exerciseFixture(browser, host) {
       };
     });
     const stdCols = await measureColumns();
+    // User-visible result: the rendered width of an actual answer paragraph, not only its wrapper.
+    const answerParagraph = '[data-stream-fixture]';
+    const stdParagraph = await paragraphWidth(page, answerParagraph);
     assert.equal(stdCols.attr, 'standard');
     assert.equal(stdCols.presetAttr, 'standard');
     assert.equal(await page.locator('.op-width-toggle').count(), 1);
@@ -1037,6 +1046,8 @@ async function exerciseFixture(browser, host) {
     const wideCols = await measureColumns();
     assert.equal(wideCols.presetAttr, 'wide');
     assert.ok(wideCols.threadWidth > stdCols.threadWidth, `${host}: wide thread (${wideCols.threadWidth}) > standard (${stdCols.threadWidth})`);
+    const wideParagraph = await paragraphWidth(page, answerParagraph);
+    assert.ok(wideParagraph.box > stdParagraph.box, `${host}: wide answer paragraph (${wideParagraph.box}) renders wider than standard (${stdParagraph.box})`);
     assert.ok(wideCols.composerWidth > stdCols.composerWidth, `${host}: wide composer (${wideCols.composerWidth}) > standard (${stdCols.composerWidth})`);
     assert.ok(Math.abs(wideCols.inputAreaWidth - wideCols.composerWidth) <= 2, `${host}: nested input-area-v2 matches composer width in wide`);
 
@@ -1046,6 +1057,8 @@ async function exerciseFixture(browser, host) {
     const fullCols = await measureColumns();
     assert.equal(fullCols.presetAttr, 'full');
     assert.ok(fullCols.threadWidth > wideCols.threadWidth, `${host}: full thread (${fullCols.threadWidth}) > wide (${wideCols.threadWidth})`);
+    const fullParagraph = await paragraphWidth(page, answerParagraph);
+    assert.ok(fullParagraph.box > wideParagraph.box, `${host}: full answer paragraph (${fullParagraph.box}) renders wider than wide (${wideParagraph.box})`);
     assert.ok(fullCols.composerWidth > wideCols.composerWidth, `${host}: full composer (${fullCols.composerWidth}) > wide (${wideCols.composerWidth})`);
     assert.ok(Math.abs(fullCols.inputAreaWidth - fullCols.composerWidth) <= 2, `${host}: nested input-area-v2 matches composer width in full`);
     assert.ok(fullCols.threadRight <= fullCols.railLeft + 0.5, `${host}: full thread (${fullCols.threadRight}) does not overlap Conversation Rail (${fullCols.railLeft})`);
@@ -1097,6 +1110,7 @@ async function exerciseFixture(browser, host) {
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'standard');
     const restoredStdCols = await measureColumns();
     assert.ok(Math.abs(restoredStdCols.threadWidth - stdCols.threadWidth) <= 1, `${host}: switching back to standard restores native thread width`);
+    assert.ok(Math.abs((await paragraphWidth(page, answerParagraph)).box - stdParagraph.box) <= 1, `${host}: switching back to standard restores the native answer paragraph width`);
     await page.evaluate(() => __prismFixture.patch({ contextVial: true }));
     await page.waitForSelector('.op-vial-pill');
 
@@ -1296,16 +1310,24 @@ async function exerciseFixture(browser, host) {
   } finally { await context.close(); }
 }
 
-if (engine === 'chromium' && process.env.PRISM_SKIP_EXTENSION !== '1') await actualChromiumExtension();
+// PRISM_SUITE=live-fixtures runs only the probe-derived fixture checks (a fast local loop; never a full pass).
+const liveOnly = process.env.PRISM_SUITE === 'live-fixtures';
+if (liveOnly) console.log('NOTE PRISM_SUITE=live-fixtures: only the probe-derived fixture checks run.');
+else if (engine === 'chromium' && process.env.PRISM_SKIP_EXTENSION !== '1') await actualChromiumExtension();
 else console.log(`NOTE ${engine}: this run covers injected offline DOM fixtures only, not native extension installation.`);
 const browser = await type.launch(launchOptions);
 try {
-  await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
-  await savedDisabledStartup(browser);
-  for (const host of ['chatgpt', 'gemini']) {
-    await exerciseHomeEffects(browser, host);
-    await exerciseFixture(browser, host);
+  await checkLiveFixtureBaselines({ browser, engine, interceptFixtures, probeSource, artifacts: ARTIFACTS });
+  if (!liveOnly) {
+    await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
+    await savedDisabledStartup(browser);
+    for (const host of ['chatgpt', 'gemini']) {
+      await exerciseHomeEffects(browser, host);
+      await exerciseFixture(browser, host);
+    }
   }
 }
 finally { await browser.close(); }
-console.log('Browser suite completed. These are synthetic DOM fixtures, not validation against signed-in production websites.');
+console.log(liveOnly
+  ? 'Live-fixture subset completed. This is not a full browser suite pass.'
+  : 'Browser suite completed. These are synthetic DOM fixtures, not validation against signed-in production websites.');

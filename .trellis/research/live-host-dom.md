@@ -26,9 +26,13 @@
 
 v0.3.0 的夹具是按推测的结构手写的，浏览器测试量的是扩展自己打了标记的包装元素，没有量正文段落的实际宽度和像素。
 
+## 已实现（#17）
+
+- 先取证：只读结构探针在 `tools/structure-probe.js`（开发工具，不进发布包；运行方法和隐私约束见 `tests/README.md`）。按本页事实生成的匿名夹具是 `tests/fixtures/chatgpt-live.html` 和 `tests/fixtures/gemini-live.html`；`tests/live-fixtures.mjs` 在不加载扩展的情况下断言原生基线，测量辅助函数在 `tests/measure.mjs`。本页事实之外的夹具数值（ChatGPT h1/h4、输入框附件行、Gemini h1/h4 等）是推断值，已在夹具 CSS 中标注。
+
 ## 已约定、尚未实现（来自 2026-11-22 的 grill，用户已确认）
 
-- 先取证：仓库里提供只读结构探针（作为开发工具），夹具按探针结果生成，测试断言用户能看到的结果。
+- 测试断言用户能看到的结果：#18–#22 各自把断言迁到新夹具上。
 - 宽度：standard 用宿主原生宽度；full 等于可用宽度减去安全边；wide 等于两者的中点，最多 1200px。限宽通过每个站点声明的选择器实现，**运行时不做几何查找、不逐节点打标记**（Gemini 是逐块限宽，逐节点打标记在流式输出时开销太大）。
 - ChatGPT 容量：Pro / Thinking / High / xHigh 为 400K，Instant 为 128K；识别不了的标签按 128K 兜底，并显示 `?`。
 - Composer Scrim：改成半透明画布色加背景模糊，不画实色底。已否决的方案：给滚动容器加 mask（会把 ChatGPT 的 sticky 输入框一起淡化）；在 scrim 里再复制一份光晕（会和背景错位）。

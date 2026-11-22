@@ -14,6 +14,28 @@ Both engines also load the unchanged popup HTML/CSS/JS in a 25 × 25 iframe and 
 
 Conversation fixtures include opaque sticky footer ancestors, a native gradient pseudo-element, a decorative fade sibling, and a painted attachment control. Tests check that only backdrops become transparent, pseudo content and controls survive, and native palette/disable restore the original surfaces. Nested active sidebar rows include both parent and title markers; tests cover repeated scans, title-only state, attribute-only selection changes, independent rows inside a project group, and native-mode restoration.
 
+## Probe-derived ("live") fixtures and measurement helpers
+
+`tests/fixtures/chatgpt-live.html` and `tests/fixtures/gemini-live.html` are anonymous fixtures rebuilt from the 2026-11-22 read-only structure probe recorded in `.trellis/research/live-host-dom.md`. They are served at `https://chatgpt.com/prism-live-fixture` and `https://gemini.google.com/prism-live-fixture` by the same intercepting router as the older fixtures. They use real host markers only (no `data-fixture-*` hooks): ChatGPT turn-key containers with `data-content-search-unit-key` role suffixes, `data-markdown-text-style="assistant-message"`, `data-user-message-bubble`, the `transcriptContent` column with `--thread-content-max-width: 48rem` (808px column), `form[data-chatgpt-composer]` with a `ComposerLayoutRoot` (`data-composer-layout="single-line"`) and a `36px | input | trailing` grid, and aria-label-only buttons. On the Gemini side they reproduce `.md-content > *` blocks and `user-query` limited to 708px, a 660px `.input-area-container`, the `.text-input-field` grid areas, the absolutely positioned near-black `input-container.input-gradient`, and native h2 24px/380 and h3 20px/470.
+
+Values the probe did not measure are inferred and labelled in the fixture CSS: ChatGPT h1/h4 sizes, the ChatGPT composer header row for attachments, the exact composer RGB, Gemini h1/h4, Gemini grid column sizes and the response-footer width.
+
+`tests/live-fixtures.mjs` opens these pages **without the extension** and asserts the native baselines at main-area widths of 1280 and 1100 px (`checkLiveFixtureBaselines`). It also runs `tools/structure-probe.js` on them and proves that the probe output contains no fixture text, typed draft text, page path or unredacted session/message id. `PRISM_SUITE=live-fixtures npm run test:browser` runs only this subset. That is a quick local loop, not a full browser pass.
+
+`tests/measure.mjs` provides shared helpers that measure user-visible results. These are `paragraphWidth` (box and widest rendered line), `sampleBelow`/`capturePixels`/`regionStats` (decoded screenshot pixels), `headingStyles` (computed h1–h4 and body typography), `controlGeometry` (control rectangles relative to a container) and `setMainWidth` (resizes the viewport so the main area has an exact width). The existing Content Width Preset smoke test uses `paragraphWidth`.
+
+## Read-only structure probe (developer tool)
+
+`tools/structure-probe.js` re-collects live structure evidence after a host redesign. It is syntax-checked by `npm run check`, and the release build allowlist excludes it. A Node test asserts that it is never packaged.
+
+- **DevTools**: open a conversation, paste the whole file into the Console and press Enter. Then run `copy(JSON.stringify($_, null, 2))`.
+- **ego-browser** (or any CDP/Playwright evaluate): evaluate the full file text as a script in the conversation tab. The completion value is the result object.
+- Optional: before running, set `globalThis.__PRISM_PROBE_OPTIONS__ = { samples: 5, targets: { name: 'selector' } }`.
+
+Privacy constraints: the probe emits only tags, class tokens, `data-*` attributes, roles, an `hasAriaLabel` flag, sizes and a fixed list of computed styles. It never reads text nodes, input values, `aria-label`, `title`, `alt`, `placeholder`, `href` or `src`, and it never emits element ids or the page path. In `data-*` values it redacts UUIDs, long hex or digit runs and mixed letter-digit tokens as `[id]`, URLs as `[url]` and free text as `[text]`. Structured keys such as `<conversation>:<n>:user` keep their role suffix. Review the output before sharing it. Never commit raw output from a signed-in page; record only the derived facts in `.trellis/research/live-host-dom.md`. The CI test runs the probe only on the synthetic live fixtures. Running it on a signed-in page is a manual step.
+
+## Commands
+
 ```sh
 npm install --no-save playwright@1.62.1
 npx playwright install chromium firefox

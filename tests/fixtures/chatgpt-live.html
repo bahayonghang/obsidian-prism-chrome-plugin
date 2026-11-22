@@ -1,0 +1,102 @@
+<!doctype html>
+<!--
+  Anonymous ChatGPT conversation fixture derived from the 2026-11-22 read-only structure probe
+  (.trellis/research/live-host-dom.md). Structure, markers, widths and computed styles follow the probe; all
+  text, ids and labels are synthetic. Values marked "inferred" in tests/README.md were not measured.
+-->
+<html lang="en" class="dark" style="color-scheme:dark" data-build="prod-4f8a1c2e9b7d"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Prism offline ChatGPT live-structure fixture</title><style>
+:root{--user-chat-width:70%;--main-surface-primary:#212121;--text-primary:#ececec;--text-secondary:#afafaf;--sidebar-surface:#181818}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:#212121;color:#ececec;font:16px/1.75 ui-sans-serif,-apple-system,system-ui,"Segoe UI",Helvetica,"Apple Color Emoji",Arial,sans-serif}
+button{font:inherit;color:inherit;cursor:pointer;background:transparent;border:0}
+svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;flex:none}
+a{color:inherit;text-decoration:none}
+.page{display:flex;height:100vh;overflow:hidden}
+#stage-slideover-sidebar{flex:0 0 260px;width:260px;height:100vh;background:var(--sidebar-surface);display:flex;flex-direction:column;padding:8px}
+#stage-slideover-sidebar nav{display:flex;flex-direction:column;gap:2px;font-size:14px;line-height:20px}
+#stage-slideover-sidebar a{display:block;padding:8px 10px;border-radius:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#stage-slideover-sidebar a[aria-current]{background:#2a2a2a}
+.sidebar-heading{font-size:12px;color:var(--text-secondary);padding:14px 10px 6px}
+.main-column{position:relative;display:flex;flex:1 1 0;min-width:0;flex-direction:column;height:100vh}
+main{position:relative;flex:1 1 0;min-height:0;width:100%;display:flex;flex-direction:column}
+.page-header{height:52px;flex:none;display:flex;align-items:center;padding:0 12px;font-size:18px}
+.composer-parent{flex:1 1 0;min-height:0;display:flex;flex-direction:column}
+[data-prism-test-scroller]{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden}
+/* Probe: the transcript container limits the thread with --thread-content-max-width (48rem) + 20px side padding. */
+[class*="transcriptContent"]{--thread-content-max-width:48rem;width:100%;max-width:calc(var(--thread-content-max-width) + 40px);margin-inline:auto;padding:0 20px 32px;display:flex;flex-direction:column}
+[data-turn-key]{display:block;width:100%}
+[data-virtualized-turn]{display:block}
+.turn-placeholder{height:120px}
+.user-turn{display:flex;flex-direction:column;align-items:flex-end;padding:24px 0 8px}
+[data-user-message-bubble="true"]{max-width:var(--user-chat-width,70%);background:#303030;border-radius:18px;padding:10px 16px;white-space:pre-wrap;overflow-wrap:anywhere}
+.assistant-turn{padding:8px 0 16px}
+[data-markdown-text-style="assistant-message"]{font-size:16px;line-height:1.75;overflow-wrap:anywhere}
+[data-markdown-text-style] > *{margin:0 0 16px}
+[data-markdown-text-style] h1{font-size:24px;line-height:1.33;font-weight:600;margin-top:24px}
+[data-markdown-text-style] h2{font-size:18px;line-height:1.5;font-weight:600;margin-top:24px}
+[data-markdown-text-style] h3{font-size:16px;line-height:1.5;font-weight:600;margin-top:20px}
+[data-markdown-text-style] h4{font-size:15px;line-height:1.5;font-weight:600;margin-top:16px}
+[data-markdown-text-style] ul,[data-markdown-text-style] ol{padding-left:26px}
+[data-markdown-text-style] blockquote{border-left:2px solid #5d5d5d;padding-left:14px;color:#cfcfcf}
+[data-markdown-text-style] table{border-collapse:collapse;font-size:14px}
+[data-markdown-text-style] th,[data-markdown-text-style] td{border:1px solid #444;padding:4px 10px;text-align:left}
+.code-shell{border-radius:16px;background:#171717;overflow:hidden}
+.code-shell-header{display:flex;justify-content:space-between;align-items:center;padding:6px 14px;font-size:12px;color:var(--text-secondary);background:#2f2f2f}
+.code-shell pre{margin:0;padding:14px 16px;overflow:auto;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+.turn-actions{display:flex;gap:4px;color:var(--text-secondary)}
+.turn-actions button{width:30px;height:30px;display:grid;place-items:center;border-radius:8px}
+/* Probe: wrappers around the composer are transparent; the sticky footer paints nothing. */
+#thread-bottom-container{position:sticky;bottom:0;z-index:2;background:transparent}
+#thread-bottom{background:transparent}
+.composer-column{width:100%;max-width:calc(48rem + 40px);margin-inline:auto;padding:0 20px;background:transparent}
+form[data-chatgpt-composer]{width:100%;background:transparent}
+/* Probe: ComposerLayoutRoot paints the surface (data-composer-dark, alpha ~0.95) and carries data-composer-layout. */
+[class*="ComposerLayoutRoot"]{background:rgba(48,48,48,.95);border-radius:28px;padding:10px;box-shadow:0 0 0 1px rgba(255,255,255,.05)}
+/* Probe: the bottom bar is a three-column grid "36px | input | trailing buttons". The header row (attachments) is inferred. */
+[class*="composerGrid"]{display:grid;grid-template-columns:36px minmax(0,1fr) auto;grid-template-areas:"header header header" "leading primary trailing";align-items:center;column-gap:6px}
+.composer-header{grid-area:header;display:flex;gap:8px;padding:2px 4px 8px}
+[class*="file-tile"]{display:inline-flex;align-items:center;gap:8px;padding:6px 10px;border-radius:12px;background:#424242;font-size:13px;line-height:18px}
+.composer-leading{grid-area:leading;display:flex}
+.composer-primary{grid-area:primary;min-width:0}
+.composer-trailing{grid-area:trailing;display:flex;align-items:center;gap:4px}
+.composer-leading button,.composer-trailing button{height:36px;min-width:36px;display:inline-flex;align-items:center;justify-content:center;gap:4px;border-radius:999px;padding:0 8px}
+#prompt-textarea{min-height:24px;max-height:208px;overflow-y:auto;outline:none;padding:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}
+#prompt-textarea p{margin:0}
+#prompt-textarea p.placeholder:first-child::before{content:attr(data-placeholder);color:#9b9b9b;float:left;height:0;pointer-events:none}
+[class*="disclaimer"]{text-align:center;font-size:12px;line-height:16px;color:var(--text-secondary);padding:8px 0 10px}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+</style></head><body><div class="page">
+<div id="stage-slideover-sidebar"><nav aria-label="Chat history"><a href="#new">New chat</a><a href="#search">Search chats</a><div class="sidebar-heading">Chats</div><a href="/c/68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13" aria-current="page">Synthetic layout review</a><a href="/c/1b7e9d40-8a2c-4f61-b3e5-7c0d2a9f8e64">Another placeholder thread</a><a href="/c/9a3c5e71-0f2d-4b8e-a6c4-3d1e7b9f2a05">Offline sample notes</a></nav></div>
+<div class="main-column"><main id="main"><div class="page-header">ChatGPT</div><div class="composer-parent" role="presentation"><div data-prism-test-scroller>
+<div class="flex flex-col text-sm transcriptContent_q8xz pb-25">
+<div data-turn-key="3f9b2c71-6e4a-4d08-b5c2-81a0f7d3e9b6" class="turn-container"><div data-virtualized-turn><div class="turn-placeholder"></div></div></div>
+<div data-turn-key="7c1e4a90-2d5b-4f37-8e6a-0b9d3c5f1a28" class="turn-container"><div data-virtualized-turn><div class="turn-placeholder"></div></div></div>
+<div data-turn-key="a2d8f5c3-9b1e-4c6a-87d0-5e3f1b9c4a72" class="turn-container"><div data-virtualized-turn><div data-content-search-unit-key="68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13:2:user" class="user-turn"><h5 class="sr-only">You said:</h5><div data-user-message-bubble="true" class="user-message-bubble-color">Please outline a calm layout for a long technical answer with headings, lists, a quote, a small table and one code sample.</div></div></div></div>
+<div data-turn-key="e6b4a1d9-3c7f-4a25-9d18-6f2c0e8b5a31" class="turn-container"><div data-virtualized-turn><div data-content-search-unit-key="68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13:3:assistant" class="assistant-turn"><h6 class="sr-only">ChatGPT said:</h6><div data-markdown-text-style="assistant-message" class="markdown prose dark:prose-invert w-full break-words">
+<h1>Layout overview for synthetic notes</h1>
+<p>This paragraph is deliberately long so that it wraps across the full reading column. It describes nothing real: it only gives the browser enough words to lay out several lines, which lets the tests compare the rendered line width with the width of the column that contains it, at more than one main-area width.</p>
+<h2>Section heading at level two</h2>
+<p>A second paragraph keeps the rhythm between headings and body text visible, so later checks can compare their computed font family, size and weight in the same turn.</p>
+<h3>Subsection heading at level three</h3>
+<ul><li>First bullet with a few placeholder words</li><li>Second bullet that is a little longer than the first one</li><li>Third bullet</li></ul>
+<h4>Minor heading at level four</h4>
+<ol><li>Ordered step one</li><li>Ordered step two</li></ol>
+<blockquote><p>A quoted aside that stands apart from the surrounding paragraphs.</p></blockquote>
+<table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody><tr><td>Placement</td><td>Centered</td></tr><tr><td>Rhythm</td><td>Relaxed</td></tr></tbody></table>
+<div class="code-shell"><div class="code-shell-header"><span>snippet</span><button type="button" aria-label="Copy">Copy</button></div><pre><code class="language-js">const sampleWidth = 768;
+const sampleGap = 20;
+console.log(sampleWidth + sampleGap * 2);</code></pre></div>
+<p>A closing paragraph ends the answer before the action row.</p>
+</div><div class="turn-actions"><button type="button" aria-label="Copy"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button type="button" aria-label="Good response"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11v9M7 11l4-8a2 2 0 0 1 3 2l-1 5h6l-2 9H7"/></svg></button><button type="button" aria-label="More actions"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div></div></div></div>
+<div data-turn-key="5d2f8b6e-1a4c-4e97-b3d0-9c7a2e5f8b14" class="turn-container"><div data-virtualized-turn><div data-content-search-unit-key="68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13:4:user" class="user-turn"><h5 class="sr-only">You said:</h5><div data-user-message-bubble="true" class="user-message-bubble-color">And a short follow-up question?</div></div></div></div>
+<div data-turn-key="c8a1e3f7-5b9d-4a62-8f04-2d6b9e1c7a53" class="turn-container"><div data-virtualized-turn><div data-content-search-unit-key="68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13:5:assistant" class="assistant-turn"><h6 class="sr-only">ChatGPT said:</h6><div data-markdown-text-style="assistant-message" class="markdown prose dark:prose-invert w-full break-words"><p data-stream-fixture>A brief synthetic reply that closes the offline conversation.</p></div><div class="turn-actions"><button type="button" aria-label="Copy"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/></svg></button></div></div></div></div>
+</div>
+<div id="thread-bottom-container"><div id="thread-bottom"><div class="composer-column"><form class="w-full" data-chatgpt-composer data-type="unified-composer"><div class="ComposerLayoutRoot_m3kp" data-composer-dark="true" data-composer-layout="single-line"><div class="composerGrid_h2vs">
+<div class="composer-header"><div class="file-tile_p4wt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/></svg><span>synthetic-outline.pdf</span><button type="button" aria-label="Remove file">×</button></div></div>
+<div class="composer-leading"><button type="button" aria-label="Add files and more"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+<div class="composer-primary"><div id="prompt-textarea" contenteditable="true" role="textbox" translate="no" class="ProseMirror" data-placeholder="Ask anything"><p data-placeholder="Ask anything" class="placeholder"><br class="ProseMirror-trailingBreak"></p></div></div>
+<div class="composer-trailing"><button type="button" aria-label="Select ChatGPT model" aria-haspopup="menu" data-selected-reasoning-effort="high"><span>High</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><button type="button" aria-label="Dictate"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button><button type="button" aria-label="Start Voice"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg></button></div>
+</div></div></form><div class="disclaimer_v7rk">Offline layout fixture. Replies here are synthetic placeholders.</div></div></div></div>
+</div></div></main></div>
+</div></body></html>
