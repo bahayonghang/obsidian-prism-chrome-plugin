@@ -31,6 +31,35 @@ for (const kind of ['chrome', 'firefox']) {
     assert.equal(h.state.requests.length, 0);
   });
 
+  test(`${kind}: OP_CONTENT_WIDTH_SET accepts page or trusted top-frame chat, validates enum, and keeps OP_CONFIG_PATCH restricted to page`, async () => {
+    const h = harness({ kind, background: true });
+    const fromPage = await h.dispatch({ type: 'OP_CONTENT_WIDTH_SET', contentWidth: 'wide' }, h.pageSender);
+    assert.equal(fromPage.ok, true);
+    assert.equal(fromPage.config.contentWidth, 'wide');
+
+    const fromChat = await h.dispatch({ type: 'OP_CONTENT_WIDTH_SET', contentWidth: 'full' }, h.chatSender);
+    assert.equal(fromChat.ok, true);
+    assert.equal(fromChat.config.contentWidth, 'full');
+
+    const badSenders = [
+      { ...h.pageSender, id: 'another-extension' },
+      { ...h.chatSender, id: 'another-extension' },
+      { ...h.chatSender, frameId: 2 },
+      { ...h.chatSender, url: 'http://chatgpt.com/' },
+      { ...h.chatSender, url: 'https://example.test/' },
+      {}
+    ];
+    for (const sender of badSenders) {
+      assert.deepEqual(await h.dispatch({ type: 'OP_CONTENT_WIDTH_SET', contentWidth: 'standard' }, sender), { ok: false, error: 'UNTRUSTED_SENDER' });
+    }
+
+    for (const invalid of ['narrow', 'ultra', '', null, 123, true]) {
+      assert.deepEqual(await h.dispatch({ type: 'OP_CONTENT_WIDTH_SET', contentWidth: invalid }, h.chatSender), { ok: false, error: 'INVALID_CONTENT_WIDTH' });
+    }
+
+    assert.deepEqual(await h.dispatch({ type: 'OP_CONFIG_PATCH', patch: { contentWidth: 'standard' } }, h.chatSender), { ok: false, error: 'UNTRUSTED_SENDER' });
+  });
+
   test(`${kind}: secrets remain separate from ordinary and exported configuration`, async () => {
     const h = harness({ kind, background: true });
     configure(h);

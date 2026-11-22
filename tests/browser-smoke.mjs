@@ -385,6 +385,10 @@ function fixtureBridge(input) {
       openOptionsPage: bridge(() => undefined),
       sendMessage: bridge(message => {
         if (message.type === 'OP_CONFIG_PATCH') return { ok: true, config: patch(message.patch) };
+        if (message.type === 'OP_CONTENT_WIDTH_SET') {
+          if (!window.ObsidianPrismSchema.ENUMS.contentWidth.includes(message.contentWidth)) return { ok: false, error: 'INVALID_CONTENT_WIDTH' };
+          return { ok: true, config: patch({ contentWidth: message.contentWidth }) };
+        }
         if (message.type === 'OP_TRANSLATE') {
           window.__prismFixture.translations.push(message.text);
           if (window.__prismFixture.translationMode === 'error') return { ok: false, error: 'TRANSLATION_REQUEST_FAILED' };
@@ -647,6 +651,102 @@ async function exerciseFixture(browser, host) {
     await page.locator('[data-native-copy]').click();
     assert.equal(await page.evaluate(() => __copyCount), 1, 'native copy control and listeners are preserved');
 
+    // Content Width Presets (standard < wide < full), decoupled dock, rail clearance, bubble cap & <900px fallback
+    const measureColumns = () => page.evaluate(() => {
+      const thread = document.querySelector('.thread');
+      const composer = document.querySelector('.composer-container');
+      const inputArea = document.querySelector('input-area-v2');
+      const rail = document.getElementById('op-rail-root');
+      const dock = document.getElementById('op-bottom-dock');
+      const rect = node => node ? node.getBoundingClientRect() : null;
+      const tr = rect(thread), cr = rect(composer), ir = rect(inputArea), rr = rect(rail), dr = rect(dock);
+      return {
+        attr: document.documentElement.getAttribute('data-op-content-width'),
+        presetAttr: document.querySelector('.op-width-toggle')?.getAttribute('data-width-preset'),
+        threadWidth: tr.width, threadRight: tr.right,
+        composerWidth: cr.width, composerRight: cr.right,
+        inputAreaWidth: ir ? ir.width : cr.width,
+        railLeft: rr ? rr.left : Infinity,
+        dockLeft: dr ? dr.left : Infinity,
+        overflowX: document.documentElement.scrollWidth > window.innerWidth
+      };
+    });
+    const stdCols = await measureColumns();
+    assert.equal(stdCols.attr, 'standard');
+    assert.equal(stdCols.presetAttr, 'standard');
+    assert.equal(await page.locator('.op-width-toggle').count(), 1);
+    await page.evaluate(() => document.querySelector('.op-width-toggle').click());
+    assert.equal(await page.evaluate(() => __prismFixture.config().contentWidth), 'standard', 'synthetic width click is ignored');
+
+    // Trusted click cycles standard -> wide
+    await page.locator('.op-width-toggle').click();
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'wide');
+    const wideCols = await measureColumns();
+    assert.equal(wideCols.presetAttr, 'wide');
+    assert.ok(wideCols.threadWidth > stdCols.threadWidth, `${host}: wide thread (${wideCols.threadWidth}) > standard (${stdCols.threadWidth})`);
+    assert.ok(wideCols.composerWidth > stdCols.composerWidth, `${host}: wide composer (${wideCols.composerWidth}) > standard (${stdCols.composerWidth})`);
+    assert.ok(Math.abs(wideCols.inputAreaWidth - wideCols.composerWidth) <= 2, `${host}: nested input-area-v2 matches composer width in wide`);
+
+    // Trusted click cycles wide -> full
+    await page.locator('.op-width-toggle').click();
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'full');
+    const fullCols = await measureColumns();
+    assert.equal(fullCols.presetAttr, 'full');
+    assert.ok(fullCols.threadWidth > wideCols.threadWidth, `${host}: full thread (${fullCols.threadWidth}) > wide (${wideCols.threadWidth})`);
+    assert.ok(fullCols.composerWidth > wideCols.composerWidth, `${host}: full composer (${fullCols.composerWidth}) > wide (${wideCols.composerWidth})`);
+    assert.ok(Math.abs(fullCols.inputAreaWidth - fullCols.composerWidth) <= 2, `${host}: nested input-area-v2 matches composer width in full`);
+    assert.ok(fullCols.threadRight <= fullCols.railLeft + 0.5, `${host}: full thread (${fullCols.threadRight}) does not overlap Conversation Rail (${fullCols.railLeft})`);
+    assert.ok(fullCols.composerRight <= fullCols.railLeft + 0.5, `${host}: full composer (${fullCols.composerRight}) does not overlap Conversation Rail (${fullCols.railLeft})`);
+
+    // User Turn bubble max-width cap in wide & full
+    await page.evaluate(selector => {
+      const bubble = document.querySelector(selector);
+      bubble.dataset.origText = bubble.textContent;
+      bubble.textContent = 'Long prompt '.repeat(45);
+    }, bubbleSelector);
+    const fullBubbleWidth = await page.locator(bubbleSelector).evaluate(node => node.getBoundingClientRect().width);
+    assert.ok(fullBubbleWidth <= Math.min(fullCols.threadWidth * 0.78, 820) + 2, `${host}: full user bubble (${fullBubbleWidth}) stays within min(78%, 820px)`);
+    await page.evaluate(() => __prismFixture.patch({ contentWidth: 'wide' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'wide');
+    const wideBubbleWidth = await page.locator(bubbleSelector).evaluate(node => node.getBoundingClientRect().width);
+    assert.ok(wideBubbleWidth <= Math.min(wideCols.threadWidth * 0.78, 820) + 2, `${host}: wide user bubble (${wideBubbleWidth}) stays within min(78%, 820px)`);
+    await page.evaluate(selector => {
+      const bubble = document.querySelector(selector);
+      bubble.textContent = bubble.dataset.origText;
+      delete bubble.dataset.origText;
+    }, bubbleSelector);
+
+    // Narrow viewport (< 900px) smooth fallback with no horizontal overflow
+    await page.setViewportSize({ width: 860, height: 900 });
+    for (const preset of ['wide', 'full']) {
+      await page.evaluate(p => __prismFixture.patch({ contentWidth: p }), preset);
+      await page.waitForFunction(p => document.documentElement.getAttribute('data-op-content-width') === p, preset);
+      const narrow = await page.evaluate(() => {
+        const scroller = document.querySelector('[data-prism-test-scroller]');
+        return {
+          docOverflow: document.documentElement.scrollWidth > window.innerWidth,
+          scrollerOverflow: scroller ? scroller.scrollWidth > scroller.clientWidth + 1 : false
+        };
+      });
+      assert.equal(narrow.docOverflow, false, `${host} ${preset}: no document horizontal overflow below 900px`);
+      assert.equal(narrow.scrollerOverflow, false, `${host} ${preset}: no scroller horizontal overflow below 900px`);
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+
+    // Decoupled Bottom Dock: contextVial false keeps .op-width-toggle while hiding vial & popover
+    await page.evaluate(() => __prismFixture.patch({ contextVial: false, contentWidth: 'full' }));
+    await page.waitForFunction(() => !document.querySelector('.op-vial-pill'));
+    assert.equal(await page.locator('#op-bottom-dock').count(), 1);
+    assert.equal(await page.locator('.op-vial-popover').count(), 0);
+    assert.equal(await page.locator('.op-width-toggle').count(), 1);
+    // Trusted click cycles full -> standard
+    await page.locator('.op-width-toggle').click();
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'standard');
+    const restoredStdCols = await measureColumns();
+    assert.ok(Math.abs(restoredStdCols.threadWidth - stdCols.threadWidth) <= 1, `${host}: switching back to standard restores native thread width`);
+    await page.evaluate(() => __prismFixture.patch({ contextVial: true }));
+    await page.waitForSelector('.op-vial-pill');
+
     await page.locator('.op-rail-toggle').click();
     await page.locator('.op-rail-search').fill('optimization');
     assert.equal(await page.locator('.op-rail-item:visible').count(), 1);
@@ -744,8 +844,12 @@ async function exerciseFixture(browser, host) {
     await page.evaluate(() => document.querySelector('#prism-closed-thought-fixture').remove());
     await page.waitForFunction(() => document.querySelectorAll('.op-translate-button').length === 1);
 
+    await page.evaluate(() => __prismFixture.patch({ contentWidth: 'full' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'full');
     await page.evaluate(() => __prismFixture.patch({ enabled: false }));
     await page.waitForFunction(() => !document.documentElement.hasAttribute('data-op-enabled'));
+    assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-content-width')), false);
+    assert.ok(Math.abs((await measureColumns()).threadWidth - stdCols.threadWidth) <= 1, `${host}: disable restores native thread width`);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), originalBackground);
@@ -757,7 +861,7 @@ async function exerciseFixture(browser, host) {
     assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-sidebar-active="true"],[data-op-composer-backdrop="true"]').count(), 0);
     assert.equal(await page.locator('pre code').textContent(), originalText);
     assert.equal(await page.evaluate(() => ObsidianPrismRuntime.diagnostics().observing), false);
-    await page.evaluate(() => __prismFixture.patch({ enabled: true }));
+    await page.evaluate(() => __prismFixture.patch({ enabled: true, contentWidth: 'standard' }));
     await page.waitForSelector('.op-code-fold-bar');
     assert.equal(await page.locator('.op-code-fold-bar').count(), 1);
 

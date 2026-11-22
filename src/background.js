@@ -87,6 +87,11 @@ if (!globalThis.ObsidianPrismSchema && typeof importScripts === 'function') impo
       if (!page && !chat) throw new Error('UNTRUSTED_SENDER');
       await Schema.callApi(api.runtime,'openOptionsPage'); return {ok:true};
     }
+    if (message.type === 'OP_CONTENT_WIDTH_SET') {
+      if (!page && !chat) throw new Error('UNTRUSTED_SENDER');
+      if (!Schema.ENUMS.contentWidth.includes(message.contentWidth)) throw new Error('INVALID_CONTENT_WIDTH');
+      return writeConfig({contentWidth:message.contentWidth},false);
+    }
     if (!page) throw new Error('UNTRUSTED_SENDER');
     if (message.type === 'OP_CONFIG_PATCH') return writeConfig(message.patch,false);
     if (message.type === 'OP_CONFIG_RESET') return writeConfig({},true);

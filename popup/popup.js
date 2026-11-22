@@ -51,7 +51,7 @@
     card('layoutTitle',select('sidebarStyle','sidebarStyle',[['glass','sidebarGlass'],['solid','sidebarSolid'],['native','sidebarNative']],null,true)+toggle('sidebarCompact')+toggle('composerRestyle')+toggle('composerGlow','composerGlowHint'))+
     card('detailsSection','<div class="two-fields">'+select('cornerStyle','cornerStyle',[['sharp','cornerSharp'],['balanced','cornerBalanced'],['soft','cornerSoft']])+select('language','languageLabel',[['zh-CN',null],['en-US',null]])+'</div>');
   $('cfg-language').options[0].textContent='简体中文'; $('cfg-language').options[1].textContent='English';
-  $('panel-reading').innerHTML = intro('readingTitle','readingHint')+card('tabWorkbench',toggle('railOutline','railHint')+toggle('turnJumpShortcuts','shortcutHint')+toggle('stickyCodeHeader')+toggle('longCodeFold','longCodeFoldHint'))+
+  $('panel-reading').innerHTML = intro('readingTitle','readingHint')+card('tabWorkbench',select('contentWidth','contentWidth',[['standard','widthStandard'],['wide','widthWide'],['full','widthFull']],'contentWidthHint',true)+toggle('railOutline','railHint')+toggle('turnJumpShortcuts','shortcutHint')+toggle('stickyCodeHeader')+toggle('longCodeFold','longCodeFoldHint'))+
     card('contextVial',toggle('contextVial','contextHint')+select('contextWindowTokens','contextWindow',[[32000,null],[128000,null],[200000,null],[512000,null],[1000000,null]],null,true))+
     card('codeFont',select('codeFont','codeFont',[['default','fontDefault'],['jetbrains',null],['fira',null],['cascadia',null]],'fontHint')+toggle('codeLigatures'));
   const fonts = {'jetbrains':'JetBrains Mono','fira':'Fira Code','cascadia':'Cascadia Code'};
