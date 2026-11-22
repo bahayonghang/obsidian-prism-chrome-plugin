@@ -6,13 +6,48 @@
  */
 
 html[data-op-enabled="true"] {
-  --op-ambient-alpha: 0.14;
+  --op-ambient-alpha: 0.65;
   --op-radius-sm: 8px;
   --op-radius-md: 12px;
   --op-radius-lg: 18px;
   --op-radius-pill: 999px;
   --op-code-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   --op-spring-fast: cubic-bezier(0.22, 1, 0.36, 1);
+  --op-font-ui: "Inter", "Segoe UI Variable", "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --op-horizon-blue: #3D7FEF;
+  --op-horizon-violet: #8B79EB;
+  --op-horizon-cyan: #39B8D9;
+  --op-horizon-ink: #6F83A7;
+  --op-drift-duration: 28s;
+  --op-ambient-presence: 0.24;
+  --op-glass-specular: #FFFFFF12;
+  --op-surface-shadow: #00000038;
+}
+
+html[data-op-enabled="true"][data-op-home="true"] { --op-ambient-presence: 1; }
+html[data-op-enabled="true"][data-op-motion-speed="slow"] { --op-drift-duration: 42s; }
+html[data-op-enabled="true"][data-op-motion-speed="fast"] { --op-drift-duration: 17s; }
+html[data-op-enabled="true"][data-op-scheme="light"] {
+  --op-glass-specular: #FFFFFFED;
+  --op-surface-shadow: #253A651A;
+  --op-horizon-ink: #8A9AB4;
+}
+html[data-op-enabled="true"][data-op-effective-palette="warm"] {
+  --op-horizon-blue: #687DD1;
+  --op-horizon-violet: #A680C3;
+  --op-horizon-cyan: #5BABB7;
+  --op-horizon-ink: #9E918C;
+}
+html[data-op-enabled="true"][data-op-effective-palette="alabaster"] {
+  --op-horizon-blue: #7A96D2;
+  --op-horizon-violet: #B29ACB;
+  --op-horizon-cyan: #77BFC6;
+  --op-horizon-ink: #A49B91;
+}
+html[data-op-enabled="true"][data-op-accent="mono"] {
+  --op-horizon-blue: #8495AC;
+  --op-horizon-violet: #9C9EAF;
+  --op-horizon-cyan: #A4BCC6;
 }
 
 /* ==========================================================================

@@ -12,11 +12,13 @@
     enabled: true, enableChatGPT: true, enableGemini: true, language: 'zh-CN',
     themeMode: 'auto', palette: 'obsidian', lightPreset: 'crystal', accentTone: 'follow',
     cornerStyle: 'balanced', codeFont: 'default', codeLigatures: false,
-    ambientIntensity: 35, motionLevel: 'subtle', streamChoreography: true,
+    ambientIntensity: 65, ambientStyle: 'aurora', ambientTexture: 'glyphs',
+    motionSpeed: 'slow', composerGlow: true, sidebarStyle: 'glass',
+    motionLevel: 'subtle', streamChoreography: true,
     semanticAura: true, composerRestyle: true, sidebarCompact: false,
     stickyCodeHeader: true, longCodeFold: true, railOutline: true,
     turnJumpShortcuts: true, contextVial: true, contextWindowTokens: 128000,
-    mascot: 'crab', thoughtTranslate: false, thoughtView: 'bilingual',
+    thoughtTranslate: false, thoughtView: 'bilingual',
     thoughtEndpoint: '', thoughtModel: ''
   });
   const ENUMS = Object.freeze({
@@ -24,34 +26,36 @@
     palette: ['obsidian', 'warm', 'host'], lightPreset: ['crystal', 'alabaster', 'host'],
     accentTone: ['follow', 'cobalt', 'iris', 'amber', 'mono'],
     cornerStyle: ['sharp', 'balanced', 'soft'], codeFont: ['default', 'jetbrains', 'fira', 'cascadia'],
-    motionLevel: ['ultra', 'subtle', 'off'], mascot: ['crab', 'cat', 'tower', 'off'],
+    motionLevel: ['ultra', 'subtle', 'off'],
+    ambientStyle: ['aurora', 'spotlight', 'none'], ambientTexture: ['off', 'grid', 'glyphs'],
+    motionSpeed: ['slow', 'normal', 'fast'], sidebarStyle: ['glass', 'solid', 'native'],
     thoughtView: ['bilingual', 'immersive']
   });
   const SCENE_PRESETS = Object.freeze({
-    ultra: Object.freeze({motionLevel: 'ultra', streamChoreography: true, semanticAura: true, mascot: 'crab', sidebarCompact: false, ambientIntensity: 85}),
-    focus: Object.freeze({motionLevel: 'subtle', streamChoreography: true, semanticAura: true, mascot: 'off', sidebarCompact: true, ambientIntensity: 35}),
-    eco: Object.freeze({motionLevel: 'off', streamChoreography: false, semanticAura: false, mascot: 'off', sidebarCompact: false, ambientIntensity: 0})
+    ultra: Object.freeze({motionLevel: 'ultra', motionSpeed: 'slow', ambientStyle: 'aurora', ambientTexture: 'glyphs', composerGlow: true, sidebarStyle: 'glass', streamChoreography: true, semanticAura: true, sidebarCompact: false, ambientIntensity: 85}),
+    focus: Object.freeze({motionLevel: 'subtle', motionSpeed: 'slow', ambientStyle: 'spotlight', ambientTexture: 'off', composerGlow: true, sidebarStyle: 'solid', streamChoreography: true, semanticAura: true, sidebarCompact: true, ambientIntensity: 45}),
+    eco: Object.freeze({motionLevel: 'off', motionSpeed: 'slow', ambientStyle: 'none', ambientTexture: 'off', composerGlow: false, sidebarStyle: 'solid', streamChoreography: false, semanticAura: false, sidebarCompact: false, ambientIntensity: 0})
   });
   const I18N = Object.freeze({
     'zh-CN': {
       appTitle:'黑曜棱镜', appSub:'为每一次对话，换一种光。', independent:'ChatGPT 与 Gemini · 社区移植版',
       masterEnable:'启用 Prism', masterHint:'随时关闭，恢复网页原有外观', hostChatGPT:'ChatGPT',hostGemini:'Gemini',
-      tabAppearance:'外观',tabWorkbench:'阅读',tabMotion:'动效',tabThought:'翻译',tabAbout:'关于',
-      scenePresets:'一键场景',presetUltra:'光彩',presetFocus:'专注',presetEco:'省电',
+      tabAppearance:'外观',tabWorkbench:'阅读',tabMotion:'光影',tabThought:'翻译',tabAbout:'关于',
+      scenePresets:'一键场景',presetUltra:'流光',presetFocus:'专注',presetEco:'静默',
       themeMode:'明暗模式',modeAuto:'跟随系统',modeDark:'深色',modeLight:'浅色',
       darkPalette:'深色配色',lightPalette:'浅色配色',palObsidian:'深空黑曜',palWarm:'暖炭玄岩',palCrystal:'白昼冷晶',palAlabaster:'暖白画册',palHost:'保留原生配色',
       paletteHint:'选择色卡可立即预览对应的明暗模式。',accentTone:'点睛色',accFollow:'跟随站点',accCobalt:'钴蓝',accIris:'鸢尾紫',accAmber:'琥珀金',accMono:'银钛',
       cornerStyle:'圆角',cornerSharp:'利落',cornerBalanced:'均衡',cornerSoft:'柔和',languageLabel:'界面语言',
-      previewTitle:'外观预览',previewPrompt:'让复杂的想法变得清楚。',previewReply:'从一个小问题开始，再慢慢深入。',previewInput:'继续探索…',previewBadge:'实时预览',
+      previewTitle:'外观预览',previewPrompt:'让复杂的想法变得清楚。',previewReply:'从一个小问题开始，再慢慢深入。',previewInput:'继续探索…',previewBadge:'样式预览',
       readingTitle:'把长对话读得轻松一点',readingHint:'增强控件仅作用于支持的网站。',
       stickyCodeHeader:'固定代码标题栏',longCodeFold:'手动折叠长代码',longCodeFoldHint:'48 行起显示折叠按钮，原文保持完整。',
       railOutline:'会话大纲',railHint:'按提问查找与跳转。',turnJumpShortcuts:'Alt + ↑ / ↓ 跳转提问',shortcutHint:'输入文字时不会抢占按键。',
       contextVial:'上下文估算',contextHint:'仅估算已加载的对话，不代表实际用量、额度或模型容量。',contextWindow:'手动参考容量',
       codeFont:'代码字体',fontDefault:'系统等宽字体',fontHint:'使用本机已安装字体；找不到时自动回退。',codeLigatures:'代码连字',
-      sidebarCompact:'紧凑侧栏',composerRestyle:'输入框外观',motionTitle:'恰到好处的动静',motionHint:'尊重系统“减少动态效果”设置。',
+      sidebarCompact:'紧凑侧栏',composerRestyle:'输入框外观',motionTitle:'让背景有光，也有呼吸',motionHint:'极光、聚光与纹理可以独立调节。系统减少动态效果时，保留静态光影。',
       motionLevel:'动效强度',motionUltra:'完整',motionSubtle:'轻柔',motionOff:'关闭',ambientIntensity:'环境光浓度',
       streamChoreography:'新回复文字淡入',streamHint:'浏览器支持时启用，不改写回复内容。',semanticAura:'回复活动余晖',
-      mascotLabel:'像素伙伴',mascotCrab:'像素蟹',mascotCat:'鸢尾猫',mascotTower:'小队叠叠乐',mascotOff:'关闭',
+      ambientStyle:'背景光场',styleAurora:'底部极光',styleSpotlight:'柔光聚焦',styleNone:'关闭光晕',ambientTexture:'背景纹理',textureOff:'无纹理',textureGrid:'微光网格',textureGlyphs:'字符矩阵',motionSpeed:'流动速度',speedSlow:'缓慢',speedNormal:'标准',speedFast:'轻快',composerGlow:'输入框光晕',composerGlowHint:'聚焦输入时，边缘与底部柔和发光。',sidebarStyle:'侧栏样式',sidebarGlass:'透光',sidebarSolid:'纯色',sidebarNative:'原生',layoutTitle:'侧栏与输入框',layoutHint:'细边框、柔和层次，以及更清楚的当前会话。',atmosphereShortcut:'调整背景光影',effectSummary:'光影效果',effectsPaused:'动态效果已停止',effectsReduced:'跟随系统：静态光影',effectsActive:'光影已启用',effectNone:'背景效果已关闭',previewNative:'原生模式示意；实际颜色由网站决定。',previewDisabled:'扩展已关闭；这里只展示你保存的样式。',previewSite:'预览站点',presetUltraHint:'极光 · 字符 · 流动',presetFocusHint:'聚光 · 清晰 · 轻柔',presetEcoHint:'纯色 · 无动态',controlsLabel:'设置分类',themeSection:'主题与配色',detailsSection:'细节',appearanceHint:'先选一种底色，再加一点自己的光。',
       translationTitle:'只在你点击时翻译',translationHint:'默认关闭。点击页面上的翻译按钮后，已显示的思考文本会发送到你配置的服务；该服务可能收费。不会读取隐藏思考。',
       thoughtTranslate:'启用可见思考翻译',thoughtView:'译文视图',viewBilingual:'双语对照',viewImmersive:'只看译文',
       thoughtEndpoint:'兼容接口完整地址',endpointHint:'HTTPS；仅本机 localhost / 127.0.0.1 允许 HTTP。填写完整的 /chat/completions 地址。',
@@ -75,22 +79,22 @@
     'en-US': {
       appTitle:'Obsidian Prism',appSub:'A different light for every conversation.',independent:'ChatGPT & Gemini · Community port',
       masterEnable:'Enable Prism',masterHint:'Turn off anytime to restore the original page',hostChatGPT:'ChatGPT',hostGemini:'Gemini',
-      tabAppearance:'Appearance',tabWorkbench:'Reading',tabMotion:'Motion',tabThought:'Translate',tabAbout:'About',
-      scenePresets:'Quick scenes',presetUltra:'Radiance',presetFocus:'Focus',presetEco:'Eco',
+      tabAppearance:'Appearance',tabWorkbench:'Reading',tabMotion:'Effects',tabThought:'Translate',tabAbout:'About',
+      scenePresets:'Quick scenes',presetUltra:'Aurora',presetFocus:'Focus',presetEco:'Still',
       themeMode:'Color mode',modeAuto:'System',modeDark:'Dark',modeLight:'Light',darkPalette:'Dark palette',lightPalette:'Light palette',
       palObsidian:'Obsidian',palWarm:'Warm Basalt',palCrystal:'Crystal',palAlabaster:'Alabaster',palHost:'Keep native colors',paletteHint:'Choose a card to preview its light or dark mode.',
       accentTone:'Accent',accFollow:'Site',accCobalt:'Cobalt',accIris:'Iris',accAmber:'Amber',accMono:'Titanium',
       cornerStyle:'Corners',cornerSharp:'Sharp',cornerBalanced:'Balanced',cornerSoft:'Soft',languageLabel:'Language',
-      previewTitle:'Appearance preview',previewPrompt:'Make complicated ideas feel clear.',previewReply:'Begin with one small question. Then go deeper.',previewInput:'Keep exploring…',previewBadge:'Live preview',
+      previewTitle:'Appearance preview',previewPrompt:'Make complicated ideas feel clear.',previewReply:'Begin with one small question. Then go deeper.',previewInput:'Keep exploring…',previewBadge:'Style preview',
       readingTitle:'Make long conversations easier',readingHint:'Extra controls only appear on supported sites.',
       stickyCodeHeader:'Sticky code headers',longCodeFold:'Fold long code manually',longCodeFoldHint:'Adds a button at 48 lines; original text stays intact.',
       railOutline:'Conversation outline',railHint:'Find and jump to a question.',turnJumpShortcuts:'Alt + ↑ / ↓ between questions',shortcutHint:'Never takes over shortcuts while typing.',
       contextVial:'Context estimate',contextHint:'Estimates loaded messages only, not actual usage, quota or model capacity.',contextWindow:'Manual reference capacity',
       codeFont:'Code font',fontDefault:'System monospace',fontHint:'Uses locally installed fonts, with a system fallback.',codeLigatures:'Code ligatures',
-      sidebarCompact:'Compact sidebar',composerRestyle:'Composer styling',motionTitle:'Just enough movement',motionHint:'Respects your system’s reduced motion preference.',
+      sidebarCompact:'Compact sidebar',composerRestyle:'Composer styling',motionTitle:'Light with room to breathe',motionHint:'Tune the light, texture and movement separately. Reduced motion keeps a still atmosphere.',
       motionLevel:'Motion level',motionUltra:'Full',motionSubtle:'Subtle',motionOff:'Off',ambientIntensity:'Ambient glow',
       streamChoreography:'New response text fade',streamHint:'Enabled when supported; does not rewrite message text.',semanticAura:'Response activity glow',
-      mascotLabel:'Pixel companion',mascotCrab:'Pixel crab',mascotCat:'Iris cat',mascotTower:'Stacked crew',mascotOff:'Off',
+      ambientStyle:'Light field',styleAurora:'Aurora',styleSpotlight:'Spotlight',styleNone:'No glow',ambientTexture:'Texture',textureOff:'None',textureGrid:'Grid',textureGlyphs:'Glyphs',motionSpeed:'Movement speed',speedSlow:'Slow',speedNormal:'Normal',speedFast:'Lively',composerGlow:'Composer glow',composerGlowHint:'A soft edge and underglow while the composer is focused.',sidebarStyle:'Sidebar surface',sidebarGlass:'Translucent',sidebarSolid:'Solid',sidebarNative:'Native',layoutTitle:'Sidebar & composer',layoutHint:'Quiet borders, layered surfaces and a clear active conversation.',atmosphereShortcut:'Adjust light & motion',effectSummary:'Atmosphere',effectsPaused:'Animation is off',effectsReduced:'System preference: still light',effectsActive:'Atmosphere enabled',effectNone:'Background effects are off',previewNative:'Native preview is illustrative; the site chooses its colors.',previewDisabled:'The extension is off; this shows your saved style only.',previewSite:'Preview site',presetUltraHint:'Aurora · Glyphs · Flow',presetFocusHint:'Spotlight · Calm',presetEcoHint:'Solid · Still',controlsLabel:'Settings categories',themeSection:'Theme & color',detailsSection:'Details',appearanceHint:'Choose a canvas. Then add a little light of your own.',
       translationTitle:'Translate only when you click',translationHint:'Off by default. Clicking a page translation button sends the displayed thought text to your configured service, which may charge a fee. Hidden reasoning is never accessed.',
       thoughtTranslate:'Enable visible thought translation',thoughtView:'Translation view',viewBilingual:'Bilingual',viewImmersive:'Translation only',
       thoughtEndpoint:'Full compatible API endpoint',endpointHint:'HTTPS required, except HTTP on localhost / 127.0.0.1. Include the complete /chat/completions path.',
@@ -211,10 +215,12 @@
       accent:cfg.accentTone, corners:cfg.cornerStyle, 'code-font':cfg.codeFont,
       ligatures:String(cfg.codeLigatures), motion: reduced ? 'off' : cfg.motionLevel,
       'sidebar-compact':String(cfg.sidebarCompact), composer:String(cfg.composerRestyle),
-      'sticky-code':String(cfg.stickyCodeHeader), lang:cfg.language
+      'sticky-code':String(cfg.stickyCodeHeader), lang:cfg.language,
+      'ambient-style':cfg.ambientStyle, texture:cfg.ambientTexture, 'motion-speed':cfg.motionSpeed,
+      'composer-glow':String(cfg.composerGlow), 'sidebar-style':cfg.sidebarStyle
     };
     for (const [key,value] of Object.entries(attributes)) if (root.getAttribute('data-op-'+key) !== value) root.setAttribute('data-op-'+key,value);
-    const alpha = ((cfg.ambientIntensity/100)*0.22).toFixed(3);
+    const alpha = (cfg.ambientIntensity/100).toFixed(3);
     if (root.style.getPropertyValue('--op-ambient-alpha') !== alpha) root.style.setProperty('--op-ambient-alpha',alpha);
     return true;
   }

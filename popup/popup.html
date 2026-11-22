@@ -1,5 +1,5 @@
 <!doctype html>
-<!-- Community adaptation of Obsidian Prism. Modified 2026-11-21. GPL-3.0-only. -->
+<!-- Obsidian Prism community adaptation. Modified 2026-11-21. GPL-3.0-only. -->
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8">
@@ -11,35 +11,49 @@
   <script src="../src/config-schema.js" defer></script>
   <script src="popup.js" defer></script>
 </head>
-<body>
+<body data-active-tab="appearance">
   <div class="app-shell">
-    <header class="brand">
-      <img src="../icons/icon-48.png" width="42" height="42" alt="" class="brand-icon">
-      <div class="brand-copy"><div class="brand-line"><h1 data-i18n="appTitle">黑曜棱镜</h1><span class="version">WEB</span></div><p data-i18n="appSub">为每一次对话，换一种光。</p></div>
-      <button type="button" class="icon-button" id="btn-open-options" data-title="openFullOptions" aria-label="打开完整设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/></svg></button>
-    </header>
-    <p class="eyebrow" data-i18n="independent">ChatGPT 与 Gemini · 社区移植版</p>
     <fieldset id="settings-fields" disabled>
-      <div class="master-row"><label for="cfg-enabled"><strong data-i18n="masterEnable">启用 Prism</strong><small data-i18n="masterHint">随时关闭，恢复网页原有外观</small></label><input type="checkbox" role="switch" class="switch" id="cfg-enabled"></div>
-      <div class="site-row"><label><input type="checkbox" id="cfg-enableChatGPT"><span>ChatGPT</span></label><label><input type="checkbox" id="cfg-enableGemini"><span>Gemini</span></label><span class="local-pill"><i></i><span id="local-label">LOCAL</span></span></div>
-      <div class="preset-row"><span data-i18n="scenePresets">一键场景</span><button type="button" data-preset="ultra"><span aria-hidden="true">✦</span><span data-i18n="presetUltra">光彩</span></button><button type="button" data-preset="focus"><span aria-hidden="true">◉</span><span data-i18n="presetFocus">专注</span></button><button type="button" data-preset="eco"><span aria-hidden="true">◌</span><span data-i18n="presetEco">省电</span></button></div>
-      <div class="tabs" role="tablist" aria-label="Settings sections"><button role="tab" id="tab-appearance" aria-controls="panel-appearance" aria-selected="true" data-tab="appearance" data-i18n="tabAppearance">外观</button><button role="tab" id="tab-reading" aria-controls="panel-reading" aria-selected="false" tabindex="-1" data-tab="reading" data-i18n="tabWorkbench">阅读</button><button role="tab" id="tab-motion" aria-controls="panel-motion" aria-selected="false" tabindex="-1" data-tab="motion" data-i18n="tabMotion">动效</button><button role="tab" id="tab-translation" aria-controls="panel-translation" aria-selected="false" tabindex="-1" data-tab="translation" data-i18n="tabThought">翻译</button><button role="tab" id="tab-about" aria-controls="panel-about" aria-selected="false" tabindex="-1" data-tab="about" data-i18n="tabAbout">关于</button></div>
-      <div class="workspace">
+      <header class="brand">
+        <img src="../icons/icon-48.png" width="32" height="32" alt="" class="brand-icon">
+        <div class="brand-copy"><h1 data-i18n="appTitle">黑曜棱镜</h1><p>PRISM / WEB <span id="version-label"></span></p></div>
+        <label class="master-control" for="cfg-enabled"><span data-i18n="masterEnable">启用 Prism</span><input type="checkbox" role="switch" class="switch" id="cfg-enabled"></label>
+        <button type="button" class="icon-button" id="btn-open-options" data-title="openFullOptions" aria-label="打开完整设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/></svg></button>
+      </header>
+      <div class="site-row"><label><input type="checkbox" id="cfg-enableChatGPT"><span>ChatGPT</span></label><label><input type="checkbox" id="cfg-enableGemini"><span>Gemini</span></label><span class="local-pill"><i></i>LOCAL FIRST</span></div>
+      <nav class="tabs" role="tablist" aria-label="设置分类">
+        <button type="button" role="tab" id="tab-appearance" aria-controls="panel-appearance" aria-selected="true" data-tab="appearance"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 4v16M4 12h16"/></svg><span data-i18n="tabAppearance">外观</span></button>
+        <button type="button" role="tab" id="tab-motion" aria-controls="panel-motion" aria-selected="false" tabindex="-1" data-tab="motion"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l2.3 6.7L21 12l-6.7 2.3L12 21l-2.3-6.7L3 12l6.7-2.3z"/></svg><span data-i18n="tabMotion">光影</span><i class="tab-spark"></i></button>
+        <button type="button" role="tab" id="tab-reading" aria-controls="panel-reading" aria-selected="false" tabindex="-1" data-tab="reading"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h14v16H5zM8 8h8M8 12h8M8 16h5"/></svg><span data-i18n="tabWorkbench">阅读</span></button>
+        <button type="button" role="tab" id="tab-translation" aria-controls="panel-translation" aria-selected="false" tabindex="-1" data-tab="translation"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 6h11M8 3v3M5 6c0 5 4 8 8 10M12 6c0 5-4 8-8 10M14 20l4-10 4 10M15.5 17h5"/></svg><span data-i18n="tabThought">翻译</span></button>
+        <button type="button" role="tab" id="tab-about" aria-controls="panel-about" aria-selected="false" tabindex="-1" data-tab="about"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><path d="M12 11v6M12 7v1"/></svg><span data-i18n="tabAbout">关于</span></button>
+      </nav>
+      <div class="preset-row" aria-label="一键场景">
+        <button type="button" class="scene scene-aurora" data-preset="ultra"><i aria-hidden="true"></i><span><strong data-i18n="presetUltra">流光</strong><small data-i18n="presetUltraHint">极光 · 字符 · 流动</small></span></button>
+        <button type="button" class="scene scene-focus" data-preset="focus"><i aria-hidden="true"></i><span><strong data-i18n="presetFocus">专注</strong><small data-i18n="presetFocusHint">聚光 · 清晰 · 轻柔</small></span></button>
+        <button type="button" class="scene scene-eco" data-preset="eco"><i aria-hidden="true"></i><span><strong data-i18n="presetEco">静默</strong><small data-i18n="presetEcoHint">纯色 · 无动态</small></span></button>
+      </div>
+      <div class="workspace" id="settings-scroll">
+        <aside class="preview-column">
+          <div class="preview-heading"><span data-i18n="previewTitle">外观预览</span><div class="preview-sites" role="group" aria-label="预览站点"><button type="button" data-preview-site="chatgpt" aria-pressed="true">ChatGPT</button><button type="button" data-preview-site="gemini" aria-pressed="false">Gemini</button></div><small data-i18n="previewBadge">样式预览</small></div>
+          <div class="chat-preview" id="chat-preview" data-motion="subtle" data-ambient="aurora" data-texture="glyphs" data-sidebar="glass">
+            <div class="preview-atmosphere" aria-hidden="true"></div><div class="preview-texture" aria-hidden="true"></div>
+            <div class="preview-side"><span class="preview-orb">✦</span><span class="preview-nav-active"></span><i></i><i></i><i></i><i></i><i></i><span class="preview-avatar">P</span></div>
+            <div class="preview-thread"><div class="preview-top"><span id="preview-host-name">ChatGPT</span><span>✦</span></div><div class="preview-bubble" data-i18n="previewPrompt">让复杂的想法变得清楚。</div><p class="preview-reply" data-i18n="previewReply">从一个小问题开始，再慢慢深入。</p><pre><code><span>const</span> clarity = <b>true</b>;</code></pre><div class="preview-input"><span data-i18n="previewInput">继续探索…</span><div class="preview-composer-tools"><i>＋</i><span>⌘</span><b>↑</b></div></div></div>
+          </div>
+          <div class="preview-caption"><span class="effect-dot"></span><span id="effect-status" role="status"></span></div>
+          <p class="preview-note" id="preview-note"></p>
+        </aside>
         <main id="panels">
           <section id="panel-appearance" role="tabpanel" aria-labelledby="tab-appearance"></section>
-          <section id="panel-reading" role="tabpanel" aria-labelledby="tab-reading" hidden></section>
           <section id="panel-motion" role="tabpanel" aria-labelledby="tab-motion" hidden></section>
+          <section id="panel-reading" role="tabpanel" aria-labelledby="tab-reading" hidden></section>
           <section id="panel-translation" role="tabpanel" aria-labelledby="tab-translation" hidden></section>
           <section id="panel-about" role="tabpanel" aria-labelledby="tab-about" hidden></section>
         </main>
-        <aside class="preview-column" aria-label="Appearance preview">
-          <div class="preview-heading"><span data-i18n="previewTitle">外观预览</span><small data-i18n="previewBadge">实时预览</small></div>
-          <div class="chat-preview" id="chat-preview"><div class="preview-side"><span class="preview-orb">✦</span><i></i><i></i><i></i><i></i></div><div class="preview-thread"><div class="preview-top">Prism <span>✦</span></div><div class="preview-bubble" data-i18n="previewPrompt">让复杂的想法变得清楚。</div><p class="preview-reply" data-i18n="previewReply">从一个小问题开始，再慢慢深入。</p><pre><code><span>const</span> clarity = <b>true</b>;</code></pre><div class="preview-input"><span data-i18n="previewInput">继续探索…</span><b>↑</b></div></div></div>
-          <p class="preview-note" data-i18n="paletteHint">选择色卡可立即预览对应的明暗模式。</p>
-        </aside>
       </div>
     </fieldset>
-    <footer><span id="status-msg" role="status" aria-live="polite"></span><span class="footer-name">PRISM / WEB <span id="version-label"></span></span></footer>
+    <footer><span class="save-dot" aria-hidden="true"></span><span id="status-msg" role="status" aria-live="polite"></span><span class="footer-name">PRISM</span></footer>
   </div>
 </body>
 </html>

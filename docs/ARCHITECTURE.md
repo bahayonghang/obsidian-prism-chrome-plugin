@@ -45,7 +45,9 @@ The outline derives from recognized user turns already loaded in the DOM. It doe
 
 The context display uses a documented heuristic rather than a model-specific tokenizer or account API. It cannot see the actual hidden prompt, server truncation, attachment encoding, cache accounting or model window size. Its user-selected reference capacity, defaulting to 128K, is only a visual scale; the fill level is not account quota or a detected model limit. Product text must label it as an estimate.
 
-Companions are local SVG pixel drawings of a crab and cat, with a two-companion arrangement, bounded pointer/keyboard movement and finite click effects. The browser adaptation does not include the upstream desktop physics simulation or a continuously running animation loop.
+Pixel companions were removed in v0.2.0; the retired `mascot` setting is ignored. Ambient environments now use three CSS transform/opacity layers and optional fixed decorative glyph/grid textures. These are never derived from user content. The stage sits behind text inside an isolated recognized main surface and cannot receive pointer events. Bounds follow resize/scroll events, without permanent JavaScript polling. CSS motion pauses for hidden pages, disabled motion and reduced-motion preferences. A visible moving background still incurs rendering work.
+
+Adapters also identify whole composer shells and left navigation surfaces, using explicit selectors before constrained semantic/geometry fallbacks. The runtime records original marker attribute values, restores them when a surface changes or the extension is disabled, and reattaches owned layers after host replacement. The native editor, attachments and navigation nodes are not rebuilt.
 
 ## Optional translation
 

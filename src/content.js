@@ -34,9 +34,10 @@
   let lastEstimate = 0;
   let estimate = {user:0, assistant:0, code:0, total:0};
   let fadeEntries = [];
-  let mascotTimer = null;
-  let mascotClicks = 0;
-  let lastMascotClick = 0;
+  let surfaceObserver = null;
+  let primarySurface = null;
+  let geometryFrame = null;
+  const surfaceMarks = new Map();
   const codes = new Map();
   const thoughts = new Map();
   const fades = ['op-stream-f0','op-stream-f1','op-stream-f2','op-stream-f3','op-stream-f4'];
@@ -336,84 +337,16 @@
     jump(index + (event.key === 'ArrowUp' ? -1 : 1));
   }
 
-  const PIXELS = {
-    crab: [[2,1,2,2,'#e59377'],[12,1,2,2,'#e59377'],[1,3,2,2,'#d97757'],[13,3,2,2,'#d97757'],[3,4,10,6,'#d97757'],[4,3,8,1,'#e59377'],[5,5,2,2,'#181413'],[9,5,2,2,'#181413'],[5,5,1,1,'#fff'],[9,5,1,1,'#fff'],[2,10,2,2,'#c25934'],[5,10,2,3,'#c25934'],[9,10,2,3,'#c25934'],[12,10,2,2,'#c25934']],
-    cat: [[3,1,2,3,'#8b5cf6'],[11,1,2,3,'#8b5cf6'],[3,4,10,7,'#a58af8'],[5,6,2,2,'#16121d'],[9,6,2,2,'#16121d'],[7,8,2,1,'#f6cb75'],[13,7,2,4,'#8b5cf6'],[4,11,2,2,'#7c3aed'],[10,11,2,2,'#7c3aed']]
-  };
-  function sprite(kind) {
-    const svg = document.createElementNS('http://www.w3.org/2000/svg','svg');
-    svg.setAttribute('viewBox','0 0 16 14'); svg.setAttribute('aria-hidden','true'); svg.setAttribute('shape-rendering','crispEdges');
-    for (const [x,y,width,height,fill] of PIXELS[kind]) {
-      const rect = document.createElementNS('http://www.w3.org/2000/svg','rect');
-      for (const [key,value] of Object.entries({x,y,width,height,fill})) rect.setAttribute(key,String(value));
-      svg.append(rect);
-    }
-    return svg;
-  }
   function setDockOpen(open) {
     if (!dock) return;
     const popover = dock.querySelector('.op-vial-popover');
     if (popover) popover.hidden = !open;
     dock.querySelector('.op-vial-pill')?.setAttribute('aria-expanded',String(open));
   }
-  function moveDock(x,y) {
-    if (!dock) return;
-    dock.style.left = Math.max(8,Math.min(innerWidth-dock.offsetWidth-8,x))+'px';
-    dock.style.top = Math.max(8,Math.min(innerHeight-dock.offsetHeight-8,y))+'px';
-    dock.style.right = 'auto'; dock.style.bottom = 'auto';
-  }
-  function bindMascot(button) {
-    let drag = null;
-    let dragged = false;
-    button.addEventListener('pointerdown',event => {
-      if (event.button !== 0) return;
-      const rect = dock.getBoundingClientRect();
-      drag = {x:event.clientX,y:event.clientY,left:rect.left,top:rect.top}; dragged = false;
-      button.setPointerCapture(event.pointerId);
-    });
-    button.addEventListener('pointermove',event => {
-      if (!drag) return;
-      const dx = event.clientX-drag.x, dy = event.clientY-drag.y;
-      if (Math.abs(dx)+Math.abs(dy)>4) dragged = true;
-      if (dragged) { event.preventDefault(); moveDock(drag.left+dx,drag.top+dy); }
-    });
-    const endDrag = () => { drag = null; };
-    button.addEventListener('pointerup',endDrag); button.addEventListener('pointercancel',endDrag);
-    button.addEventListener('click', () => {
-      if (dragged) { dragged = false; return; }
-      if (!motionAllowed()) return;
-      const now = performance.now();
-      mascotClicks = now-lastMascotClick<1500 ? mascotClicks+1 : 1; lastMascotClick = now;
-      button.classList.remove('is-bouncing','is-rainbow');
-      void button.offsetWidth;
-      button.classList.add(mascotClicks >= 5 ? 'is-rainbow' : 'is-bouncing');
-      if (mascotClicks >= 5) mascotClicks = 0;
-      clearTimeout(mascotTimer);
-      mascotTimer = setTimeout(() => { mascotTimer=null; button.classList.remove('is-bouncing','is-rainbow'); },1300);
-    });
-    button.addEventListener('keydown',event => {
-      if (event.key === 'Home') { dock.style.cssText=''; event.preventDefault(); return; }
-      if (!event.shiftKey || !['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(event.key)) return;
-      const rect = dock.getBoundingClientRect(); event.preventDefault();
-      moveDock(rect.left+(event.key==='ArrowLeft'?-16:event.key==='ArrowRight'?16:0),rect.top+(event.key==='ArrowUp'?-16:event.key==='ArrowDown'?16:0));
-    });
-    button.addEventListener('dblclick', () => { if(dock) dock.style.cssText=''; });
-  }
   function syncDock() {
-    if (!cfg.contextVial && cfg.mascot === 'off') { dock?.remove(); dock=null; return; }
+    if (!cfg.contextVial) { dock?.remove(); dock=null; return; }
     if (!dock) { dock=own(make('aside','op-dock')); dock.id='op-bottom-dock'; document.body.append(dock); }
     if (!dock.isConnected) document.body.append(dock);
-    let mascot = dock.querySelector('.op-mascot');
-    if (cfg.mascot === 'off') mascot?.remove();
-    else {
-      if (!mascot) { mascot=make('button','op-mascot'); dock.prepend(mascot); bindMascot(mascot); }
-      mascot.title=local('拖动伙伴；Shift+方向键移动；Home 复位；点击互动','Drag companion; Shift+arrows move; Home resets; click to play');
-      mascot.setAttribute('aria-label',mascot.title);
-      if (mascot.dataset.kind !== cfg.mascot) {
-        mascot.dataset.kind=cfg.mascot;
-        mascot.replaceChildren(...(cfg.mascot==='tower' ? [sprite('crab'),sprite('cat')] : [sprite(cfg.mascot)]));
-      }
-    }
     let vial = dock.querySelector('.op-vial-pill');
     if (!cfg.contextVial) { vial?.remove(); dock.querySelector('.op-vial-popover')?.remove(); return; }
     if (!vial) {
@@ -528,11 +461,91 @@
       setText(entry.disclosure,`${t('translationConsent')} (${destination})`);
     }
   }
+  // Mark native surfaces reversibly. Never wrap or recreate the site's editor,
+  // navigation buttons, or framework-owned message structure.
+  function restoreSurfaceMark(element, attribute, original) {
+    if (original === null) element.removeAttribute(attribute);
+    else if (element.getAttribute(attribute) !== original) element.setAttribute(attribute,original);
+  }
+  function clearSurfaceMarks() {
+    for (const [element, attributes] of surfaceMarks) {
+      for (const [attribute, original] of attributes) restoreSurfaceMark(element,attribute,original);
+    }
+    surfaceMarks.clear();
+    surfaceObserver?.disconnect();surfaceObserver=null;primarySurface=null;
+  }
+  function syncSurfaces() {
+    const targets = new Map();
+    const add = (element, attribute) => {
+      if (!element?.isConnected || Adapters.isOwned(element)) return;
+      if (!targets.has(element)) targets.set(element,new Set());
+      targets.get(element).add(attribute);
+    };
+    const nextPrimary = adapter.primarySurface?.() || null;
+    add(nextPrimary,'data-op-main-surface');
+    if (cfg.composerRestyle) add(adapter.composerSurface?.(),'data-op-composer-surface');
+    if (cfg.sidebarStyle !== 'native') {
+      for (const element of adapter.sidebarSurfaces?.() || []) add(element,'data-op-sidebar-surface');
+    }
+    for (const [element, attributes] of surfaceMarks) {
+      for (const [attribute, original] of attributes) {
+        if (!targets.get(element)?.has(attribute)) {
+          restoreSurfaceMark(element,attribute,original);attributes.delete(attribute);
+        }
+      }
+      if (!attributes.size) surfaceMarks.delete(element);
+    }
+    for (const [element, attributes] of targets) {
+      if (!surfaceMarks.has(element)) surfaceMarks.set(element,new Map());
+      const originals = surfaceMarks.get(element);
+      for (const attribute of attributes) {
+        if (!originals.has(attribute)) originals.set(attribute,element.getAttribute(attribute));
+        if (element.getAttribute(attribute) !== 'true') element.setAttribute(attribute,'true');
+      }
+    }
+    if (nextPrimary !== primarySurface) {
+      surfaceObserver?.disconnect();surfaceObserver=null;primarySurface=nextPrimary;
+      if (primarySurface && global.ResizeObserver) {
+        surfaceObserver=new ResizeObserver(scheduleGeometry);
+        surfaceObserver.observe(primarySurface);
+      }
+    }
+    const home = String(!adapter.userTurns().length && !adapter.assistantTurns().length);
+    if (document.documentElement.getAttribute('data-op-home') !== home) document.documentElement.setAttribute('data-op-home',home);
+    document.documentElement.setAttribute('data-op-visibility',document.hidden?'hidden':'visible');
+  }
+  function updateAmbientGeometry() {
+    geometryFrame=null;
+    if (!ambient || !primarySurface?.isConnected || !enabled || document.hidden) return;
+    const rect=primarySurface.getBoundingClientRect();
+    const left=Math.max(0,Math.min(innerWidth,rect.left));
+    const top=Math.max(0,Math.min(innerHeight,rect.top));
+    const width=Math.max(0,Math.min(innerWidth,rect.right)-left);
+    const height=Math.max(0,Math.min(innerHeight,rect.bottom)-top);
+    for (const [key,value] of Object.entries({left,top,width,height})) {
+      const pixels=Math.round(value)+'px';
+      if (ambient.style[key]!==pixels) ambient.style[key]=pixels;
+    }
+  }
+  function scheduleGeometry() {
+    if (!enabled || document.hidden || !ambient || geometryFrame) return;
+    geometryFrame=requestAnimationFrame(updateAmbientGeometry);
+  }
   function syncAmbient() {
-    const needed=cfg.ambientIntensity>0 || cfg.semanticAura;
-    if(!needed) {ambient?.remove();ambient=null;return;}
-    if(!ambient) {ambient=own(make('div','op-ambient'));ambient.id='op-ambient-stage';ambient.setAttribute('aria-hidden','true');document.body.append(ambient);}
-    if(!ambient.isConnected) document.body.append(ambient);
+    const needed=(cfg.ambientIntensity>0 && (cfg.ambientStyle!=='none' || cfg.ambientTexture!=='off')) || cfg.semanticAura;
+    if (!needed || !primarySurface) {ambient?.remove();ambient=null;return;}
+    if (!ambient) {
+      ambient=own(make('div','op-ambient'));ambient.id='op-ambient-stage';ambient.setAttribute('aria-hidden','true');
+      const wash=make('div','op-ambient-wash');
+      for (const layer of ['one','two','three']) wash.append(make('i','op-aurora op-aurora-'+layer));
+      const glyphs=make('div','op-ambient-glyphs');
+      // Fixed decorative characters: never derived from prompts, replies, or keys.
+      const alphabet='01:<>[]{}+*PRISM';
+      glyphs.textContent=Array.from({length:44},(_,row)=>Array.from({length:126},(_,column)=>alphabet[(row*11+column*7+row*column*3)%alphabet.length]).join('')).join('\n');
+      ambient.append(wash,make('div','op-ambient-grid'),glyphs,make('div','op-ambient-rim'));
+    }
+    if (ambient.parentElement!==primarySurface) primarySurface.append(ambient);
+    updateAmbientGeometry();
   }
   function resetConversation() {
     activeTurn=-1; railSignature=''; lastEstimate=0;
@@ -545,7 +558,7 @@
     if(!enabled || stopped || document.hidden || !document.body) return;
     passes++;
     if(route!==location.href) {route=location.href;revision++;resetConversation();}
-    syncAmbient(); syncCodes(); syncRail(); syncDock(); syncThoughts();
+    syncSurfaces(); syncAmbient(); syncCodes(); syncRail(); syncDock(); syncThoughts();
   }
   function suspend() {
     enabled=false;
@@ -554,7 +567,10 @@
     events?.abort();events=null;
     clearTimeout(pending);pending=null;
     if(scrollFrame) cancelAnimationFrame(scrollFrame);scrollFrame=null;
-    clearTimeout(mascotTimer);mascotTimer=null;
+    if(geometryFrame) cancelAnimationFrame(geometryFrame);geometryFrame=null;
+    clearSurfaceMarks();
+    document.documentElement.removeAttribute('data-op-home');
+    document.documentElement.removeAttribute('data-op-visibility');
     clearActivity();
     for(const [pre,entry] of codes) cleanupCode(pre,entry);
     for(const [element,entry] of thoughts) cleanupThought(element,entry);
@@ -588,13 +604,15 @@
       if(dock&&!dock.contains(event.target)) setDockOpen(false);
     });
     listen(document,'scroll',()=>{
+      scheduleGeometry();
       if(scrollFrame||document.hidden) return;
       scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;activeTurn=nearestTurn();updateRailActive();});
     },{capture:true,passive:true});
-    listen(window,'resize',()=>{if(dock?.style.left){const rect=dock.getBoundingClientRect();moveDock(rect.left,rect.top);}});
+    listen(window,'resize',()=>{scheduleGeometry();schedule();});
     listen(window,'popstate',schedule);listen(window,'hashchange',schedule);
     listen(document,'visibilitychange',()=>{
-      if(document.hidden) {clearActivity();clearTimeout(pending);pending=null;}
+      document.documentElement.setAttribute('data-op-visibility',document.hidden?'hidden':'visible');
+      if(document.hidden) {clearActivity();clearTimeout(pending);pending=null;if(geometryFrame)cancelAnimationFrame(geometryFrame);geometryFrame=null;}
       else {lastEstimate=0;schedule();}
     });
     scan();
@@ -626,7 +644,7 @@
   });
   global.ObsidianPrismRuntime=Object.freeze({
     refresh:schedule,
-    diagnostics:()=>({passes,enabled,observing:Boolean(observer),pending:Boolean(pending),codeBlocks:codes.size,thoughtBlocks:thoughts.size}),
+    diagnostics:()=>({passes,enabled,observing:Boolean(observer),pending:Boolean(pending),codeBlocks:codes.size,thoughtBlocks:thoughts.size,surfaces:surfaceMarks.size}),
     stop(){
       stopped=true;revision++;suspend();unsubscribe();
       systemTheme.removeEventListener('change',mediaChanged);reducedMotion.removeEventListener('change',mediaChanged);
