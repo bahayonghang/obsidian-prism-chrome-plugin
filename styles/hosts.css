@@ -31,6 +31,15 @@ html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-pale
 html[data-op-enabled="true"][data-op-host="chatgpt"] [data-message-author-role="user"] > div {
   border-radius: var(--op-radius-lg) !important;
 }
+/* Literal host bubble backgrounds do not follow --message-surface. Pair their
+ * surface and text colors; the legacy fallback accepts only nonempty text
+ * leaves, so attachment cards and action containers keep their own surfaces. */
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-message-author-role="user"] :where(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"]),
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-message-author-role="user"] > div:not(:empty):not(:has(> *)) {
+  background: color-mix(in srgb,var(--op-accent) 8%,var(--op-secondary)) !important;
+  color: var(--op-fg) !important;
+  border-radius: var(--op-radius-lg) !important;
+}
 
 /* Gemini's Material tokens are similarly limited to its primary chat surface. */
 html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] {

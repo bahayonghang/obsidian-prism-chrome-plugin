@@ -165,13 +165,13 @@ async function settledSurfaceStyle(page, selector, property) {
   }, property);
 }
 
-async function settleFixtureScreenshot(page) {
-  // Only native surface transitions; the ambient drift intentionally remains live.
-  await Promise.all([
-    settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow'),
-    settledSurfaceStyle(page, '[data-fixture-sidebar] [aria-current="page"]', 'backgroundColor')
-  ]);
-  const colors = await page.locator('[data-fixture-sidebar] [aria-current="page"]').evaluate(node => ({ foreground: getComputedStyle(node).color, background: getComputedStyle(node).backgroundColor }));
+async function surfaceColors(page, selector) {
+  return page.locator(selector).evaluate(node => ({ foreground: getComputedStyle(node).color, background: getComputedStyle(node).backgroundColor }));
+}
+
+async function assertReadableSurface(page, selector, label) {
+  await settledSurfaceStyle(page, selector, 'backgroundColor');
+  const colors = await surfaceColors(page, selector);
   const parse = value => {
     const srgb = value.startsWith('color(srgb ');
     if (!srgb && !/^rgba?\(/.test(value)) return null;
@@ -180,12 +180,19 @@ async function settleFixtureScreenshot(page) {
     return numbers.slice(0, 3).map(number => number / (srgb ? 1 : value.includes('%') ? 100 : 255));
   };
   const foreground = parse(colors.foreground), background = parse(colors.background);
-  if (foreground && background) {
-    const luminance = rgb => rgb.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
-    const a = luminance(foreground), b = luminance(background);
-    const contrast = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-    assert.ok(contrast >= 4.5, `settled active history text needs readable contrast; measured ${contrast.toFixed(2)}:1 (${colors.foreground} on ${colors.background})`);
-  } else console.log('NOTE active history contrast requires visual review for computed colors', colors);
+  assert.ok(foreground && background, `${label}: expected opaque sRGB fixture colors, received ${JSON.stringify(colors)}`);
+  const luminance = rgb => rgb.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+  const a = luminance(foreground), b = luminance(background);
+  const contrast = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  assert.ok(contrast >= 4.5, `${label}: settled text needs readable contrast; measured ${contrast.toFixed(2)}:1 (${colors.foreground} on ${colors.background})`);
+}
+
+async function settleFixtureScreenshot(page) {
+  // Only native surface transitions; the ambient drift intentionally remains live.
+  await Promise.all([
+    settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow'),
+    assertReadableSurface(page, '[data-fixture-sidebar] [aria-current="page"]', 'active history')
+  ]);
 }
 
 async function decorationVisible(page, selector) {
@@ -430,6 +437,11 @@ async function exerciseFixture(browser, host) {
     const originalText = await page.locator('pre code').textContent();
     const originalBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
     const originalSurfaces = await surfaceSnapshot(page);
+    // Read the element that paints the bubble, not its transparent turn wrapper.
+    const bubbleSelector = host === 'chatgpt'
+      ? '[data-testid="conversation-turn-0"] [data-message-author-role="user"] > div'
+      : '.thread > user-query:first-of-type user-query-content.user-query-bubble-with-background';
+    const originalBubbleColors = await surfaceColors(page, bubbleSelector);
     await page.evaluate(() => {
       window.__nativeCode = document.querySelector('pre code');
       window.__nativeCopy = document.querySelector('[data-native-copy]');
@@ -453,7 +465,31 @@ async function exerciseFixture(browser, host) {
     assert.equal(await page.evaluate(() => document.querySelector('[data-fixture-composer] [contenteditable="true"]') === __nativeEditor), true);
     assert.equal(await page.locator('[class*="mascot"],[id*="mascot"]').count(), 0, 'pet UI is removed completely');
     await settleFixtureScreenshot(page);
+    await assertReadableSurface(page, bubbleSelector, `${host} dark user bubble`);
     await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-default.png`), fullPage: true });
+
+    await page.evaluate(() => __prismFixture.patch({ themeMode: 'light', lightPreset: 'crystal' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
+    await assertReadableSurface(page, bubbleSelector, `${host} light user bubble`);
+    await page.evaluate(() => __prismFixture.patch({ themeMode: 'dark', palette: 'host' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'host');
+    await settledSurfaceStyle(page, bubbleSelector, 'backgroundColor');
+    assert.deepEqual(await surfaceColors(page, bubbleSelector), originalBubbleColors, `${host}: host palette preserves native user bubble colors`);
+
+    // An explicit nested bubble must work too, without repainting an attachment.
+    if (host === 'chatgpt') await page.evaluate(() => {
+      const probe = document.createElement('section'); probe.id = 'prism-nested-bubble-regression';
+      probe.innerHTML = '<div data-message-author-role="user"><div><div id="prism-nested-bubble" class="bg-token-message-surface" style="background:#f1f2f4"><span>Nested synthetic question</span></div><div id="prism-bubble-attachment" style="background:#304860;color:#fff"><button type="button">Synthetic attachment</button></div></div></div>';
+      document.body.append(probe);
+    });
+    const attachmentBackground = host === 'chatgpt' ? (await surfaceColors(page, '#prism-bubble-attachment')).background : null;
+    await page.evaluate(() => __prismFixture.patch({ palette: 'obsidian' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'dark' && document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
+    if (host === 'chatgpt') {
+      await assertReadableSurface(page, '#prism-nested-bubble', 'ChatGPT nested explicit user bubble');
+      assert.equal((await surfaceColors(page, '#prism-bubble-attachment')).background, attachmentBackground, 'the bubble theme leaves native attachment backgrounds intact');
+      await page.evaluate(() => document.getElementById('prism-nested-bubble-regression').remove());
+    }
     await exerciseNativeComposer(page);
 
     assert.equal(await page.evaluate(host => ObsidianPrismAdapters.forHost(host).userTurns().length, host), 3, `${host}: no nested duplicate turns`);
@@ -576,6 +612,8 @@ async function exerciseFixture(browser, host) {
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), originalBackground);
     assert.deepEqual(await surfaceSnapshot(page), originalSurfaces, 'disable restores native sidebar and composer styles');
+    await settledSurfaceStyle(page, bubbleSelector, 'backgroundColor');
+    assert.deepEqual(await surfaceColors(page, bubbleSelector), originalBubbleColors, `${host}: disable restores native user bubble colors`);
     assert.equal(await page.locator('[data-fixture-composer]').getAttribute('data-op-composer-surface'), 'fixture-original');
     assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"]').count(), 0);
     assert.equal(await page.locator('pre code').textContent(), originalText);
