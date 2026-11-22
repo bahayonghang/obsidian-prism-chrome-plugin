@@ -24,6 +24,8 @@ Values the probe did not measure are inferred and labelled in the fixture CSS: C
 
 `tests/measure.mjs` provides shared helpers that measure user-visible results. These are `paragraphWidth` (box and widest rendered line), `sampleBelow`/`capturePixels`/`regionStats` (decoded screenshot pixels), `headingStyles` (computed h1–h4 and body typography), `controlGeometry` (control rectangles relative to a container) and `setMainWidth` (resizes the viewport so the main area has an exact width). The existing Content Width Preset smoke test uses `paragraphWidth`.
 
+`tests/heading-typography.mjs` (`checkHeadingTypography`, part of the live-fixture subset) injects the extension into both live fixtures and checks the conversation heading contract with `headingStyles`. Outside Native Palette, each h1–h4 has the paragraph's computed font family, also after a test stylesheet switches the message body to a monospace stack. Weight and size satisfy h1 ≥ h2 ≥ h3 ≥ h4 with a strict step per pair, and Gemini's h2 is no lighter than its h3. ChatGPT keeps its native sizes and never gets lighter. Heading colour equals `--op-fg` with at least 4.5:1 contrast against the composited background in Obsidian (dark) and Crystal (light). Headings added at test time cover a User Turn (in scope) and host chrome and the sidebar (out of scope). Native Palette and a disabled extension must give exactly the native computed styles. The native Gemini fixture fails the font-family and h2/h3 checks as a negative case.
+
 ## Read-only structure probe (developer tool)
 
 `tools/structure-probe.js` re-collects live structure evidence after a host redesign. It is syntax-checked by `npm run check`, and the release build allowlist excludes it. A Node test asserts that it is never packaged.
