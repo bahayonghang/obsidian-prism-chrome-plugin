@@ -89,12 +89,16 @@ test('fold compensation identifies the nested conversation scroller', () => {
   assert.equal(A.scrollContainer(code), scroller);
 });
 
-test('token estimation is deterministic for empty, Latin, CJK and surrogate-pair text', () => {
+test('token estimation is calibrated for empty, whitespace, Latin, CJK, code and surrogate-pair text', () => {
   const A = adapters();
   assert.equal(A.estimateTokens(''), 0);
-  assert.equal(A.estimateTokens('abcd'), 2);
-  assert.equal(A.estimateTokens('工业'), 3);
-  assert.equal(A.estimateTokens('😀😀😀😀'), 2, 'count Unicode code points, not surrogate halves');
+  assert.equal(A.estimateTokens('   \n\t '), 0);
+  assert.equal(A.estimateTokens('abcd'), 1);
+  assert.equal(A.estimateTokens('abcdefgh'), 2);
+  assert.equal(A.estimateTokens('一二三四五六七八九十'), 7);
+  assert.equal(A.estimateTokens('😀😀😀😀'), 1, 'count Unicode code points, not surrogate halves');
+  assert.equal(A.estimateTokens('const x = 1;', { mode: 'code' }), 4);
+  assert.equal(A.estimateTokens('const x = 1;'), 3);
   assert.equal(A.forHost('unrelated-host', {}), null);
 });
 
@@ -357,4 +361,122 @@ test('Gemini 2026 adapter exposes code-block shell, mode switcher, add trigger, 
   assert.equal(adapter.composerScrimSurface(composer), dock);
   assert.equal(adapter.threadColumns().includes(thread), true);
   assert.equal(adapter.composerColumns(composer).includes(composerCol), true);
+});
+
+test('cleanTurnText strips UI chrome and optionally excludes code blocks', () => {
+  const A = adapters();
+  const { el } = makeDoc('chatgpt');
+  const turn = el('article', { 'data-testid': 'conversation-turn-5', 'data-turn': 'assistant' });
+  turn.append(
+    el('h6', { class: 'sr-only' }, { textContent: 'ChatGPT said:' }),
+    el('div', { 'data-op-owned': '' }, { textContent: 'Translate thoughts' }),
+    el('script', {}, { textContent: 'var secret = 1;' }),
+    el('style', {}, { textContent: '.x { color: red; }' }),
+    el('svg', {}, { textContent: 'icon' }),
+    el('div', { hidden: '' }, { textContent: 'Hidden text' }),
+    el('div', { 'aria-hidden': 'true' }, { textContent: 'Aria hidden' }),
+    el('button', {}, { textContent: 'Copy' }),
+    el('span', { role: 'button' }, { textContent: 'Retry' }),
+    el('div', { class: 'turn-actions' }, { textContent: 'Like Dislike' }),
+    el('div', { 'data-testid': 'turn-actions' }, { textContent: 'Share' }),
+    el('div', { 'data-testid': 'citation-pill' }, { textContent: 'Source 1' }),
+    el('span', { class: 'citation-chip' }, { textContent: 'Ref A' }),
+    el('message-actions', {}, { textContent: 'More' }),
+    el('p', {}, { textContent: 'Main prose answer.' })
+  );
+  const cb = el('div', { 'data-testid': 'code-block' });
+  cb.append(
+    el('div', { class: 'code-header' }, { textContent: 'JavaScript' }),
+    el('div', { class: 'code-block-decoration' }, { textContent: 'Decor' }),
+    el('div', { 'data-testid': 'code-block-header' }, { textContent: 'Copy' }),
+    el('div', { 'data-test-id': 'code-block-header' }, { textContent: 'Run' })
+  );
+  const pre = el('pre');
+  pre.append(el('code', {}, { textContent: 'const x = 1;' }));
+  cb.append(pre);
+  turn.append(cb);
+
+  assert.equal(A.cleanTurnText(turn, { excludeCode: true }), 'Main prose answer.');
+  const withCode = A.cleanTurnText(turn);
+  assert.equal(withCode.includes('Main prose answer.'), true);
+  assert.equal(withCode.includes('const x = 1;'), true);
+  assert.equal(withCode.includes('ChatGPT said'), false);
+  assert.equal(withCode.includes('JavaScript'), false);
+  assert.equal(withCode.includes('Source 1'), false);
+});
+
+test('estimateTurnTokens separates prose and code without double counting', () => {
+  const A = adapters();
+  const { el } = makeDoc('chatgpt');
+  const turn = el('article', { 'data-turn': 'assistant' });
+  turn.append(
+    el('h6', { class: 'sr-only' }, { textContent: 'ChatGPT said:' }),
+    el('p', {}, { textContent: '12345678' }), // 8 chars -> 2 prose tokens
+    el('div', { class: 'code-header' }, { textContent: 'JavaScript' })
+  );
+  const pre = el('pre');
+  pre.append(
+    el('button', {}, { textContent: 'Copy' }),
+    el('code', {}, { textContent: '1234567890123456' }) // 16 chars -> 5 code tokens (16 / 3.2 = 5)
+  );
+  turn.append(pre);
+
+  const result = A.estimateTurnTokens(turn);
+  assert.deepEqual({ ...result }, { prose: 2, code: 5, total: 7 });
+  assert.deepEqual({ ...A.estimateTurnTokens(null) }, { prose: 0, code: 0, total: 0 });
+});
+
+test('resolveReferenceCapacity maps ChatGPT and Gemini models, falls back cleanly, and honors manual overrides', () => {
+  const A = adapters();
+  assert.deepEqual({ ...A.resolveReferenceCapacity('chatgpt', 'ChatGPT 5.2', 128000) }, {
+    tokens: 128000, mode: 'manual', matched: true, modelLabel: 'ChatGPT 5.2'
+  });
+
+  // Gemini auto mappings
+  assert.deepEqual({ ...A.resolveReferenceCapacity('gemini', 'Gemini 1.5 Pro', 'auto') }, {
+    tokens: 2000000, mode: 'auto', matched: true, modelLabel: 'Gemini 1.5 Pro'
+  });
+  for (const label of ['Gemini 2.5 Pro', 'Gemini 2.0 Flash', 'Gemini 3', '2.5 Flash', 'Thinking', 'Gemini Ultra']) {
+    const res = A.resolveReferenceCapacity('gemini', label, 'auto');
+    assert.equal(res.tokens, 1000000, label);
+    assert.equal(res.mode, 'auto', label);
+    assert.equal(res.matched, true, label);
+  }
+  for (const label of ['Gemini', '', 'Unknown']) {
+    const res = A.resolveReferenceCapacity('gemini', label, 'auto');
+    assert.equal(res.tokens, 1000000, label);
+    assert.equal(res.mode, 'auto', label);
+    assert.equal(res.matched, false, label);
+  }
+
+  // ChatGPT auto mappings
+  assert.deepEqual({ ...A.resolveReferenceCapacity('chatgpt', 'GPT-4.1', 'auto') }, {
+    tokens: 1000000, mode: 'auto', matched: true, modelLabel: 'GPT-4.1'
+  });
+  for (const label of ['ChatGPT 5.2', 'ChatGPT 5.1', 'GPT-5', 'ChatGPT 5']) {
+    const res = A.resolveReferenceCapacity('chatgpt', label, 'auto');
+    assert.equal(res.tokens, 400000, label);
+    assert.equal(res.mode, 'auto', label);
+    assert.equal(res.matched, true, label);
+  }
+  for (const label of ['o1', 'o3-mini', 'o4-mini']) {
+    const res = A.resolveReferenceCapacity('chatgpt', label, 'auto');
+    assert.equal(res.tokens, 200000, label);
+    assert.equal(res.mode, 'auto', label);
+    assert.equal(res.matched, true, label);
+  }
+  for (const label of ['GPT-4o', 'GPT-4']) {
+    const res = A.resolveReferenceCapacity('chatgpt', label, 'auto');
+    assert.equal(res.tokens, 128000, label);
+    assert.equal(res.mode, 'auto', label);
+    assert.equal(res.matched, true, label);
+  }
+  assert.equal(A.resolveReferenceCapacity('chatgpt', 'GPT-3.5', 'auto').tokens, 32000);
+  assert.equal(A.resolveReferenceCapacity('chatgpt', 'GPT-3.5', 'auto').matched, true);
+  for (const label of ['ChatGPT', '', 'Plus']) {
+    const res = A.resolveReferenceCapacity('chatgpt', label, 'auto');
+    assert.equal(res.tokens, 128000, label);
+    assert.equal(res.mode, 'auto', label);
+    assert.equal(res.matched, false, label);
+  }
 });

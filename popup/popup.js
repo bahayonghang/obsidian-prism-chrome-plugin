@@ -52,11 +52,11 @@
     card('detailsSection','<div class="two-fields">'+select('cornerStyle','cornerStyle',[['sharp','cornerSharp'],['balanced','cornerBalanced'],['soft','cornerSoft']])+select('language','languageLabel',[['zh-CN',null],['en-US',null]])+'</div>');
   $('cfg-language').options[0].textContent='简体中文'; $('cfg-language').options[1].textContent='English';
   $('panel-reading').innerHTML = intro('readingTitle','readingHint')+card('tabWorkbench',toggle('railOutline','railHint')+toggle('turnJumpShortcuts','shortcutHint')+toggle('stickyCodeHeader')+toggle('longCodeFold','longCodeFoldHint'))+
-    card('contextVial',toggle('contextVial','contextHint')+select('contextWindowTokens','contextWindow',[[32000,null],[128000,null],[200000,null],[512000,null],[1000000,null]],null,true))+
+    card('contextVial',toggle('contextVial','contextHint')+select('contextWindowTokens','contextWindow',[['auto','contextWindowAuto'],[32000,null],[128000,null],[200000,null],[400000,null],[512000,null],[1000000,null],[2000000,null]],null,true))+
     card('codeFont',select('codeFont','codeFont',[['default','fontDefault'],['jetbrains',null],['fira',null],['cascadia',null]],'fontHint')+toggle('codeLigatures'));
   const fonts = {'jetbrains':'JetBrains Mono','fira':'Fira Code','cascadia':'Cascadia Code'};
   for(const option of $('cfg-codeFont').options) if(fonts[option.value]) option.textContent=fonts[option.value];
-  for(const option of $('cfg-contextWindowTokens').options) option.textContent=Number(option.value).toLocaleString();
+  for(const option of $('cfg-contextWindowTokens').options) if(option.value!=='auto') option.textContent=Number(option.value).toLocaleString();
   const atmosphereCards='<div class="atmosphere-cards">'+[['aurora','styleAurora'],['spotlight','styleSpotlight'],['none','styleNone']].map(([value,label])=>'<button type="button" class="atmosphere-card" data-choice="ambientStyle" data-value="'+value+'" aria-pressed="false"><i aria-hidden="true"></i>'+text(label)+'</button>').join('')+'</div>';
   $('panel-motion').innerHTML = intro('motionTitle','motionHint')+card('ambientStyle',atmosphereCards+
     '<div class="field"><div class="range-label"><label class="field-label" for="cfg-ambientIntensity" data-i18n="ambientIntensity"></label><output for="cfg-ambientIntensity" id="val-ambientIntensity">65%</output></div><input type="range" id="cfg-ambientIntensity" min="0" max="100" step="1"><div class="range-track-labels"><span>0%</span><span>100%</span></div></div>'+
@@ -161,7 +161,7 @@
     const input=$('cfg-'+key);if(!input) continue;
     input.addEventListener('change',()=>{
       if(key==='ambientIntensity') {clearTimeout(rangeTimer);queueSave({ambientIntensity:Number(input.value)});return;}
-      const value=input.type==='checkbox'?input.checked:key==='contextWindowTokens'?Number(input.value):input.value;
+      const value=input.type==='checkbox'?input.checked:key==='contextWindowTokens'?(input.value==='auto'?'auto':Number(input.value)):input.value;
       if(key==='thoughtEndpoint' && input.value.trim() && !Schema.validEndpoint(input.value)) {status('endpointRequired',true);return;}
       queueSave({[key]:value});
     });

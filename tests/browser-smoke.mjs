@@ -144,6 +144,12 @@ async function actualChromiumExtension() {
     await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientStyle === 'spotlight');
     await popup.locator('#cfg-ambientTexture').selectOption('grid');
     await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientTexture === 'grid');
+    await popup.locator('#tab-reading').click();
+    assert.equal(await popup.locator('#cfg-contextWindowTokens').inputValue(), 'auto');
+    await popup.locator('#cfg-contextWindowTokens').selectOption('400000');
+    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contextWindowTokens === 400000);
+    await popup.locator('#cfg-contextWindowTokens').selectOption('auto');
+    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contextWindowTokens === 'auto');
     await options.setViewportSize({ width: 420, height: 600 });
     assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options remain responsive at 420 pixels');
     await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-420.png') });
@@ -647,7 +653,22 @@ async function exerciseFixture(browser, host) {
     await page.locator('[data-native-copy]').click();
     assert.equal(await page.evaluate(() => __copyCount), 1, 'native copy control and listeners are preserved');
 
+    const expectedCapacity = host === 'chatgpt' ? '400.0K' : '1.0M';
+    const expectedCapacityFull = host === 'chatgpt' ? '400,000' : '1,000,000';
+    await page.waitForFunction(cap => document.querySelector('.op-vial-summary')?.textContent.includes(cap), expectedCapacity);
+    const vialSummary = await page.locator('.op-vial-summary').textContent();
+    assert.ok(vialSummary.includes('+ / ' + expectedCapacity), `${host}: expected attachment '+' and auto-matched capacity ${expectedCapacity}, got "${vialSummary}"`);
+    await page.locator('.op-vial-pill').click();
+    await page.waitForFunction(() => !document.querySelector('#op-vial-popover')?.hidden);
+    const vialDetails = await page.locator('.op-vial-details').textContent();
+    const vialNote = await page.locator('.op-vial-note').textContent();
+    assert.ok(vialDetails.includes(expectedCapacityFull) && vialDetails.includes('Auto-matched'), `${host}: vial details must report ${expectedCapacityFull} and Auto-matched, got "${vialDetails}"`);
+    assert.ok(vialDetails.includes('Uncounted attachments') && vialNote.includes('Visible attachments detected'), `${host}: vial popover must surface uncounted attachments`);
+    await page.locator('.op-vial-pill').click();
+
     await page.locator('.op-rail-toggle').click();
+    const railTexts = await page.locator('.op-rail-text').allTextContents();
+    assert.equal(railTexts.some(text => text.includes('You said')), false, `${host}: rail outline must strip .sr-only prefix`);
     await page.locator('.op-rail-search').fill('optimization');
     assert.equal(await page.locator('.op-rail-item:visible').count(), 1);
     await page.locator('.op-rail-item:visible').click();

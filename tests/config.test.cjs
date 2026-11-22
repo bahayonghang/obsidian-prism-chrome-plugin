@@ -5,6 +5,7 @@ const { harness, plain, rootElement } = require('./helpers.cjs');
 
 test('configuration admits only known own fields with strict value types', () => {
   const { schema: S } = harness();
+  assert.equal(S.DEFAULT_CONFIG.contextWindowTokens, 'auto');
   const raw = Object.assign(Object.create({ enabled: false }), {
     enableGemini: 'false', palette: 'warm', ambientIntensity: 101.4, contextWindowTokens: '128000',
     thoughtApiKey: 'FAKE_SECRET', malicious: '<script>', thoughtEndpoint: 'javascript:alert(1)', thoughtModel: 'test\ninjected'
@@ -14,13 +15,24 @@ test('configuration admits only known own fields with strict value types', () =>
   assert.equal(result.enableGemini, true, 'string false must not become a boolean');
   assert.equal(result.palette, 'warm');
   assert.equal(result.ambientIntensity, 100);
-  assert.equal(result.contextWindowTokens, S.DEFAULT_CONFIG.contextWindowTokens);
+  assert.equal(result.contextWindowTokens, 'auto');
   assert.equal(result.thoughtEndpoint, '');
   assert.equal(result.thoughtModel, '');
   assert.equal(Object.hasOwn(result, 'thoughtApiKey'), false);
   assert.equal(Object.hasOwn(result, 'malicious'), false);
   assert.deepEqual(plain(S.sanitizePatch([])), {});
   assert.deepEqual(plain(S.sanitizePatch({ enabled: false, ambientIntensity: NaN })), { enabled: false });
+});
+
+test('contextWindowTokens accepts auto and supported numeric capacities while preserving legacy numbers', () => {
+  const { schema: S } = harness();
+  for (const valid of ['auto', 32000, 128000, 200000, 400000, 512000, 1000000, 2000000]) {
+    assert.equal(S.sanitizeConfig({ contextWindowTokens: valid }).contextWindowTokens, valid);
+  }
+  for (const invalid of ['128000', '400000', 'manual', 99999, NaN, null, true]) {
+    assert.deepEqual(plain(S.sanitizePatch({ contextWindowTokens: invalid })), {});
+    assert.equal(S.sanitizeConfig({ contextWindowTokens: invalid }).contextWindowTokens, 'auto');
+  }
 });
 
 test('light-field controls accept supported choices and reject accidental string booleans', () => {
@@ -108,6 +120,16 @@ test('appearance application and settings operations never touch host localStora
 test('locale dictionaries cover identical visible setting keys', () => {
   const { schema: S } = harness();
   assert.deepEqual(Object.keys(S.I18N['zh-CN']).sort(), Object.keys(S.I18N['en-US']).sort());
+  for (const key of [
+    'contextWindow', 'contextWindowAuto', 'vialCapacity',
+    'vialSourceAutoMatched', 'vialSourceAutoFallback', 'vialSourceManual',
+    'vialUncountedAttachments', 'vialAttachmentsUnit', 'vialAttachmentNote'
+  ]) {
+    assert.equal(Object.hasOwn(S.I18N['zh-CN'], key), true, `zh-CN missing ${key}`);
+    assert.equal(Object.hasOwn(S.I18N['en-US'], key), true, `en-US missing ${key}`);
+  }
+  assert.equal(S.I18N['zh-CN'].contextWindow, '参考容量');
+  assert.equal(S.I18N['en-US'].contextWindow, 'Reference capacity');
   for (const lang of ['zh-CN', 'en-US']) for (const [key, value] of Object.entries(S.I18N[lang])) assert.equal(typeof value === 'string' && value.length > 0, true, `${lang}.${key}`);
 });
 

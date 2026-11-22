@@ -3,10 +3,12 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { harness } = require('./helpers.cjs');
 
-function createRuntimeDom(initialConfig = {}) {
+function createRuntimeDom(initialConfig = {}, options = {}) {
+  const host = options.host || 'chatgpt';
   const h = harness({
     storage: { obsidianPrismWebConfig_v1: { enabled: true, themeMode: 'dark', palette: 'obsidian', composerRestyle: true, ...initialConfig } }
   });
+  if (host === 'gemini') h.context.location.hostname = 'gemini.google.com';
   const elements = new Map();
   function makeEl(tag, attrs = {}) {
     const map = new Map(Object.entries(attrs).map(([k, v]) => [k, String(v)]));
@@ -61,6 +63,7 @@ function createRuntimeDom(initialConfig = {}) {
           for (const c of cur.children || []) {
             if (sel.startsWith('.') && String(c.className || '').split(/\s+/).includes(sel.slice(1))) out.push(c);
             else if (sel === '[data-turn]' && c.dataset && c.dataset.turn !== undefined) out.push(c);
+            else if (sel === c.tagName.toLowerCase()) out.push(c);
             walk(c);
           }
         };
@@ -89,14 +92,19 @@ function createRuntimeDom(initialConfig = {}) {
   const codeHeader = makeEl('div');
   const spacer = makeEl('div');
   const userTurn = makeEl('article', { 'data-turn': 'user' });
+  userTurn.textContent = 'Sample user question';
   const assistantTurn = makeEl('article', { 'data-turn': 'assistant' });
+  assistantTurn.textContent = 'Sample assistant answer';
 
   for (const [k, v] of Object.entries({ docEl, body, primary, threadCol, composerCol, composer, scrim, addBtn, modelBtn, chip, codeSurface, codeHeader, spacer, userTurn, assistantTurn })) {
     elements.set(k, v);
   }
 
+  let currentModel = options.modelLabel ?? (host === 'gemini' ? 'Gemini 2.5 Pro' : 'ChatGPT 5.2');
+  let currentAttachments = options.attachments ?? [];
+
   const fakeAdapter = {
-    host: 'chatgpt',
+    host,
     userTurns: () => [userTurn],
     assistantTurns: () => [assistantTurn],
     primarySurface: () => primary,
@@ -111,8 +119,8 @@ function createRuntimeDom(initialConfig = {}) {
     threadTailSpacers: () => [spacer],
     threadColumns: () => [threadCol],
     composerColumns: () => [composerCol],
-    visibleAttachments: () => [],
-    activeModelLabel: () => 'ChatGPT 5.2',
+    visibleAttachments: () => currentAttachments,
+    activeModelLabel: () => currentModel,
     sidebarSurfaces: () => [],
     sidebarActiveRows: () => [],
     codeBlocks: () => [],
@@ -145,16 +153,27 @@ function createRuntimeDom(initialConfig = {}) {
   h.context.MutationObserver = class { observe() {} disconnect() {} };
   h.context.requestAnimationFrame = () => 1;
   h.context.cancelAnimationFrame = () => {};
-  h.context.performance = { now: () => 100 };
+  let nowMs = 100;
+  h.context.performance = { now: () => nowMs };
+  h.load('src/adapters.js');
+  const realAdapters = h.context.ObsidianPrismAdapters;
   h.context.ObsidianPrismAdapters = {
+    ...realAdapters,
     forHost: () => fakeAdapter,
     isOwned: n => Boolean(n && n.getAttribute && n.getAttribute('data-op-owned') !== null),
-    textOf: () => 'Sample turn text',
-    visibleText: () => 'Sample turn text',
-    estimateTokens: () => 4
+    textOf: n => (n && n.textContent) || 'Sample turn text',
+    visibleText: n => (n && n.textContent) || 'Sample turn text',
+    cleanTurnText: options.cleanTurnText || ((n, opts) => realAdapters.cleanTurnText(n, opts)),
+    estimateTurnTokens: options.estimateTurnTokens || (n => realAdapters.estimateTurnTokens(n))
   };
   h.load('src/content.js');
-  return { h, elements, runtime: h.context.ObsidianPrismRuntime };
+  return {
+    h, elements, body,
+    runtime: h.context.ObsidianPrismRuntime,
+    setModel(label) { currentModel = label; },
+    setAttachments(list) { currentAttachments = list; },
+    advanceTime(ms) { nowMs += ms; }
+  };
 }
 
 test('runtime marks all v0.3.0 surfaces reversibly, respects host palette and composer toggle, and leaves zero residue on stop', async () => {
@@ -214,4 +233,76 @@ test('runtime marks all v0.3.0 surfaces reversibly, respects host palette and co
   assert.equal(e.threadCol.getAttribute('data-op-thread-column'), null);
   assert.equal(e.composerCol.getAttribute('data-op-composer-column'), null);
   assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'host-orig');
+});
+
+test('syncDock resolves auto/manual reference capacity, renders attachment indicator, and refreshes immediately on model change', async () => {
+  const ctx = createRuntimeDom(
+    { language: 'en-US', contextWindowTokens: 'auto' },
+    { host: 'chatgpt', modelLabel: 'ChatGPT 5.2', attachments: [{ id: 'a1' }, { id: 'a2' }] }
+  );
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const summary = ctx.body.querySelector('.op-vial-summary');
+  const details = ctx.body.querySelector('.op-vial-details');
+  const note = ctx.body.querySelector('.op-vial-note');
+  const detailsText = () => details.children.map(n => n.textContent).join(' | ');
+
+  assert.match(summary.textContent, /^≈ \d+\+ \/ 400\.0K$/);
+  assert.equal(detailsText().includes('Reference capacity'), true);
+  assert.equal(detailsText().includes('400,000'), true);
+  assert.equal(detailsText().includes('Auto-matched'), true);
+  assert.equal(detailsText().includes('ChatGPT 5.2'), true);
+  assert.equal(detailsText().includes('Uncounted attachments'), true);
+  assert.equal(detailsText().includes('2 files'), true);
+  assert.equal(note.textContent.includes('Visible attachments detected; their contents are not counted above.'), true);
+
+  // Changing model label refreshes immediately even without advancing 750ms
+  ctx.setModel('GPT-4o');
+  ctx.setAttachments([]);
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 180));
+  assert.match(summary.textContent, /^≈ \d+ \/ 128\.0K$/);
+  assert.equal(detailsText().includes('128,000'), true);
+  assert.equal(detailsText().includes('GPT-4o'), true);
+  assert.equal(detailsText().includes('Uncounted attachments'), false);
+  assert.equal(note.textContent.includes('Visible attachments detected'), false);
+
+  // Manual override supersedes auto model match
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, language: 'en-US', contextWindowTokens: 200000 }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.match(summary.textContent, /^≈ \d+ \/ 200\.0K$/);
+  assert.equal(detailsText().includes('Manual'), true);
+
+  // Gemini 2.5 Pro resolves to 1.0M in auto mode
+  const gem = createRuntimeDom(
+    { language: 'zh-CN', contextWindowTokens: 'auto' },
+    { host: 'gemini', modelLabel: 'Gemini 2.5 Pro', attachments: [] }
+  );
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.match(gem.body.querySelector('.op-vial-summary').textContent, /^≈ \d+ \/ 1\.0M$/);
+  const gemDetails = gem.body.querySelector('.op-vial-details').children.map(n => n.textContent).join(' | ');
+  assert.equal(gemDetails.includes('自动匹配'), true);
+  assert.equal(gemDetails.includes('Gemini 2.5 Pro'), true);
+  gem.runtime.stop();
+  ctx.runtime.stop();
+});
+
+test('syncRail uses cleanTurnText to strip sr-only and button chrome from outline labels', async () => {
+  const seen = [];
+  const ctx = createRuntimeDom(
+    { language: 'en-US' },
+    {
+      cleanTurnText: node => {
+        seen.push(node);
+        return 'Clean question text';
+      }
+    }
+  );
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(seen.length >= 1, true);
+  const itemText = ctx.body.querySelector('.op-rail-text').textContent;
+  assert.equal(itemText, 'Clean question text');
+  assert.equal(ctx.body.querySelector('.op-rail-tick').title, 'Clean question text');
+  ctx.runtime.stop();
 });
