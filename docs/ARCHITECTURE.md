@@ -49,6 +49,12 @@ Pixel companions were removed in v0.2.0; the retired `mascot` setting is ignored
 
 Adapters also identify whole composer shells and left navigation surfaces, using explicit selectors before constrained semantic/geometry fallbacks. The runtime records original marker attribute values, restores them when a surface changes or the extension is disabled, and reattaches owned layers after host replacement. The native editor, attachments and navigation nodes are not rebuilt.
 
+From v0.2.1, composer backdrops are distinct from the input card. Only a bounded ancestor chain inside a recognized footer and empty noninteractive fade layers receives `data-op-composer-backdrop`; its background paint is cleared without changing content, display or geometry. Selection flags on nested sidebar elements are normalized to one interactive row with `data-op-sidebar-active`. Native `aria-current`, `aria-selected` and `data-active` changes trigger the same coalesced lifecycle. Both marker types retain and restore prior attribute values; native palette/disabled modes do not override their colors.
+
+## Settings sizing
+
+Toolbar popups negotiate their viewport from the content's intrinsic size. Their 440×600 document dimensions must not be capped by the initial popup viewport through `100vw`/`100vh`, otherwise a small initial viewport can keep the page collapsed. The options document has its own early mode marker and remains viewport-responsive. Chromium CI calls `action.openPopup()` and inspects the resulting popup view without device-metric overrides; the tiny-iframe sizing regression is a separate cross-engine check, not an installed-extension claim.
+
 ## Optional translation
 
 Only a user-requested, already visible thought block is eligible. Settings contain the endpoint and model; credentials are stored separately. A configuration export never includes credentials. Importing preferences must not enable transmission or grant permissions silently.

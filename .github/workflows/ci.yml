@@ -57,10 +57,25 @@ jobs:
       - name: Install optional browser test tools
         run: npm install --no-save --package-lock=false playwright@1.62.1
       - run: npx playwright install --with-deps ${{ matrix.browser }}
-      - run: npm run test:browser
+      - run: xvfb-run -a --server-args="-screen 0 1600x1200x24" npm run test:browser
         env:
           PRISM_BROWSER: ${{ matrix.browser }}
+          PRISM_ACTION_HEADED: ${{ matrix.browser == 'chromium' && '1' || '0' }}
           PRISM_EXTENSION_DIR: dist/${{ matrix.browser == 'chromium' && 'chrome' || 'firefox' }}
+      - name: Install native Firefox popup tools
+        if: matrix.browser == 'firefox'
+        run: |
+          python3 -m pip install selenium==4.53.0
+          mkdir -p "$RUNNER_TEMP/prism-geckodriver"
+          curl --fail --location --retry 3 https://github.com/mozilla/geckodriver/releases/download/v0.37.1/geckodriver-v0.37.1-linux64.tar.gz -o "$RUNNER_TEMP/prism-geckodriver/archive.tar.gz"
+          tar -xzf "$RUNNER_TEMP/prism-geckodriver/archive.tar.gz" -C "$RUNNER_TEMP/prism-geckodriver"
+      - name: Verify native Firefox toolbar popup
+        if: matrix.browser == 'firefox'
+        run: |
+          xvfb-run -a --server-args="-screen 0 1600x1200x24" python3 tests/native-firefox-popup.py \
+            --firefox-binary "$(node -p "require('playwright').firefox.executablePath()")" \
+            --geckodriver "$RUNNER_TEMP/prism-geckodriver/geckodriver" \
+            --extension-dir dist/firefox --artifact-dir test-artifacts/native-firefox
       - name: Save synthetic browser screenshots
         if: always()
         uses: actions/upload-artifact@v4

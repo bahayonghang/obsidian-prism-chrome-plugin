@@ -12,6 +12,8 @@ Updated 2026-11-21. This document distinguishes implemented checks from complete
 | `npm run test:browser` | Local ChatGPT/Gemini fixtures in Chromium; extension settings when available | Current live site variants, real model output or paid translation |
 | `PRISM_BROWSER=firefox npm run test:browser` | The shared DOM runtime against local fixtures in Firefox | A fully installed/signed Firefox extension lifecycle |
 
+With `PRISM_ACTION_HEADED=1`, Chromium's extension check uses a real toolbar popup in a visible browser window (CI supplies Xvfb), measures its natural size and exercises settings without a viewport override. Both engines also load the actual popup files inside a 25×25 initial iframe to catch intrinsic-size regressions; this iframe check alone is not native extension installation. The standalone `tests/native-firefox-popup.py` adds a temporary-installation Firefox check; its execution result is recorded separately below.
+
 Normal checks need Node.js 22+ and Python 3.9+ and have no npm dependencies. The optional browser runner needs Playwright 1.62.1 and its browsers. See the README for installation commands.
 
 The browser runner must fail if its requested engine cannot launch; a sandbox or missing-browser error is **not a passing test**. In an environment that blocks browser subprocesses or sockets, report the limitation and run these checks elsewhere.
@@ -100,3 +102,9 @@ Representative popup, full-settings and home/conversation screenshots were inspe
 Browser execution took place in GitHub Actions because the authoring workspace denied browser-process socket creation. No authenticated ChatGPT/Gemini session, real translation API request, store submission or Mozilla signing was used. The real-site checklist above remains unchecked, and the declared minimum browser versions were not run separately.
 
 This documentation-only completion record does not claim a further CI run. Final packages are rebuilt from `main`; their executable files match the tested PR head, while bundled documentation includes this record.
+
+## v0.2.1 regression execution record
+
+Tracked in [Issue #5](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/issues/5) and [Issue #6](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/issues/6). Execution evidence will be filled after CI completes.
+
+The v0.2.0 popup screenshots came from ordinary extension tabs with a forced 440×600 or 420×600 viewport. They did not verify the browser action's intrinsic sizing. The new action check is deliberately separate from those page-layout checks. Footer fixtures now include opaque nested wrappers and decorative fade layers; sidebar fixtures include nested selected flags and dynamic state migration.

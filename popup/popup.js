@@ -1,6 +1,12 @@
 /** Community adaptation of Obsidian Prism. Modified 2026-11-21. SPDX-License-Identifier: GPL-3.0-only */
 (function () {
   'use strict';
+  // Separate viewport-responsive options from the intrinsically sized action
+  // popup before rendering controls or starting asynchronous extension reads.
+  const isOptionsPage = new URLSearchParams(location.search).get('mode')==='options';
+  document.documentElement.classList.toggle('is-options-document',isOptionsPage);
+  document.body.classList.toggle('is-options-page',isOptionsPage);
+  if(isOptionsPage) document.getElementById('btn-open-options').hidden=true;
   const Schema = globalThis.ObsidianPrismSchema;
   const api = Schema.getExtApi();
   let confirmed = {...Schema.DEFAULT_CONFIG};
@@ -234,7 +240,6 @@
     try {await saves;const result=await Schema.sendMessage({type:'OP_CONFIG_RESET'});confirmed=result.config;pending.clear();render();status('statusSaved');}catch(_){status('statusError',true);}
   });
   Schema.subscribe(cfg=>{confirmed=cfg;render();});
-  if(new URLSearchParams(location.search).get('mode')==='options') {document.body.classList.add('is-options-page');$('btn-open-options').hidden=true;}
   try {$('version-label').textContent=api.runtime.getManifest().version;}catch(_){}
   render();
   Schema.loadConfig().then(async config=>{

@@ -483,9 +483,17 @@
     };
     const nextPrimary = adapter.primarySurface?.() || null;
     add(nextPrimary,'data-op-main-surface');
-    if (cfg.composerRestyle) add(adapter.composerSurface?.(),'data-op-composer-surface');
+    const composer = adapter.composerSurface?.() || null;
+    if (cfg.composerRestyle) add(composer,'data-op-composer-surface');
+    // Backdrops belong to the page canvas, not the input card. Keep their
+    // reversible bridge independent of the optional composer restyling.
+    for (const element of adapter.composerBackdropSurfaces?.(composer) || []) {
+      add(element,'data-op-composer-backdrop');
+    }
     if (cfg.sidebarStyle !== 'native') {
-      for (const element of adapter.sidebarSurfaces?.() || []) add(element,'data-op-sidebar-surface');
+      const sidebars = adapter.sidebarSurfaces?.() || [];
+      for (const element of sidebars) add(element,'data-op-sidebar-surface');
+      for (const element of adapter.sidebarActiveRows?.(sidebars) || []) add(element,'data-op-sidebar-active');
     }
     for (const [element, attributes] of surfaceMarks) {
       for (const [attribute, original] of attributes) {
@@ -587,7 +595,7 @@
       documentObserver.observe(document.documentElement,{childList:true,attributes:true,attributeFilter:['class','data-theme']});
       observedBody=document.body;
       if(observedBody) {
-        observer.observe(observedBody,{childList:true,subtree:true,characterData:true,characterDataOldValue:true,attributes:true,attributeFilter:['hidden','open','class','aria-hidden','aria-expanded','data-is-streaming']});
+        observer.observe(observedBody,{childList:true,subtree:true,characterData:true,characterDataOldValue:true,attributes:true,attributeFilter:['hidden','open','class','aria-hidden','aria-expanded','aria-current','aria-selected','data-active','data-is-streaming']});
         documentObserver.observe(observedBody,{attributes:true,attributeFilter:['class','data-theme']});
       }
     }

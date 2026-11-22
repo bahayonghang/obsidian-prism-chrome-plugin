@@ -124,7 +124,9 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]):not([data-o
   background-color: color-mix(in srgb,var(--op-accent) 7%,var(--op-secondary)) !important;
   color: var(--op-fg) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]):not([data-op-sidebar-style="native"]) [data-op-sidebar-surface="true"] :is([aria-current="page"],[aria-current="true"],[data-active="true"],[aria-selected="true"]) {
+/* The adapter chooses one interactive row when the host repeats its active
+ * state on a wrapper, link and title. Nested text never gets a second edge. */
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]):not([data-op-sidebar-style="native"]) [data-op-sidebar-surface="true"] [data-op-sidebar-active="true"] {
   background-color: color-mix(in srgb,var(--op-accent) 11%,var(--op-card)) !important;
   color: var(--op-fg) !important;
   box-shadow: inset 2px 0 0 color-mix(in srgb,var(--op-accent) 62%,transparent);
@@ -135,6 +137,17 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]):not([data-o
 html[data-op-enabled="true"][data-op-sidebar-compact="true"]:not([data-op-sidebar-style="native"]) [data-op-sidebar-surface="true"] a {
   padding-top: 5px !important;
   padding-bottom: 5px !important;
+}
+
+/* Conversation-only sticky footers can paint a native white slab over the
+ * ambient field. These marks cover only the bounded editor ancestor chain and
+ * empty, noninteractive fade layers; the actual composer remains opaque.
+ * Clear paint rather than hiding generated content or altering footer layout. */
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"],
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]::before,
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]::after {
+  background-color: transparent !important;
+  background-image: none !important;
 }
 
 /* Restyle the whole visual composer, preserving the native editor and buttons.
