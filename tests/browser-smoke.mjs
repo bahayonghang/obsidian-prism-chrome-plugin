@@ -165,6 +165,29 @@ async function settledSurfaceStyle(page, selector, property) {
   }, property);
 }
 
+async function settleFixtureScreenshot(page) {
+  // Only native surface transitions; the ambient drift intentionally remains live.
+  await Promise.all([
+    settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow'),
+    settledSurfaceStyle(page, '[data-fixture-sidebar] [aria-current="page"]', 'backgroundColor')
+  ]);
+  const colors = await page.locator('[data-fixture-sidebar] [aria-current="page"]').evaluate(node => ({ foreground: getComputedStyle(node).color, background: getComputedStyle(node).backgroundColor }));
+  const parse = value => {
+    const srgb = value.startsWith('color(srgb ');
+    if (!srgb && !/^rgba?\(/.test(value)) return null;
+    const numbers = value.match(/-?\d*\.?\d+/g)?.map(Number);
+    if (!numbers || numbers.length < 3 || (numbers.length > 3 && numbers[3] !== 1)) return null;
+    return numbers.slice(0, 3).map(number => number / (srgb ? 1 : value.includes('%') ? 100 : 255));
+  };
+  const foreground = parse(colors.foreground), background = parse(colors.background);
+  if (foreground && background) {
+    const luminance = rgb => rgb.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+    const a = luminance(foreground), b = luminance(background);
+    const contrast = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+    assert.ok(contrast >= 4.5, `settled active history text needs readable contrast; measured ${contrast.toFixed(2)}:1 (${colors.foreground} on ${colors.background})`);
+  } else console.log('NOTE active history contrast requires visual review for computed colors', colors);
+}
+
 async function decorationVisible(page, selector) {
   return page.evaluate(selector => {
     let element = document.querySelector(selector);
@@ -319,6 +342,7 @@ async function exerciseHomeEffects(browser, host) {
     assert.notEqual(glassImage, 'none');
     assert.equal(solidImage, 'none');
     await page.evaluate(() => __prismFixture.patch({ sidebarStyle: 'glass' }));
+    await settleFixtureScreenshot(page);
     await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-home-dark.png`) });
 
     const editor = page.locator('[data-fixture-composer] [contenteditable="true"]');
@@ -381,6 +405,7 @@ async function exerciseHomeEffects(browser, host) {
     assert.deepEqual(restored.composer, nativeSurfaces.composer, 'composer styling off restores the complete native shell');
     await page.evaluate(() => __prismFixture.patch({ sidebarStyle: 'solid', composerRestyle: true, themeMode: 'light', lightPreset: 'crystal', motionLevel: 'subtle' }));
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
+    await settleFixtureScreenshot(page);
     await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-home-light.png`) });
     await page.evaluate(() => ObsidianPrismRuntime.stop());
     assert.equal(await page.locator('[data-op-owned],[data-op-main-surface="true"],[data-op-sidebar-surface="true"],[data-op-composer-surface="true"]').count(), 0);
@@ -427,6 +452,7 @@ async function exerciseFixture(browser, host) {
     assert.notDeepEqual(themedSurfaces.composer, originalSurfaces.composer, 'the complete composer shell must actually receive the theme');
     assert.equal(await page.evaluate(() => document.querySelector('[data-fixture-composer] [contenteditable="true"]') === __nativeEditor), true);
     assert.equal(await page.locator('[class*="mascot"],[id*="mascot"]').count(), 0, 'pet UI is removed completely');
+    await settleFixtureScreenshot(page);
     await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-default.png`), fullPage: true });
     await exerciseNativeComposer(page);
 
