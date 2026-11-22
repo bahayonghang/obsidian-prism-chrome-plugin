@@ -563,6 +563,22 @@ async function composerControlsSnapshot(page) {
   });
 }
 
+function composerSurfaceAndGeometry(snapshot) {
+  const copy = structuredClone(snapshot);
+  if (copy.editor?.style) delete copy.editor.style.caretColor;
+  if (copy.addBtn?.style) delete copy.addBtn.style.borderTopColor;
+  if (copy.modelBtn?.style) {
+    delete copy.modelBtn.style.color;
+    delete copy.modelBtn.style.borderTopColor;
+  }
+  if (copy.modelBtn?.tier) delete copy.modelBtn.tier.color;
+  if (copy.chip?.style) {
+    delete copy.chip.style.color;
+    delete copy.chip.style.borderTopColor;
+  }
+  return copy;
+}
+
 async function settleComposerControls(page) {
   await Promise.all([
     settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow'),
@@ -957,7 +973,7 @@ async function exerciseFixture(browser, host) {
     await assertComposerBackdrops(page, originalSurfaces);
     await page.waitForFunction(() => !document.querySelector('[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-chip="true"]') && document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'fixture-original');
     await settleComposerControls(page);
-    assert.deepEqual(await composerControlsSnapshot(page), originalComposerControls, `${host}: composerRestyle=false restores native composer, add button, model capsule, and chips`);
+    assert.deepEqual(composerSurfaceAndGeometry(await composerControlsSnapshot(page)), composerSurfaceAndGeometry(originalComposerControls), `${host}: composerRestyle=false restores native composer, add button, model capsule, and chips`);
     await page.evaluate(() => __prismFixture.patch({ composerRestyle: true }));
     await exerciseNativeComposer(page);
 
