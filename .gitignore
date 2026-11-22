@@ -13,3 +13,11 @@ __pycache__/
 .DS_Store
 Thumbs.db
 test-artifacts/
+.agents/
+.claude/
+.codex/
+.cursor/
+.omp/
+.grok/
+ref/
+skills-lock.json
