@@ -63,15 +63,46 @@ async function prepareNativeOptionsWindow(page) {
     const measure = () => {
       const body = document.body?.getBoundingClientRect();
       const workspace = document.querySelector('#settings-scroll')?.getBoundingClientRect();
-      return body && workspace ? [innerWidth, innerHeight, document.documentElement.clientWidth, document.documentElement.clientHeight, body.width, body.height, workspace.width, workspace.height] : null;
+      return body && workspace ? [innerWidth, innerHeight, document.documentElement.clientWidth, document.documentElement.clientHeight, document.documentElement.scrollWidth, document.documentElement.scrollHeight, body.width, body.height, workspace.width, workspace.height] : null;
     };
     const before = measure();
     if (document.visibilityState !== 'visible' || !before || before[0] < 1000 || before[1] < 600 || before.some(value => value <= 0)) return false;
-    await new Promise(resolve => requestAnimationFrame(resolve));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const after = measure();
     return after && after.every((value, index) => value > 0 && Math.abs(value - before[index]) < 1);
   }, undefined, { timeout: 10000 });
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const deadline = Date.now() + 10000;
+    let ready = false;
+    while (Date.now() < deadline) {
+      const metrics = await cdp.send('Page.getLayoutMetrics');
+      const viewport = metrics.cssLayoutViewport || metrics.layoutViewport;
+      const content = metrics.cssContentSize || metrics.contentSize;
+      if (viewport && content && viewport.clientWidth >= 1000 && viewport.clientHeight >= 600 && content.width > 0 && content.height > 0) {
+        ready = true;
+        break;
+      }
+      await page.waitForTimeout(100);
+    }
+    if (!ready) throw new Error('Timed out waiting for non-zero native options window CDP layout metrics');
+  } finally {
+    await cdp.detach().catch(() => {});
+  }
   console.log(`NOTE native options window ready: ${bounds.width}×${bounds.height}, state=${bounds.state}`);
+}
+
+async function captureNativeScreenshot(page, screenshotOptions) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      return await page.screenshot(screenshotOptions);
+    } catch (error) {
+      if (attempt === 5 || !/Cannot take screenshot with 0 (width|height)/i.test(error?.message || '')) throw error;
+      await page.bringToFront();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      await page.waitForTimeout(200);
+    }
+  }
 }
 
 async function actualChromiumExtension() {
@@ -102,14 +133,14 @@ async function actualChromiumExtension() {
     });
     await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'dark');
     await prepareNativeOptionsWindow(options);
-    await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-dark.png'), fullPage: true });
+    await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-dark.png'), fullPage: true });
     await options.locator('#tab-motion').click();
-    await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-motion-dark.png'), fullPage: true });
+    await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-motion-dark.png'), fullPage: true });
     await options.evaluate(() => ObsidianPrismSchema.saveConfig({ themeMode: 'light', lightPreset: 'alabaster' }));
     await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
-    await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-motion-light.png'), fullPage: true });
+    await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-motion-light.png'), fullPage: true });
     await options.locator('#tab-appearance').click();
-    await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-light.png'), fullPage: true });
+    await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-light.png'), fullPage: true });
     await options.evaluate(() => ObsidianPrismSchema.saveConfig({ themeMode: 'dark' }));
     chat = await context.newPage();
     await chat.goto(fixtureURLs.chatgpt);
@@ -144,6 +175,17 @@ async function actualChromiumExtension() {
     await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientStyle === 'spotlight');
     await popup.locator('#cfg-ambientTexture').selectOption('grid');
     await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientTexture === 'grid');
+    await popup.locator('#tab-reading').click();
+    assert.equal(await popup.locator('#cfg-contentWidth').inputValue(), 'standard');
+    await popup.locator('#cfg-contentWidth').selectOption('wide');
+    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contentWidth === 'wide');
+    await popup.locator('#cfg-contentWidth').selectOption('standard');
+    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contentWidth === 'standard');
+    assert.equal(await popup.locator('#cfg-contextWindowTokens').inputValue(), 'auto');
+    await popup.locator('#cfg-contextWindowTokens').selectOption('400000');
+    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contextWindowTokens === 400000);
+    await popup.locator('#cfg-contextWindowTokens').selectOption('auto');
+    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contextWindowTokens === 'auto');
     await options.setViewportSize({ width: 420, height: 600 });
     assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options remain responsive at 420 pixels');
     await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-420.png') });
@@ -183,22 +225,110 @@ async function surfaceSnapshot(page) {
   });
 }
 
+async function chatgptLayoutSnapshot(page) {
+  return page.evaluate(() => {
+    const spacer = document.querySelector('[data-testid="conversation-turn-spacer"], .thread-bottom-spacer');
+    const thread = document.querySelector('.thread');
+    const scrim = document.querySelector('#thread-bottom');
+    const composerCol = scrim?.querySelector('.composer-container');
+    const hint = scrim?.querySelector('.composer-hint');
+    const composer = document.querySelector('[data-fixture-composer]');
+    return {
+      spacerHeight: spacer ? Math.round(spacer.getBoundingClientRect().height * 10) / 10 : null,
+      threadPaddingBottom: thread ? parseFloat(getComputedStyle(thread).paddingBottom) : null,
+      composerColPaddingTop: composerCol ? parseFloat(getComputedStyle(composerCol).paddingTop) : null,
+      composerColPaddingBottom: composerCol ? parseFloat(getComputedStyle(composerCol).paddingBottom) : null,
+      hintMarginTop: hint ? parseFloat(getComputedStyle(hint).marginTop) : null,
+      hintMarginBottom: hint ? parseFloat(getComputedStyle(hint).marginBottom) : null,
+      hintBottomGap: hint ? Math.round((innerHeight - hint.getBoundingClientRect().bottom) * 10) / 10 : null,
+      composerBottomGap: composer ? Math.round((innerHeight - composer.getBoundingClientRect().bottom) * 10) / 10 : null
+    };
+  });
+}
+
 async function assertComposerBackdrops(page, nativeSurfaces) {
-  await page.waitForFunction(() => [...document.querySelectorAll('[data-fixture-backdrop]')].every(node => node.getAttribute('data-op-composer-backdrop') === 'true'));
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('[data-fixture-backdrop]')].every(node => node.getAttribute('data-op-composer-backdrop') === 'true') &&
+    Boolean(document.querySelector('[data-op-composer-scrim="true"]'))
+  );
   const current = await surfaceSnapshot(page);
+  const backdropMeta = await page.evaluate(() => [...document.querySelectorAll('[data-fixture-backdrop]')].map(node => ({
+    isScrim: node.getAttribute('data-op-composer-scrim') === 'true',
+    isNativeFade: node.classList.contains('native-composer-fade')
+  })));
   assert.ok(current.backdrops.length >= 4, 'conversation fixture must include multiple opaque dock layers and a decorative fade');
+  assert.equal(backdropMeta.filter(meta => meta.isScrim).length, 1, 'exactly one outermost dock layer acts as the feathered composer scrim');
   const transparent = value => value === 'transparent' || /^rgba\(\s*0,\s*0,\s*0,\s*0\s*\)$/.test(value);
   for (const [index, layer] of current.backdrops.entries()) {
-    assert.ok(transparent(layer.background) && layer.backgroundImage === 'none', `dock layer ${index} must reveal the themed canvas instead of a native white block`);
-    for (const type of ['before', 'after']) {
-      assert.ok(transparent(layer[type].background) && layer[type].backgroundImage === 'none', `dock layer ${index} ${type} must not retain an opaque fade`);
-      assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
-      assert.equal(layer[type].display, nativeSurfaces.backdrops[index][type].display, 'decorative pseudo display is preserved');
+    const meta = backdropMeta[index];
+    assert.ok(transparent(layer.background), `dock layer ${index} background-color must stay transparent`);
+    assert.notEqual(layer.background, 'rgb(255, 255, 255)', `dock layer ${index} must not paint a solid white slab`);
+    if (meta.isScrim) {
+      assert.ok(layer.backgroundImage.includes('linear-gradient'), `scrim host layer ${index} must paint a feathered linear-gradient toward --op-canvas`);
+      assert.ok(transparent(layer.before.background) && layer.before.backgroundImage.includes('linear-gradient'), `scrim host layer ${index} ::before must paint a feathered top linear-gradient`);
+      assert.ok(transparent(layer.after.background) && layer.after.backgroundImage === 'none', `scrim host layer ${index} ::after must remain transparent`);
+      for (const type of ['before', 'after']) {
+        assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
+        assert.equal(layer[type].display, nativeSurfaces.backdrops[index][type].display, 'decorative pseudo display is preserved');
+      }
+    } else {
+      assert.equal(layer.backgroundImage, 'none', `inner dock layer ${index}${meta.isNativeFade ? ' (.native-composer-fade)' : ''} must reveal the themed canvas without a solid slab`);
+      for (const type of ['before', 'after']) {
+        assert.ok(transparent(layer[type].background) && layer[type].backgroundImage === 'none', `inner dock layer ${index} ${type} must not retain an opaque fade`);
+        assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
+        assert.equal(layer[type].display, nativeSurfaces.backdrops[index][type].display, 'decorative pseudo display is preserved');
+      }
     }
   }
   assert.deepEqual(current.footerAttachment, nativeSurfaces.footerAttachment, 'native footer attachments retain their own painted controls');
   assert.equal(await page.locator('[data-fixture-footer-attachment][data-op-composer-backdrop]').count(), 0);
   assert.equal(await page.locator('[data-fixture-composer][data-op-composer-backdrop]').count(), 0, 'the input card is not part of the page backdrop');
+
+  const isActiveChatGPT = await page.evaluate(() =>
+    document.documentElement.getAttribute('data-op-host') === 'chatgpt' &&
+    document.documentElement.getAttribute('data-op-home') === 'false'
+  );
+  if (isActiveChatGPT) {
+    const layout = await chatgptLayoutSnapshot(page);
+    assert.ok(layout.spacerHeight !== null && layout.spacerHeight > 0 && layout.spacerHeight <= 32, `ChatGPT active spacer must converge cleanly (<= 32px), got ${layout.spacerHeight}`);
+    assert.equal(layout.threadPaddingBottom, 24, 'ChatGPT active thread column bottom padding should tighten to 24px');
+    assert.equal(layout.composerColPaddingTop, 8, 'ChatGPT composer column top padding should tighten to 8px');
+    assert.equal(layout.composerColPaddingBottom, 14, 'ChatGPT composer column bottom padding should be 14px');
+    assert.equal(layout.hintMarginTop, 6, 'ChatGPT composer hint top margin should be 6px');
+    assert.equal(layout.hintMarginBottom, 0, 'ChatGPT composer hint bottom margin should be 0px');
+    assert.ok(layout.hintBottomGap >= 12 && layout.hintBottomGap <= 28, `ChatGPT composer footer bottom margin should stay between 12px and 28px, got ${layout.hintBottomGap}`);
+    assert.ok(layout.composerBottomGap >= 12 && layout.composerBottomGap <= 40, `ChatGPT composer surface bottom gap with compact hint should stay tight, got ${layout.composerBottomGap}`);
+
+    const previousScrollTop = await page.evaluate(() => {
+      const scroller = document.querySelector('[data-prism-test-scroller]');
+      const prev = scroller.scrollTop;
+      scroller.scrollTop = scroller.scrollHeight;
+      return prev;
+    });
+    const turnActionsCheck = await page.evaluate(() => {
+      const scroller = document.querySelector('[data-prism-test-scroller]');
+      const scrim = document.querySelector('[data-op-composer-scrim="true"]');
+      const actions = document.querySelector('.thread article:last-of-type .turn-actions, .thread article:last-of-type [data-testid="turn-actions"]');
+      const btn = actions?.querySelector('button');
+      if (!scroller || !scrim || !actions || !btn) return null;
+      const scrollerRect = scroller.getBoundingClientRect();
+      const scrimRect = scrim.getBoundingClientRect();
+      const actionsRect = actions.getBoundingClientRect();
+      const btnRect = btn.getBoundingClientRect();
+      const hit = document.elementFromPoint(btnRect.left + btnRect.width / 2, btnRect.top + btnRect.height / 2);
+      return {
+        visibleInScroller: actionsRect.top >= scrollerRect.top - 1 && actionsRect.bottom <= scrollerRect.bottom + 1,
+        aboveScrim: actionsRect.bottom <= scrimRect.top,
+        clickable: Boolean(hit && actions.contains(hit))
+      };
+    });
+    assert.ok(turnActionsCheck, 'last assistant turn must expose .turn-actions');
+    assert.equal(turnActionsCheck.visibleInScroller, true, 'last .turn-actions must remain completely inside the visible scroll viewport');
+    assert.equal(turnActionsCheck.aboveScrim, true, 'last .turn-actions must not overlap the composer scrim');
+    assert.equal(turnActionsCheck.clickable, true, 'last .turn-actions button must remain hit-testable and clickable');
+    await page.locator('.thread article:last-of-type .turn-actions button').first().click({ trial: true });
+    await page.evaluate(prev => { document.querySelector('[data-prism-test-scroller]').scrollTop = prev; }, previousScrollTop);
+  }
 }
 
 async function sidebarSelectionSnapshot(page) {
@@ -285,9 +415,7 @@ async function surfaceColors(page, selector) {
   return page.locator(selector).evaluate(node => ({ foreground: getComputedStyle(node).color, background: getComputedStyle(node).backgroundColor }));
 }
 
-async function assertReadableSurface(page, selector, label) {
-  await settledSurfaceStyle(page, selector, 'backgroundColor');
-  const colors = await surfaceColors(page, selector);
+function assertContrastRatio(foregroundValue, backgroundValue, label) {
   const parse = value => {
     const srgb = value.startsWith('color(srgb ');
     if (!srgb && !/^rgba?\(/.test(value)) return null;
@@ -295,12 +423,60 @@ async function assertReadableSurface(page, selector, label) {
     if (!numbers || numbers.length < 3 || (numbers.length > 3 && numbers[3] !== 1)) return null;
     return numbers.slice(0, 3).map(number => number / (srgb ? 1 : value.includes('%') ? 100 : 255));
   };
-  const foreground = parse(colors.foreground), background = parse(colors.background);
-  assert.ok(foreground && background, `${label}: expected opaque sRGB fixture colors, received ${JSON.stringify(colors)}`);
+  const foreground = parse(foregroundValue), background = parse(backgroundValue);
+  assert.ok(foreground && background, `${label}: expected opaque sRGB fixture colors, received ${JSON.stringify({ foreground: foregroundValue, background: backgroundValue })}`);
   const luminance = rgb => rgb.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
   const a = luminance(foreground), b = luminance(background);
   const contrast = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-  assert.ok(contrast >= 4.5, `${label}: settled text needs readable contrast; measured ${contrast.toFixed(2)}:1 (${colors.foreground} on ${colors.background})`);
+  assert.ok(contrast >= 4.5, `${label}: settled text needs readable contrast; measured ${contrast.toFixed(2)}:1 (${foregroundValue} on ${backgroundValue})`);
+}
+
+async function assertReadableSurface(page, selector, label) {
+  await settledSurfaceStyle(page, selector, 'backgroundColor');
+  const colors = await surfaceColors(page, selector);
+  assertContrastRatio(colors.foreground, colors.background, label);
+}
+
+async function codeSurfaceSnapshot(page) {
+  return page.evaluate(() => {
+    const read = (selector, props) => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const style = getComputedStyle(node);
+      return Object.fromEntries(props.map(prop => [prop, style[prop]]));
+    };
+    return {
+      shell: read('[data-testid="code-block"], code-block', ['backgroundColor', 'borderColor', 'overflow']),
+      header: read('.code-header, .code-block-decoration', ['backgroundColor', 'color']),
+      headerButton: read('.code-header button, .code-block-decoration button', ['color', 'borderColor']),
+      headerSvg: read('.code-header svg, .code-block-decoration svg', ['color', 'fill', 'stroke']),
+      well: read(':is([data-testid="code-block"], code-block) pre', ['backgroundColor', 'color']),
+      code: read(':is([data-testid="code-block"], code-block) pre code', ['backgroundColor', 'color']),
+      keyword: read(':is([data-testid="code-block"], code-block) pre code .hljs-keyword', ['color']),
+      number: read(':is([data-testid="code-block"], code-block) pre code .hljs-number', ['color']),
+      inlineCode: read('code.inline-code', ['backgroundColor', 'color', 'borderColor'])
+    };
+  });
+}
+
+async function assertCodeSurfaceContrast(page, host, palette) {
+  await page.waitForFunction(expected => document.documentElement.getAttribute('data-op-effective-palette') === expected, palette);
+  await settledSurfaceStyle(page, '[data-op-code-surface="true"]', 'backgroundColor');
+  await settledSurfaceStyle(page, '[data-op-code-header="true"]', 'backgroundColor');
+  const snap = await codeSurfaceSnapshot(page);
+  assert.ok(snap.shell && snap.header && snap.headerButton && snap.headerSvg && snap.well && snap.code && snap.keyword && snap.number && snap.inlineCode, `${host} ${palette}: all code surface fixture nodes must exist`);
+  assert.notEqual(snap.shell.overflow, 'hidden', `${host} ${palette}: outer code shell must not clip sticky headers with overflow:hidden`);
+  assert.equal(snap.headerSvg.fill, 'none', `${host} ${palette}: stroke-based header SVG must not be filled solid`);
+  assert.equal(snap.well.backgroundColor, snap.code.backgroundColor, `${host} ${palette}: pre and pre code share the code well background`);
+  assertContrastRatio(snap.header.color, snap.header.backgroundColor, `${host} ${palette} code header`);
+  assertContrastRatio(snap.headerButton.color, snap.header.backgroundColor, `${host} ${palette} code header button`);
+  assertContrastRatio(snap.headerSvg.color, snap.header.backgroundColor, `${host} ${palette} code header SVG`);
+  assertContrastRatio(snap.code.color, snap.code.backgroundColor, `${host} ${palette} code well text`);
+  assertContrastRatio(snap.keyword.color, snap.code.backgroundColor, `${host} ${palette} syntax .hljs-keyword`);
+  assertContrastRatio(snap.number.color, snap.code.backgroundColor, `${host} ${palette} syntax .hljs-number`);
+  assert.notEqual(snap.keyword.color, snap.code.color, `${host} ${palette}: .hljs-keyword uses distinct syntax token color`);
+  assert.notEqual(snap.number.color, snap.code.color, `${host} ${palette}: .hljs-number uses distinct syntax token color`);
+  assertContrastRatio(snap.inlineCode.color, snap.inlineCode.backgroundColor, `${host} ${palette} inline code`);
 }
 
 async function settleFixtureScreenshot(page) {
@@ -329,6 +505,153 @@ async function assertDecorationsPaused(page) {
     return style.animationName !== 'none' && style.animationPlayState.split(',').some(value => value.trim() !== 'paused');
   }).map(node => node.className));
   assert.deepEqual(moving, [], 'ambient animation pauses when motion is disabled or the page is hidden');
+}
+
+async function composerControlsSnapshot(page) {
+  return page.evaluate(() => {
+    const readStyle = (node, props) => {
+      if (!node) return null;
+      const style = getComputedStyle(node);
+      return Object.fromEntries(props.map(prop => [prop, style[prop]]));
+    };
+    const composer = document.querySelector('[data-fixture-composer]');
+    const editor = composer?.querySelector('[contenteditable="true"]');
+    const tools = composer?.querySelector('.composer-tools');
+    const addBtn = document.querySelector('button[data-testid="composer-plus-btn"], button[data-test-id="upload-file-button"]');
+    const modelBtn = document.querySelector('button[data-testid="model-switcher-dropdown-button"], button[data-test-id="bard-mode-menu-button"]');
+    const modelTier = modelBtn?.querySelector('.model-tier, .mode-tier');
+    const chip = document.querySelector('button[data-testid="composer-mode-pill"], button.toolbox-drawer-item-button');
+    const beforeStyle = modelBtn ? getComputedStyle(modelBtn, '::before') : null;
+    const addRect = addBtn?.getBoundingClientRect();
+    return {
+      composer: composer ? {
+        style: readStyle(composer, ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderRadius', 'boxShadow', 'borderColor']),
+        parentTag: composer.parentElement?.tagName || null
+      } : null,
+      editor: editor ? {
+        style: readStyle(editor, ['minHeight', 'paddingBottom', 'caretColor']),
+        text: editor.textContent
+      } : null,
+      tools: tools ? { style: readStyle(tools, ['marginTop']) } : null,
+      addBtn: addBtn ? {
+        attr: addBtn.getAttribute('data-op-composer-add'),
+        parentTag: addBtn.parentElement?.tagName || null,
+        style: readStyle(addBtn, ['width', 'height', 'minWidth', 'paddingTop', 'paddingLeft', 'borderRadius', 'borderTopWidth', 'borderTopColor', 'backgroundColor', 'display', 'alignItems', 'justifyContent']),
+        rect: { width: Math.round(addRect.width), height: Math.round(addRect.height) }
+      } : null,
+      modelBtn: modelBtn ? {
+        attr: modelBtn.getAttribute('data-op-model-capsule'),
+        parentTag: modelBtn.parentElement?.tagName || null,
+        style: readStyle(modelBtn, ['borderRadius', 'borderTopWidth', 'borderTopColor', 'backgroundColor', 'color', 'paddingTop', 'paddingLeft', 'gap', 'display', 'alignItems']),
+        before: beforeStyle ? {
+          content: beforeStyle.content,
+          width: beforeStyle.width,
+          height: beforeStyle.height,
+          borderRadius: beforeStyle.borderRadius,
+          backgroundColor: beforeStyle.backgroundColor
+        } : null,
+        tier: readStyle(modelTier, ['color', 'fontWeight']),
+        text: modelBtn.textContent,
+        childCount: modelBtn.children.length
+      } : null,
+      chip: chip ? {
+        attr: chip.getAttribute('data-op-composer-chip'),
+        parentTag: chip.parentElement?.tagName || null,
+        style: readStyle(chip, ['borderRadius', 'borderTopWidth', 'borderTopColor', 'backgroundColor', 'color', 'paddingTop', 'paddingLeft'])
+      } : null
+    };
+  });
+}
+
+function composerSurfaceAndGeometry(snapshot) {
+  const copy = structuredClone(snapshot);
+  if (copy.editor?.style) delete copy.editor.style.caretColor;
+  if (copy.addBtn?.style) delete copy.addBtn.style.borderTopColor;
+  if (copy.modelBtn?.style) {
+    delete copy.modelBtn.style.color;
+    delete copy.modelBtn.style.borderTopColor;
+  }
+  if (copy.modelBtn?.tier) delete copy.modelBtn.tier.color;
+  if (copy.chip?.style) {
+    delete copy.chip.style.color;
+    delete copy.chip.style.borderTopColor;
+  }
+  return copy;
+}
+
+async function settleComposerControls(page) {
+  await Promise.all([
+    settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow'),
+    settledSurfaceStyle(page, 'button[data-testid="composer-plus-btn"], button[data-test-id="upload-file-button"]', 'backgroundColor'),
+    settledSurfaceStyle(page, 'button[data-testid="model-switcher-dropdown-button"], button[data-test-id="bard-mode-menu-button"]', 'backgroundColor'),
+    settledSurfaceStyle(page, 'button[data-testid="composer-mode-pill"], button.toolbox-drawer-item-button', 'backgroundColor')
+  ]);
+}
+
+async function assertComposerControlsThemed(page, host, palette, nativeControls) {
+  await page.waitForFunction(() =>
+    document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'true' &&
+    document.querySelector('[data-op-composer-add="true"]') &&
+    document.querySelector('[data-op-model-capsule="true"]') &&
+    document.querySelector('[data-op-composer-chip="true"]')
+  );
+  await settleComposerControls(page);
+  const snap = await composerControlsSnapshot(page);
+  assert.ok(snap.composer && snap.editor && snap.tools && snap.addBtn && snap.modelBtn && snap.chip, `${host} ${palette}: all composer & capsule nodes must exist`);
+
+  assert.equal(snap.composer.style.paddingTop, '14px');
+  assert.equal(snap.composer.style.paddingRight, '16px');
+  assert.equal(snap.composer.style.paddingBottom, '12px');
+  assert.equal(snap.composer.style.paddingLeft, '16px');
+  assert.equal(snap.composer.style.borderRadius, '22px');
+  assert.match(snap.composer.style.boxShadow, /inset/);
+  assert.equal(snap.composer.parentTag, nativeControls.composer.parentTag);
+
+  assert.ok(parseFloat(snap.editor.style.minHeight) >= 44, `${host} ${palette}: editor min-height >= 44px`);
+  assert.ok(parseFloat(snap.editor.style.paddingBottom) >= 6, `${host} ${palette}: editor padding-bottom >= 6px`);
+  assert.notEqual(snap.editor.style.caretColor, nativeControls.editor.style.caretColor);
+  assert.equal(snap.tools.style.marginTop, '10px');
+
+  assert.equal(snap.addBtn.attr, 'true');
+  assert.equal(snap.addBtn.parentTag, nativeControls.addBtn.parentTag);
+  assert.equal(snap.addBtn.rect.width, 32, `${host} ${palette}: circular + width is 32px`);
+  assert.equal(snap.addBtn.rect.height, 32, `${host} ${palette}: circular + height is 32px`);
+  assert.ok(parseFloat(snap.addBtn.style.borderRadius) >= 999, `${host} ${palette}: circular + border-radius >= 999px`);
+  assert.ok(parseFloat(snap.addBtn.style.borderTopWidth) >= 1);
+  assert.ok(['inline-flex', 'flex'].includes(snap.addBtn.style.display), `${host} ${palette}: circular + uses flex layout, got ${snap.addBtn.style.display}`);
+  assert.equal(snap.addBtn.style.alignItems, 'center');
+  assert.equal(snap.addBtn.style.justifyContent, 'center');
+  assert.notEqual(snap.addBtn.style.backgroundColor, nativeControls.addBtn.style.backgroundColor);
+
+  assert.equal(snap.modelBtn.attr, 'true');
+  assert.equal(snap.modelBtn.parentTag, nativeControls.modelBtn.parentTag);
+  assert.ok(parseFloat(snap.modelBtn.style.borderRadius) >= 999);
+  assert.ok(parseFloat(snap.modelBtn.style.borderTopWidth) >= 1);
+  assert.ok(['inline-flex', 'flex'].includes(snap.modelBtn.style.display), `${host} ${palette}: model capsule uses flex layout, got ${snap.modelBtn.style.display}`);
+  assert.equal(snap.modelBtn.style.alignItems, 'center');
+  assert.equal(snap.modelBtn.style.paddingTop, '5px');
+  assert.equal(snap.modelBtn.style.paddingLeft, '11px');
+  assert.equal(snap.modelBtn.style.gap, '6px');
+  assert.notEqual(snap.modelBtn.style.backgroundColor, nativeControls.modelBtn.style.backgroundColor);
+  assert.equal(snap.modelBtn.before.content, '""');
+  assert.equal(snap.modelBtn.before.width, '6px');
+  assert.equal(snap.modelBtn.before.height, '6px');
+  assert.equal(snap.modelBtn.before.borderRadius, '50%');
+  assert.equal(snap.modelBtn.before.backgroundColor, snap.modelBtn.tier.color, `${host} ${palette}: ::before dot and tier tag share --op-accent`);
+  assert.notEqual(snap.modelBtn.tier.color, snap.modelBtn.style.color);
+  assert.ok(Number(snap.modelBtn.tier.fontWeight) >= 600);
+  assert.equal(snap.modelBtn.childCount, nativeControls.modelBtn.childCount, `${host} ${palette}: ::before dot adds zero DOM elements`);
+  assert.equal(snap.modelBtn.text, nativeControls.modelBtn.text, `${host} ${palette}: native model text preserved`);
+
+  assert.equal(snap.chip.attr, 'true');
+  assert.equal(snap.chip.parentTag, nativeControls.chip.parentTag);
+  assert.ok(parseFloat(snap.chip.style.borderRadius) >= 999);
+  assert.ok(parseFloat(snap.chip.style.borderTopWidth) >= 1);
+  assert.equal(snap.chip.style.paddingTop, '5px');
+  assert.equal(snap.chip.style.paddingLeft, '11px');
+  assert.notEqual(snap.chip.style.backgroundColor, nativeControls.chip.style.backgroundColor);
+
+  assert.equal(await page.locator('.op-repo-capsule, .op-branch-capsule, [data-op-repo-capsule], [data-op-branch-capsule]').count(), 0);
 }
 
 async function exerciseNativeComposer(page) {
@@ -385,6 +708,10 @@ function fixtureBridge(input) {
       openOptionsPage: bridge(() => undefined),
       sendMessage: bridge(message => {
         if (message.type === 'OP_CONFIG_PATCH') return { ok: true, config: patch(message.patch) };
+        if (message.type === 'OP_CONTENT_WIDTH_SET') {
+          if (!window.ObsidianPrismSchema.ENUMS.contentWidth.includes(message.contentWidth)) return { ok: false, error: 'INVALID_CONTENT_WIDTH' };
+          return { ok: true, config: patch({ contentWidth: message.contentWidth }) };
+        }
         if (message.type === 'OP_TRANSLATE') {
           window.__prismFixture.translations.push(message.text);
           if (window.__prismFixture.translationMode === 'error') return { ok: false, error: 'TRANSLATION_REQUEST_FAILED' };
@@ -553,17 +880,23 @@ async function exerciseFixture(browser, host) {
     const originalText = await page.locator('pre code').textContent();
     const originalBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
     const originalSurfaces = await surfaceSnapshot(page);
+    const originalChatGPTLayout = host === 'chatgpt' ? await chatgptLayoutSnapshot(page) : null;
     const originalSidebarSelection = await sidebarSelectionSnapshot(page);
     // Read the element that paints the bubble, not its transparent turn wrapper.
     const bubbleSelector = host === 'chatgpt'
       ? '[data-testid="conversation-turn-0"] [data-message-author-role="user"] > div'
       : '.thread > user-query:first-of-type user-query-content.user-query-bubble-with-background';
     const originalBubbleColors = await surfaceColors(page, bubbleSelector);
+    const originalCodeColors = await codeSurfaceSnapshot(page);
+    const originalComposerControls = await composerControlsSnapshot(page);
     await page.evaluate(() => {
       window.__nativeCode = document.querySelector('pre code');
       window.__nativeCopy = document.querySelector('[data-native-copy]');
       window.__copyCount = 0;
       window.__nativeCopy.addEventListener('click', () => { window.__copyCount++; });
+      window.__nativeModelBtn = document.querySelector('button[data-testid="model-switcher-dropdown-button"], button[data-test-id="bard-mode-menu-button"]');
+      window.__modelClickCount = 0;
+      window.__nativeModelBtn.addEventListener('click', () => { window.__modelClickCount++; });
       window.__nativeComposer = document.querySelector('[data-fixture-composer]');
       window.__nativeEditor = __nativeComposer.querySelector('[contenteditable="true"]');
       __nativeComposer.setAttribute('data-op-composer-surface', 'fixture-original');
@@ -585,11 +918,23 @@ async function exerciseFixture(browser, host) {
     await assertSingleSidebarHighlight(page);
     await settleFixtureScreenshot(page);
     await assertReadableSurface(page, bubbleSelector, `${host} dark user bubble`);
+    await assertCodeSurfaceContrast(page, host, 'obsidian');
+    await assertComposerControlsThemed(page, host, 'obsidian', originalComposerControls);
+    await page.evaluate(() => __prismFixture.patch({ themeMode: 'dark', palette: 'warm' }));
+    await assertCodeSurfaceContrast(page, host, 'warm');
+    await page.evaluate(() => __prismFixture.patch({ themeMode: 'dark', palette: 'obsidian' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
     await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-default.png`), fullPage: true });
 
     await page.evaluate(() => __prismFixture.patch({ themeMode: 'light', lightPreset: 'crystal' }));
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
     await assertReadableSurface(page, bubbleSelector, `${host} light user bubble`);
+    await assertCodeSurfaceContrast(page, host, 'crystal');
+    await assertComposerControlsThemed(page, host, 'crystal', originalComposerControls);
+    await page.evaluate(() => __prismFixture.patch({ themeMode: 'light', lightPreset: 'alabaster' }));
+    await assertCodeSurfaceContrast(page, host, 'alabaster');
+    await page.evaluate(() => __prismFixture.patch({ themeMode: 'light', lightPreset: 'crystal' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'crystal');
     await assertComposerBackdrops(page, originalSurfaces);
     await assertSingleSidebarHighlight(page);
     await settleFixtureScreenshot(page);
@@ -598,9 +943,16 @@ async function exerciseFixture(browser, host) {
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'host');
     await settledSurfaceStyle(page, bubbleSelector, 'backgroundColor');
     assert.deepEqual(await surfaceColors(page, bubbleSelector), originalBubbleColors, `${host}: host palette preserves native user bubble colors`);
+    assert.deepEqual(await codeSurfaceSnapshot(page), originalCodeColors, `${host}: host palette restores native code surface colors`);
     assert.deepEqual((await surfaceSnapshot(page)).backdrops, originalSurfaces.backdrops, `${host}: host palette preserves native sticky footer backgrounds`);
+    if (host === 'chatgpt') {
+      assert.deepEqual(await chatgptLayoutSnapshot(page), originalChatGPTLayout, 'chatgpt: host palette restores native bottom spacing and spacer geometry');
+    }
     await settledSurfaceStyle(page, '[data-fixture-current-row]', 'boxShadow');
     assert.deepEqual(await sidebarSelectionSnapshot(page), originalSidebarSelection, `${host}: host palette preserves native nested sidebar styles`);
+    await settleComposerControls(page);
+    assert.deepEqual(await composerControlsSnapshot(page), originalComposerControls, `${host}: host palette restores native composer, add button, model capsule, and chips`);
+    assert.equal(await page.locator('[data-fixture-composer]').getAttribute('data-op-composer-surface'), 'fixture-original');
 
     // An explicit nested bubble must work too, without repainting an attachment.
     if (host === 'chatgpt') await page.evaluate(() => {
@@ -619,11 +971,24 @@ async function exerciseFixture(browser, host) {
     await exerciseSidebarSelection(page, originalSidebarSelection);
     await page.evaluate(() => __prismFixture.patch({ composerRestyle: false }));
     await assertComposerBackdrops(page, originalSurfaces);
+    await page.waitForFunction(() => !document.querySelector('[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-chip="true"]') && document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'fixture-original');
+    await settleComposerControls(page);
+    assert.deepEqual(composerSurfaceAndGeometry(await composerControlsSnapshot(page)), composerSurfaceAndGeometry(originalComposerControls), `${host}: composerRestyle=false restores native composer, add button, model capsule, and chips`);
     await page.evaluate(() => __prismFixture.patch({ composerRestyle: true }));
     await exerciseNativeComposer(page);
 
     assert.equal(await page.evaluate(host => ObsidianPrismAdapters.forHost(host).userTurns().length, host), 3, `${host}: no nested duplicate turns`);
     assert.equal(await page.evaluate(host => ObsidianPrismAdapters.forHost(host).assistantTurns().length, host), 3);
+    assert.equal(await page.evaluate(host => Boolean(ObsidianPrismAdapters.forHost(host).activeModelLabel()), host), true, `${host}: active model label detected`);
+    assert.ok(await page.evaluate(host => ObsidianPrismAdapters.forHost(host).visibleAttachments().length >= 1, host), `${host}: visible attachment detected`);
+    assert.ok(await page.evaluate(host => ObsidianPrismAdapters.forHost(host).codeSurfaces().length >= 1, host), `${host}: code surface detected`);
+    assert.equal(await page.evaluate(host => Boolean(ObsidianPrismAdapters.forHost(host).composerAddTrigger()), host), true, `${host}: composer add trigger detected`);
+    assert.equal(await page.evaluate(host => Boolean(ObsidianPrismAdapters.forHost(host).modelSelectorTrigger()), host), true, `${host}: model trigger detected`);
+    assert.equal(await page.locator('[data-op-code-surface="true"]').count(), 1);
+    assert.equal(await page.locator('[data-op-composer-add="true"]').count(), 1);
+    assert.equal(await page.locator('[data-op-model-capsule="true"]').count(), 1);
+    await page.locator('[data-op-model-capsule="true"]').click();
+    assert.equal(await page.evaluate(() => window.__modelClickCount), 1, `${host}: native model selector button click handler preserved`);
     assert.equal(await page.locator('.op-code-fold-bar').count(), 1);
     assert.equal(await page.locator('.op-code-fold-bar').evaluate(node => node.tagName), 'BUTTON');
     await page.locator('.op-code-fold-bar').click();
@@ -639,7 +1004,118 @@ async function exerciseFixture(browser, host) {
     await page.locator('[data-native-copy]').click();
     assert.equal(await page.evaluate(() => __copyCount), 1, 'native copy control and listeners are preserved');
 
+    // Content Width Presets (standard < wide < full), decoupled dock, rail clearance, bubble cap & <900px fallback
+    const measureColumns = () => page.evaluate(() => {
+      const thread = document.querySelector('.thread');
+      const composer = document.querySelector('.composer-container');
+      const inputArea = document.querySelector('input-area-v2');
+      const rail = document.getElementById('op-rail-root');
+      const dock = document.getElementById('op-bottom-dock');
+      const rect = node => node ? node.getBoundingClientRect() : null;
+      const tr = rect(thread), cr = rect(composer), ir = rect(inputArea), rr = rect(rail), dr = rect(dock);
+      return {
+        attr: document.documentElement.getAttribute('data-op-content-width'),
+        presetAttr: document.querySelector('.op-width-toggle')?.getAttribute('data-width-preset'),
+        threadWidth: tr.width, threadRight: tr.right,
+        composerWidth: cr.width, composerRight: cr.right,
+        inputAreaWidth: ir ? ir.width : cr.width,
+        railLeft: rr ? rr.left : Infinity,
+        dockLeft: dr ? dr.left : Infinity,
+        overflowX: document.documentElement.scrollWidth > window.innerWidth
+      };
+    });
+    const stdCols = await measureColumns();
+    assert.equal(stdCols.attr, 'standard');
+    assert.equal(stdCols.presetAttr, 'standard');
+    assert.equal(await page.locator('.op-width-toggle').count(), 1);
+    await page.evaluate(() => document.querySelector('.op-width-toggle').click());
+    assert.equal(await page.evaluate(() => __prismFixture.config().contentWidth), 'standard', 'synthetic width click is ignored');
+
+    // Trusted click cycles standard -> wide
+    await page.locator('.op-width-toggle').click();
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'wide');
+    const wideCols = await measureColumns();
+    assert.equal(wideCols.presetAttr, 'wide');
+    assert.ok(wideCols.threadWidth > stdCols.threadWidth, `${host}: wide thread (${wideCols.threadWidth}) > standard (${stdCols.threadWidth})`);
+    assert.ok(wideCols.composerWidth > stdCols.composerWidth, `${host}: wide composer (${wideCols.composerWidth}) > standard (${stdCols.composerWidth})`);
+    assert.ok(Math.abs(wideCols.inputAreaWidth - wideCols.composerWidth) <= 2, `${host}: nested input-area-v2 matches composer width in wide`);
+
+    // Trusted click cycles wide -> full
+    await page.locator('.op-width-toggle').click();
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'full');
+    const fullCols = await measureColumns();
+    assert.equal(fullCols.presetAttr, 'full');
+    assert.ok(fullCols.threadWidth > wideCols.threadWidth, `${host}: full thread (${fullCols.threadWidth}) > wide (${wideCols.threadWidth})`);
+    assert.ok(fullCols.composerWidth > wideCols.composerWidth, `${host}: full composer (${fullCols.composerWidth}) > wide (${wideCols.composerWidth})`);
+    assert.ok(Math.abs(fullCols.inputAreaWidth - fullCols.composerWidth) <= 2, `${host}: nested input-area-v2 matches composer width in full`);
+    assert.ok(fullCols.threadRight <= fullCols.railLeft + 0.5, `${host}: full thread (${fullCols.threadRight}) does not overlap Conversation Rail (${fullCols.railLeft})`);
+    assert.ok(fullCols.composerRight <= fullCols.railLeft + 0.5, `${host}: full composer (${fullCols.composerRight}) does not overlap Conversation Rail (${fullCols.railLeft})`);
+
+    // User Turn bubble max-width cap in wide & full
+    await page.evaluate(selector => {
+      const bubble = document.querySelector(selector);
+      bubble.dataset.origText = bubble.textContent;
+      bubble.textContent = 'Long prompt '.repeat(45);
+    }, bubbleSelector);
+    const fullBubbleWidth = await page.locator(bubbleSelector).evaluate(node => node.getBoundingClientRect().width);
+    assert.ok(fullBubbleWidth <= Math.min(fullCols.threadWidth * 0.78, 820) + 2, `${host}: full user bubble (${fullBubbleWidth}) stays within min(78%, 820px)`);
+    await page.evaluate(() => __prismFixture.patch({ contentWidth: 'wide' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'wide');
+    const wideBubbleWidth = await page.locator(bubbleSelector).evaluate(node => node.getBoundingClientRect().width);
+    assert.ok(wideBubbleWidth <= Math.min(wideCols.threadWidth * 0.78, 820) + 2, `${host}: wide user bubble (${wideBubbleWidth}) stays within min(78%, 820px)`);
+    await page.evaluate(selector => {
+      const bubble = document.querySelector(selector);
+      bubble.textContent = bubble.dataset.origText;
+      delete bubble.dataset.origText;
+    }, bubbleSelector);
+
+    // Narrow viewport (< 900px) smooth fallback with no horizontal overflow
+    await page.setViewportSize({ width: 860, height: 900 });
+    for (const preset of ['wide', 'full']) {
+      await page.evaluate(p => __prismFixture.patch({ contentWidth: p }), preset);
+      await page.waitForFunction(p => document.documentElement.getAttribute('data-op-content-width') === p, preset);
+      const narrow = await page.evaluate(() => {
+        const scroller = document.querySelector('[data-prism-test-scroller]');
+        return {
+          docOverflow: document.documentElement.scrollWidth > window.innerWidth,
+          scrollerOverflow: scroller ? scroller.scrollWidth > scroller.clientWidth + 1 : false
+        };
+      });
+      assert.equal(narrow.docOverflow, false, `${host} ${preset}: no document horizontal overflow below 900px`);
+      assert.equal(narrow.scrollerOverflow, false, `${host} ${preset}: no scroller horizontal overflow below 900px`);
+    }
+    await page.setViewportSize({ width: 1280, height: 900 });
+
+    // Decoupled Bottom Dock: contextVial false keeps .op-width-toggle while hiding vial & popover
+    await page.evaluate(() => __prismFixture.patch({ contextVial: false, contentWidth: 'full' }));
+    await page.waitForFunction(() => !document.querySelector('.op-vial-pill'));
+    assert.equal(await page.locator('#op-bottom-dock').count(), 1);
+    assert.equal(await page.locator('.op-vial-popover').count(), 0);
+    assert.equal(await page.locator('.op-width-toggle').count(), 1);
+    // Trusted click cycles full -> standard
+    await page.locator('.op-width-toggle').click();
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'standard');
+    const restoredStdCols = await measureColumns();
+    assert.ok(Math.abs(restoredStdCols.threadWidth - stdCols.threadWidth) <= 1, `${host}: switching back to standard restores native thread width`);
+    await page.evaluate(() => __prismFixture.patch({ contextVial: true }));
+    await page.waitForSelector('.op-vial-pill');
+
+    const expectedCapacity = host === 'chatgpt' ? '400.0K' : '1.0M';
+    const expectedCapacityFull = host === 'chatgpt' ? '400,000' : '1,000,000';
+    await page.waitForFunction(cap => document.querySelector('.op-vial-summary')?.textContent.includes(cap), expectedCapacity);
+    const vialSummary = await page.locator('.op-vial-summary').textContent();
+    assert.ok(vialSummary.includes('+ / ' + expectedCapacity), `${host}: expected attachment '+' and auto-matched capacity ${expectedCapacity}, got "${vialSummary}"`);
+    await page.locator('.op-vial-pill').click();
+    await page.waitForFunction(() => !document.querySelector('#op-vial-popover')?.hidden);
+    const vialDetails = await page.locator('.op-vial-details').textContent();
+    const vialNote = await page.locator('.op-vial-note').textContent();
+    assert.ok(vialDetails.includes(expectedCapacityFull) && vialDetails.includes('Auto-matched'), `${host}: vial details must report ${expectedCapacityFull} and Auto-matched, got "${vialDetails}"`);
+    assert.ok(vialDetails.includes('Uncounted attachments') && vialNote.includes('Visible attachments detected'), `${host}: vial popover must surface uncounted attachments`);
+    await page.locator('.op-vial-pill').click();
+
     await page.locator('.op-rail-toggle').click();
+    const railTexts = await page.locator('.op-rail-text').allTextContents();
+    assert.equal(railTexts.some(text => text.includes('You said')), false, `${host}: rail outline must strip .sr-only prefix`);
     await page.locator('.op-rail-search').fill('optimization');
     assert.equal(await page.locator('.op-rail-item:visible').count(), 1);
     await page.locator('.op-rail-item:visible').click();
@@ -736,20 +1212,29 @@ async function exerciseFixture(browser, host) {
     await page.evaluate(() => document.querySelector('#prism-closed-thought-fixture').remove());
     await page.waitForFunction(() => document.querySelectorAll('.op-translate-button').length === 1);
 
+    await page.evaluate(() => __prismFixture.patch({ contentWidth: 'full' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'full');
     await page.evaluate(() => __prismFixture.patch({ enabled: false }));
     await page.waitForFunction(() => !document.documentElement.hasAttribute('data-op-enabled'));
+    assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-content-width')), false);
+    assert.ok(Math.abs((await measureColumns()).threadWidth - stdCols.threadWidth) <= 1, `${host}: disable restores native thread width`);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), originalBackground);
     assert.deepEqual(await surfaceSnapshot(page), originalSurfaces, 'disable restores native sidebar and composer styles');
+    if (host === 'chatgpt') {
+      assert.deepEqual(await chatgptLayoutSnapshot(page), originalChatGPTLayout, 'chatgpt: disable restores native bottom spacing and spacer geometry');
+    }
     assert.deepEqual(await sidebarSelectionSnapshot(page), originalSidebarSelection, 'disable restores native nested sidebar styles');
     await settledSurfaceStyle(page, bubbleSelector, 'backgroundColor');
     assert.deepEqual(await surfaceColors(page, bubbleSelector), originalBubbleColors, `${host}: disable restores native user bubble colors`);
     assert.equal(await page.locator('[data-fixture-composer]').getAttribute('data-op-composer-surface'), 'fixture-original');
+    await settleComposerControls(page);
+    assert.deepEqual(await composerControlsSnapshot(page), originalComposerControls, `${host}: disable restores native composer, add button, model capsule, and chips`);
     assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-sidebar-active="true"],[data-op-composer-backdrop="true"]').count(), 0);
     assert.equal(await page.locator('pre code').textContent(), originalText);
     assert.equal(await page.evaluate(() => ObsidianPrismRuntime.diagnostics().observing), false);
-    await page.evaluate(() => __prismFixture.patch({ enabled: true }));
+    await page.evaluate(() => __prismFixture.patch({ enabled: true, contentWidth: 'standard' }));
     await page.waitForSelector('.op-code-fold-bar');
     assert.equal(await page.locator('.op-code-fold-bar').count(), 1);
 
@@ -796,7 +1281,7 @@ async function exerciseFixture(browser, host) {
     assert.equal(stopped.codeBlocks, 0);
     assert.equal(stopped.thoughtBlocks, 0);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
-    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-composer-scrim="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-enabled')), false);
     await page.evaluate(() => { __prismFixture.patch({ enabled: true }); window.dispatchEvent(new Event('pageshow')); document.body.append(document.createElement('div')); });

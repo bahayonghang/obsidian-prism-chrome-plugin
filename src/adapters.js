@@ -5,13 +5,24 @@
 
   const HOSTS = Object.freeze({
     chatgpt: {
-      users: '[data-message-author-role="user"]',
-      assistants: '[data-message-author-role="assistant"]',
+      users: '[data-message-author-role="user"], article[data-turn="user"], [data-testid="user-message"]',
+      assistants: '[data-message-author-role="assistant"], article[data-turn="assistant"], [data-testid="assistant-message"], .agent-turn',
+      turnContainers: 'article[data-testid^="conversation-turn-"]',
       conversation: 'main',
       primary: ['main', '[role="main"]', '[data-testid="conversation-pane"]', '[data-testid="chat-main"]', '#main-content'],
       editors: ['#prompt-textarea', '[data-testid="prompt-textarea"]', 'textarea[name="prompt-textarea"]', 'main [contenteditable="true"][role="textbox"]', 'main textarea'],
       composers: ['#composer-background', '[data-testid="chat-composer"]', '[data-testid="composer"]', '[data-composer-surface]', '.composer-parent'],
       composerBackdrops: '#thread-bottom,[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
+      codeSurfaces: '[data-testid="code-block"], .code-block-wrapper',
+      codeHeaders: '.code-header, [data-testid="code-block-header"]',
+      modelTriggers: '[data-testid="model-switcher-dropdown-button"], [data-testid="composer-model-switcher"], button[aria-label*="model" i], button[aria-label*="模型"]',
+      modelLabels: '[data-testid="model-switcher-dropdown-button"], [data-testid="composer-model-switcher"], .model-label',
+      addTriggers: '[data-testid="composer-plus-btn"], button[aria-label*="Add files" i], button[aria-label*="Attach" i], button[aria-label*="上传"], button[aria-label*="添加"]',
+      composerChips: '[data-testid="composer-mode-pill"], [data-testid="composer-chip"], [data-testid="composer-tool-chip"]',
+      attachments: '[data-testid="attachment-card"], [data-testid="file-attachment"], [data-testid="uploaded-file"], [data-testid="image-attachment"], .native-footer-attachment',
+      threadColumns: '.thread, [data-testid="conversation-thread"], [class*="thread-content"]',
+      composerColumns: '.composer-container, [data-testid="composer-container"]',
+      tailSpacers: '[data-testid="conversation-turn-spacer"], .thread-bottom-spacer',
       sidebars: ['#stage-slideover-sidebar', '#stage-sidebar', '#app-rail', '[data-testid="app-rail"]', '[data-testid="app-sidebar"]', '[data-testid="history-sidebar"]', '[data-testid="sidebar"]', '[data-testid="sidebar-container"]', '[data-testid="stage-thread-flyout"]', '[data-testid="conversation-history"]', '[data-testid="chat-history"]'],
       sidebarLinks: 'a[href^="/c/"],a[href^="/g/"],a[href^="/project/"]',
       thoughts: '[data-testid="reasoning-content"], [data-testid="thoughts-content"], [data-testid="thinking-content"]',
@@ -20,11 +31,22 @@
     gemini: {
       users: 'user-query, [data-test-id="user-query"], .user-query-container',
       assistants: 'model-response, [data-test-id="model-response"], .model-response-text',
+      turnContainers: '',
       conversation: 'chat-window, main, [role="main"]',
       primary: ['chat-window', 'main', '[role="main"]', '.chat-app'],
       editors: ['input-area-v2 .ql-editor[contenteditable="true"]', 'rich-textarea .ql-editor', 'input-area-v2 [contenteditable="true"]', 'rich-textarea [contenteditable="true"]', 'textarea[aria-label]', 'main [contenteditable="true"][role="textbox"]'],
       composers: ['input-area-v2 .text-input-field', 'input-area-v2 .input-area-container', '.input-area-container', '[data-test-id="input-area"]', 'input-area-v2', 'input-area'],
       composerBackdrops: 'input-area-v2,input-area,.input-area-container,[data-test-id="input-area"],[data-test-id="input-area-container"],.input-area-wrapper',
+      codeSurfaces: 'code-block, .code-block',
+      codeHeaders: '.code-block-decoration, [data-test-id="code-block-header"]',
+      modelTriggers: 'bard-mode-switcher button, [data-test-id="bard-mode-menu-button"], .input-area-switch',
+      modelLabels: 'bard-mode-switcher button, [data-test-id="bard-mode-menu-button"], .input-area-switch, .model-label',
+      addTriggers: '[data-test-id="upload-file-button"], button[aria-label*="Add files" i], button[aria-label*="Upload" i], button[aria-label*="上传"], button[aria-label*="添加"]',
+      composerChips: '.toolbox-drawer-item-button, [data-test-id="composer-chip"]',
+      attachments: '[data-test-id="file-preview-chip"], [data-test-id="attachment-card"], file-preview-chip, .native-footer-attachment',
+      threadColumns: '.thread, .response-container',
+      composerColumns: '.composer-container, input-area-v2',
+      tailSpacers: '',
       sidebars: ['bard-sidenav', 'side-navigation-v2', 'side-navigation', 'mat-sidenav', '[data-test-id="side-nav"]', '[data-test-id="side-navigation"]', '[data-testid="sidebar"]'],
       sidebarLinks: 'a[href^="/app/"]',
       thoughts: 'model-thoughts .thoughts-content, model-thoughts .thought-content, model-thoughts .markdown, [data-test-id="thoughts-content"], [data-test-id="thinking-content"]',
@@ -72,19 +94,94 @@
     copy.querySelectorAll('[data-op-owned],script,style,[hidden],[aria-hidden="true"]').forEach(node => node.remove());
     return copy.textContent || '';
   }
+  const TURN_NOISE_SELECTOR = '[data-op-owned],script,style,svg,[hidden],[aria-hidden="true"],.sr-only,button,[role="button"],.turn-actions,[data-testid="turn-actions"],.code-header,.code-block-decoration,[data-testid="code-block-header"],[data-test-id="code-block-header"],[data-testid="citation-pill"],.citation-chip,message-actions';
+  function cleanTurnText(element, options = {}) {
+    if (!element) return '';
+    const selector = options && options.excludeCode ? `${TURN_NOISE_SELECTOR},pre` : TURN_NOISE_SELECTOR;
+    if (element.matches && element.matches(selector)) return '';
+    if (typeof element.cloneNode === 'function') {
+      if (!element.querySelector || !element.querySelector(selector)) {
+        return (element.textContent || '').trim();
+      }
+      const copy = element.cloneNode(true);
+      copy.querySelectorAll(selector).forEach(node => node.remove());
+      return (copy.textContent || '').trim();
+    }
+    const collectText = node => {
+      if (!node) return '';
+      if (node.nodeType === 3) return node.nodeValue ?? node.textContent ?? '';
+      if (node !== element && node.matches && node.matches(selector)) return '';
+      let out = node.textContent || '';
+      if (Array.isArray(node.children)) {
+        for (const child of node.children) {
+          const part = collectText(child);
+          if (part) out += (out ? ' ' : '') + part;
+        }
+      }
+      return out;
+    };
+    return collectText(element).trim();
+  }
   function visibleText(element) {
     if (!isVisible(element)) return '';
     // innerText follows rendered visibility, including collapsed native details.
     return typeof element.innerText === 'string' ? element.innerText.trim() : textOf(element).trim();
   }
-  function estimateTokens(text) {
+  function estimateTokens(text, options = {}) {
+    const source = String(text || '');
+    if (!source.trim()) return 0;
     let cjk = 0;
     let other = 0;
-    for (const character of String(text || '')) {
+    for (const character of source) {
       if (/[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff]/u.test(character)) cjk++;
       else other++;
     }
-    return Math.ceil(cjk * 1.45 + other / 3.8);
+    const divisor = options && options.mode === 'code' ? 3.2 : 4;
+    return Math.ceil(cjk * 0.7 + other / divisor);
+  }
+  function estimateTurnTokens(turn) {
+    if (!turn) return { prose: 0, code: 0, total: 0 };
+    const prose = estimateTokens(cleanTurnText(turn, { excludeCode: true }));
+    let code = 0;
+    if (typeof turn.querySelectorAll === 'function') {
+      const pres = [...turn.querySelectorAll('pre')].filter(pre =>
+        !isOwned(pre) &&
+        !pre.closest?.('[hidden],[aria-hidden="true"]') &&
+        !pre.parentElement?.closest?.('pre')
+      );
+      for (const pre of pres) {
+        if (pre.parentElement && pre.parentElement !== turn) {
+          const noiseAnc = pre.closest?.(TURN_NOISE_SELECTOR);
+          if (noiseAnc && turn.contains?.(noiseAnc)) continue;
+        }
+        const codeText = cleanTurnText(pre.querySelector?.('code') || pre);
+        code += estimateTokens(codeText, { mode: 'code' });
+      }
+    }
+    return { prose, code, total: prose + code };
+  }
+  function resolveReferenceCapacity(host, modelLabel, configured) {
+    const rawLabel = String(modelLabel || '').trim();
+    if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+      return { tokens: configured, mode: 'manual', matched: true, modelLabel: rawLabel };
+    }
+    const label = rawLabel.toLowerCase();
+    if (host === 'gemini') {
+      if (/\b1\.5\s*pro\b/.test(label)) return { tokens: 2000000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      if (/\b(?:3(?:\.\d+)?|2\.5|2\.0|flash|pro|thinking|ultra)\b/.test(label)) {
+        return { tokens: 1000000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      }
+      return { tokens: 1000000, mode: 'auto', matched: false, modelLabel: rawLabel };
+    }
+    if (host === 'chatgpt') {
+      if (/\b4\.1\b/.test(label)) return { tokens: 1000000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      if (/\b(?:gpt-?5|chatgpt\s*5|5\.[12])\b/.test(label)) return { tokens: 400000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      if (/\bo[134]\b/.test(label)) return { tokens: 200000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      if (/\b4o\b|gpt-?4/.test(label)) return { tokens: 128000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      if (/\b3\.5\b/.test(label)) return { tokens: 32000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      return { tokens: 128000, mode: 'auto', matched: false, modelLabel: rawLabel };
+    }
+    return { tokens: 128000, mode: 'auto', matched: false, modelLabel: rawLabel };
   }
   function scrollContainer(element) {
     for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
@@ -93,7 +190,7 @@
     }
     return element?.ownerDocument.scrollingElement || document.scrollingElement;
   }
-  const MESSAGE_AREAS = '[data-message-author-role],user-query,model-response,[data-test-id="model-response"],.model-response-text';
+  const MESSAGE_AREAS = '[data-message-author-role],[data-turn="user"],[data-turn="assistant"],article[data-testid^="conversation-turn-"],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response,[data-test-id="model-response"],.model-response-text';
   function firstVisible(selectors, root, predicate = () => true) {
     for (const selector of selectors) {
       const found = [...root.querySelectorAll(selector)].find(node => !isOwned(node) && isVisible(node) && predicate(node));
@@ -255,19 +352,210 @@
     const result = [...rows];
     return result.filter(node => !result.some(parent => parent !== node && parent.contains(node)));
   }
+  function sortByDocumentOrder(nodes) {
+    if (nodes.length <= 1 || typeof nodes[0]?.compareDocumentPosition !== 'function') return nodes;
+    return [...nodes].sort((a, b) => {
+      if (a === b) return 0;
+      const pos = a.compareDocumentPosition(b);
+      if (pos & 4) return -1;
+      if (pos & 2) return 1;
+      return 0;
+    });
+  }
+  function findTurns(spec, role, root) {
+    const selector = role === 'user' ? spec.users : spec.assistants;
+    const explicit = topLevelMatches(selector, root).filter(isVisible);
+    if (!spec.turnContainers) return sortByDocumentOrder(explicit);
+    const result = [...explicit];
+    const seen = new Set(explicit);
+    const containers = topLevelMatches(spec.turnContainers, root).filter(isVisible);
+    for (const container of containers) {
+      if (seen.has(container) || result.some(node => node.contains(container) || container.contains(node))) continue;
+      if (container.querySelector(spec.users) || container.querySelector(spec.assistants)) continue;
+      const heading = container.querySelector('.sr-only');
+      const srText = heading ? textOf(heading).trim().toLowerCase() : '';
+      const turnAttr = container.getAttribute('data-turn');
+      const isUser = turnAttr === 'user' || Boolean(container.querySelector('.user-message-bubble-color')) || /^(you said|你说|您说)/i.test(srText);
+      const isAssistant = turnAttr === 'assistant' || Boolean(container.querySelector('.agent-turn')) || /^(chatgpt said|chatgpt\s*说)/i.test(srText);
+      if (role === 'user' && isUser && !isAssistant) {
+        seen.add(container);
+        result.push(container);
+      } else if (role === 'assistant' && isAssistant && !isUser) {
+        seen.add(container);
+        result.push(container);
+      }
+    }
+    return sortByDocumentOrder(result);
+  }
+  function normalizeModelText(raw) {
+    return String(raw || '').replace(/[⌄▾▼›❯]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function firstMatchingSelector(selectorList, scope, predicate) {
+    if (!selectorList || !scope?.querySelectorAll) return null;
+    for (const selector of selectorList.split(',').map(s => s.trim()).filter(Boolean)) {
+      const found = [...scope.querySelectorAll(selector)].find(node => !isOwned(node) && isVisible(node) && predicate(node));
+      if (found) return found;
+    }
+    return null;
+  }
+  const isNonMessageTrigger = node => !node.closest('dialog,[role="dialog"],[aria-modal="true"]') && !node.closest(MESSAGE_AREAS);
+  function findModelTrigger(spec, root) {
+    return firstMatchingSelector(spec.modelTriggers, root, isNonMessageTrigger);
+  }
+  function findActiveModelLabel(spec, root) {
+    const readLabel = node => node ? normalizeModelText(textOf(node) || node.getAttribute('aria-label') || '') : '';
+    const triggerLabel = readLabel(findModelTrigger(spec, root));
+    if (triggerLabel) return triggerLabel;
+    let resolved = '';
+    firstMatchingSelector(spec.modelLabels, root, node => {
+      if (!isNonMessageTrigger(node)) return false;
+      const label = readLabel(node);
+      if (label) { resolved = label; return true; }
+      return false;
+    });
+    return resolved;
+  }
+  function findCodeSurfaces(spec, messages, root) {
+    const surfaces = [];
+    const seen = new Set();
+    const add = node => {
+      if (!node || isOwned(node) || !isVisible(node) || seen.has(node)) return;
+      if (node.matches(MESSAGE_AREAS) || node.matches('.markdown')) return;
+      seen.add(node);
+      surfaces.push(node);
+    };
+    const scope = messages.length ? messages : [root];
+    for (const container of scope) {
+      if (spec.codeSurfaces) {
+        for (const node of container.querySelectorAll(spec.codeSurfaces)) add(node);
+      }
+      for (const pre of container.querySelectorAll('pre')) {
+        if (isOwned(pre) || !isVisible(pre)) continue;
+        if (surfaces.some(surface => surface.contains(pre))) continue;
+        const parent = pre.parentElement;
+        if (parent && !isOwned(parent) && !parent.matches(MESSAGE_AREAS) && !parent.matches('.markdown') &&
+            spec.codeHeaders && parent.querySelector(spec.codeHeaders) && parent.querySelectorAll('pre').length === 1) {
+          add(parent);
+        } else {
+          add(pre);
+        }
+      }
+    }
+    return surfaces.filter(node => !surfaces.some(other => other !== node && other.contains(node)));
+  }
+  function findCodeHeaders(spec, messages) {
+    if (!spec.codeHeaders) return [];
+    const out = [];
+    for (const message of messages) {
+      for (const hdr of message.querySelectorAll(spec.codeHeaders)) {
+        if (!isOwned(hdr) && isVisible(hdr) && !out.includes(hdr)) out.push(hdr);
+      }
+    }
+    return out;
+  }
+  function findVisibleAttachments(spec, messages, composer, root) {
+    if (!spec.attachments) return [];
+    const candidates = new Set();
+    for (const scope of [...messages, composer?.parentElement || composer, root]) {
+      if (!scope?.querySelectorAll) continue;
+      for (const node of scope.querySelectorAll(spec.attachments)) {
+        if (isOwned(node) || !isVisible(node) || node.closest('dialog,[role="dialog"],[aria-modal="true"]')) continue;
+        const rect = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+        if (rect && rect.width > 0 && rect.height > 0 && rect.width <= 36 && rect.height <= 36) continue;
+        candidates.add(node);
+      }
+    }
+    const list = [...candidates];
+    return list.filter(node => !list.some(other => other !== node && other.contains(node)));
+  }
+  function findComposerAddTrigger(spec, composer) {
+    if (!composer || !spec.addTriggers) return null;
+    const scope = composer.parentElement || composer;
+    const isCandidate = node => composer.contains(node) && !node.classList.contains('send-button');
+    // Prefer icon-only or '+' buttons so 32px circular styling never clips text labels.
+    return firstMatchingSelector(spec.addTriggers, scope, node => isCandidate(node) && textOf(node).trim().length <= 2) ||
+      firstMatchingSelector(spec.addTriggers, scope, isCandidate);
+  }
+  function findComposerChips(spec, composer, addTrigger, modelTrigger) {
+    if (!composer || !spec.composerChips) return [];
+    const chips = [];
+    const scopes = [composer, composer.parentElement].filter(Boolean);
+    for (const scope of scopes) {
+      for (const node of scope.querySelectorAll(spec.composerChips)) {
+        if (isOwned(node) || !isVisible(node) || node === addTrigger || node === modelTrigger) continue;
+        if (node.contains(addTrigger) || node.contains(modelTrigger) || node.classList?.contains('send-button')) continue;
+        if (!chips.includes(node)) chips.push(node);
+      }
+    }
+    return chips.filter(node => !chips.some(other => other !== node && other.contains(node)));
+  }
+  function findComposerScrim(spec, composer) {
+    const backdrops = findComposerBackdrops(spec, composer);
+    if (!backdrops.length) return null;
+    // Outermost structural ancestor in the bounded dock chain (ignore empty fade siblings).
+    const ancestors = [];
+    for (let node = composer.parentElement; node; node = node.parentElement) {
+      if (backdrops.includes(node)) ancestors.push(node);
+    }
+    return ancestors.length ? ancestors[ancestors.length - 1] : null;
+  }
+  function findThreadTailSpacers(spec, primary, messages) {
+    if (!primary || !spec.tailSpacers || !messages.length) return [];
+    const lastMessage = messages[messages.length - 1];
+    const spacers = [];
+    for (const node of primary.querySelectorAll(spec.tailSpacers)) {
+      if (isOwned(node) || node.closest(MESSAGE_AREAS)) continue;
+      if (textOf(node).trim() || node.querySelector('button,a[href],[role="button"],input,textarea')) continue;
+      if (lastMessage.contains(node)) continue;
+      if (typeof lastMessage.compareDocumentPosition === 'function' && !(lastMessage.compareDocumentPosition(node) & 4)) continue;
+      spacers.push(node);
+    }
+    return spacers;
+  }
+  function findColumnSurfaces(selector, primary, anchor) {
+    if (!selector || !primary) return [];
+    const out = [];
+    for (const node of primary.querySelectorAll(selector)) {
+      if (!isOwned(node) && isVisible(node) && primary.contains(node) && (!anchor || node.contains(anchor) || anchor.contains(node))) {
+        if (!out.includes(node)) out.push(node);
+      }
+    }
+    if (!out.length && anchor) {
+      for (let node = anchor.parentElement; node && node !== primary; node = node.parentElement) {
+        if (!isOwned(node) && node.matches && node.matches(selector)) { out.push(node); break; }
+      }
+    }
+    return out;
+  }
   function forHost(host, root = document) {
     const spec = HOSTS[host];
     if (!spec) return null;
     const collect = selectors => topLevelMatches(selectors, root).filter(isVisible);
-    const messages = () => [...collect(spec.users), ...collect(spec.assistants)];
+    const userTurns = () => findTurns(spec, 'user', root);
+    const assistantTurns = () => findTurns(spec, 'assistant', root);
+    const messages = () => sortByDocumentOrder([...userTurns(), ...assistantTurns()]);
     return Object.freeze({
       host,
-      userTurns: () => collect(spec.users),
-      assistantTurns: () => collect(spec.assistants),
+      userTurns,
+      assistantTurns,
       conversationRoot: () => root.querySelector(spec.conversation) || root.body || root,
       primarySurface: () => findPrimary(spec, root),
       composerSurface: () => findComposer(spec, root),
       composerBackdropSurfaces: (composer) => findComposerBackdrops(spec, composer === undefined ? findComposer(spec, root) : composer),
+      composerScrimSurface: (composer) => findComposerScrim(spec, composer === undefined ? findComposer(spec, root) : composer),
+      composerAddTrigger: (composer) => findComposerAddTrigger(spec, composer === undefined ? findComposer(spec, root) : composer),
+      modelSelectorTrigger: () => findModelTrigger(spec, root),
+      activeModelLabel: () => findActiveModelLabel(spec, root),
+      composerChips: (composer) => {
+        const comp = composer === undefined ? findComposer(spec, root) : composer;
+        return findComposerChips(spec, comp, findComposerAddTrigger(spec, comp), findModelTrigger(spec, root));
+      },
+      visibleAttachments: (composer) => findVisibleAttachments(spec, messages(), composer === undefined ? findComposer(spec, root) : composer, root),
+      codeSurfaces: () => findCodeSurfaces(spec, messages(), root),
+      codeHeaders: () => findCodeHeaders(spec, messages()),
+      threadTailSpacers: () => findThreadTailSpacers(spec, findPrimary(spec, root), messages()),
+      threadColumns: () => findColumnSurfaces(spec.threadColumns, findPrimary(spec, root), messages()[0]),
+      composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, findPrimary(spec, root), composer === undefined ? findComposer(spec, root) : composer),
       sidebarSurfaces: () => findSidebars(spec, root),
       sidebarActiveRows: (sidebars) => findSidebarActiveRows(sidebars === undefined ? findSidebars(spec, root) : sidebars),
       codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))],
@@ -281,6 +569,6 @@
     });
   }
   global.ObsidianPrismAdapters = Object.freeze({
-    forHost, topLevelMatches, estimateTokens, textOf, visibleText, isOwned, isVisible, scrollContainer
+    forHost, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, scrollContainer
   });
 })(globalThis);

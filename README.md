@@ -13,12 +13,12 @@
 | 四套主题 | 深空黑曜 Obsidian、暖炭玄岩 Warm、白昼冷晶 Crystal、暖白画册 Alabaster；也可保留宿主配色 |
 | 外观微调 | 跟随系统亮暗、五档强调色、三档圆角、本地代码字体、连字；玻璃/实色/原生侧栏与紧凑密度 |
 | 设置中心 | 紧凑弹窗、完整设置工作台、常驻导航与保存状态、中英文、场景预设、外观/动效预览、JSON导入导出、跨标签页同步 |
-| 阅读工具 | 代码块顶栏、长代码手动折叠、带搜索的会话大纲、`Alt+↑` / `Alt+↓` 跳转 |
-| 环境与动效 | Aurora底部光晕、Spotlight聚光、字符/网格纹理、光效浓度、移动速度、输入框聚焦光效及回复活动余晖；全部可配置 |
-| 会话估算 | 按当前网页已加载文字粗略估算 token 数；可自选参考容量，只作阅读参考 |
+| 阅读工具 | 代码块顶栏与全主题高亮对比度统一、长代码手动折叠、带搜索的会话大纲、`Alt+↑` / `Alt+↓` 跳转、三档内容宽度（标准 / 加宽 / 全栏）及右下角单键循环按钮 |
+| 环境与动效 | Aurora/Spotlight底部光晕、Spotlight聚光、字符/网格纹理、光效浓度、移动速度、羽化 Composer Scrim、原位圆角悬浮输入框卡片与 Model Capsule、聚焦光效及回复活动余晖；全部可配置且支持原生配色零干预 |
+| 会话估算 | 按当前网页已加载文字校准估算 token 数；支持 `auto` 按可见模型标签自动匹配参考容量（未知时 Gemini 兜底 1M、ChatGPT 兜底 128K）或手动覆盖，并在检测到可见附件时附加 `+` 标记与未计入附件提示 |
 | 可选翻译 | 关闭为默认状态；手动翻译网页已经显示的思考文字，自行配置兼容接口并授权目标站点 |
 
-网页无法提供原桌面版的可靠模型配额、真实上下文占用、缓存命中率或子代理遥测。因此会话估算**不是账号额度，也不是实际模型计费**；它不包括未加载历史、隐藏系统提示、图片或附件的真实 token 消耗。试管的参考容量由你选择，默认128K只是比例尺，不代表当前模型真实窗口。
+网页无法提供原桌面版的可靠模型配额、真实上下文占用、缓存命中率或子代理遥测。因此会话估算**不是账号额度，也不是实际模型计费**；它不包括未加载历史、隐藏系统提示、图片或附件的真实 token 消耗。试管的参考容量支持 `auto`（根据当前识别到的可见模型标签映射常见参考尺度，未知时按站点默认）或手动选择（`32K`–`2M`），仅作阅读参考比例尺，不代表真实服务端截断窗口。
 
 CDP注入、Sidecar守护进程、本地文件网关、IDE模型档位滑块和工程模式没有移植。输入框继续使用网页原生编辑和光标，保留中文输入法与无障碍行为。
 
@@ -46,8 +46,8 @@ Windows若只有 `py` 命令，可将最后一步改为 `py -3 scripts/build.py`
 |---|---|
 | `dist/chrome/` | Chrome解压扩展目录 |
 | `dist/firefox/` | Firefox临时加载目录，使用独立Firefox清单 |
-| `dist/obsidian-prism-web-0.2.1-chrome.zip` | Chrome开发/提交包 |
-| `dist/obsidian-prism-web-0.2.1-firefox.zip` | Firefox开发/提交包，未签名 |
+| `dist/obsidian-prism-web-0.3.0-chrome.zip` | Chrome开发/提交包 |
+| `dist/obsidian-prism-web-0.3.0-firefox.zip` | Firefox开发/提交包，未签名 |
 | `dist/SHA256SUMS` | 两个ZIP的SHA-256校验值 |
 
 构建采用明确文件白名单，不包含Git目录、测试数据、开发依赖或本地密钥。相同源码与Python/zlib环境可生成相同ZIP字节。
@@ -75,7 +75,7 @@ Chrome：用新版包的内容覆盖原来加载的扩展目录，在 `chrome://
 
 Firefox：在 `about:debugging` 重新载入新版 Firefox 包，并刷新目标网页。
 
-v0.2.1 修复了工具栏弹窗缩成小白框、对话底栏露出白色背景、侧栏嵌套高亮的问题。修复规划与验证范围见 [回归修复计划](docs/REGRESSION_FIX_PLAN.md)。
+v0.3.0 升级了 2026 双端页面 DOM 适配器，新增「标准 / 加宽 / 全栏」三档内容宽度与右下角快捷切换、全主题高对比度代码块及语法高亮、默认 `auto` 模型感知与附件提示的上下文估算、ChatGPT 底部空白收紧与双端羽化 Composer Scrim，以及原位可逆的输入框卡片与 Model Capsule（详见 [ADR-0001](docs/adr/0001-local-dom-context-estimation.md) 与 [ADR-0002](docs/adr/0002-in-place-reversible-composer-styling.md)）。
 
 旧配色与浓度会保留，宠物设置自动失效。想直接查看新版完整环境效果，可先选择“流光”场景，再在“光影”中微调。正文中的光场会主动减弱，首页的光场更明显。完整设置页可通过弹窗右上角按钮打开。
 
@@ -142,10 +142,10 @@ npm run test:browser
 
 - Four light/dark palettes plus host colors; five accents, system appearance, rounded corners, installed code fonts, ligatures and compact sidebars.
 - A compact bilingual popup and full settings workspace with persistent navigation, motion preview, scene presets, live settings and sanitized JSON import/export.
-- Glass/solid/native sidebar surfaces and themed composer framing, without replacing the original editor or navigation.
-- Manual long-code folding, sticky headers, a searchable conversation outline and `Alt+Up/Down` navigation.
+- Glass/solid/native sidebar surfaces and an elevated, in-place reversible Composer Surface with circular add trigger, Model Capsule, unified chips, and feathered Composer Scrim without DOM reparenting or text rewriting (ADR-0002).
+- Three Content Width Presets (`standard`, `wide`, `full`) synced between Reading settings and an independent Bottom Dock quick toggle, >= 4.5:1 WCAG AA Code Surface contrast across all four optical palettes, manual long-code folding, sticky headers, a searchable conversation outline and `Alt+Up/Down` navigation.
 - Configurable Aurora/Spotlight environments, decorative glyph/grid textures, motion speed, focus glow and optional stream highlighting. Pixel companions have been removed, including legacy settings support.
-- A rough estimate of text loaded in the current page. It is **not** model quota, billing, or actual context-window usage.
+- A calibrated local-only DOM estimate of currently loaded text (ADR-0001) with `auto` model-matched Reference Capacity (falling back to 1M on Gemini and 128K on ChatGPT when unrecognized, or manually overridden) and an explicit `+` indicator for uncounted visible attachments. It is **not** model quota, billing, or actual server-side context usage.
 - Optional, manual translation of already visible thought text through a user-configured compatible endpoint. It is off by default, requires explicit origin/data permission, and never exposes credentials through host-page storage or config exports.
 
 Desktop-only CDP, Sidecar services, local-file gateways, IDE controls and account telemetry are excluded. The native composer and caret remain under the host site's control.

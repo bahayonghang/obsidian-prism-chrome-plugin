@@ -1,6 +1,6 @@
 {
   "name": "obsidian-prism-chrome-plugin",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "private": true,
   "description": "Community WebExtension adaptation of Obsidian Prism for ChatGPT and Gemini",
   "license": "GPL-3.0-only",

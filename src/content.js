@@ -32,6 +32,8 @@
   let activeTurn = -1;
   let railSignature = '';
   let lastEstimate = 0;
+  let lastModelLabel = '';
+  let lastAttachments = 0;
   let estimate = {user:0, assistant:0, code:0, total:0};
   let fadeEntries = [];
   let surfaceObserver = null;
@@ -228,7 +230,7 @@
     const list = rail.querySelector('.op-rail-list');
     const fragment = document.createDocumentFragment();
     turns.forEach((turn,index) => {
-      const text = Adapters.textOf(turn).replace(/\s+/g,' ').trim();
+      const text = Adapters.cleanTurnText(turn).replace(/\s+/g,' ').trim();
       if (keyword && !text.toLocaleLowerCase().includes(keyword)) return;
       const button = make('button','op-rail-item');
       button.dataset.turn = String(index);
@@ -277,7 +279,7 @@
     search.placeholder = t('outlineSearch'); search.setAttribute('aria-label',t('outlineSearch'));
     setText(rail.querySelector('.op-rail-title'),t('outlineTitle'));
     setText(rail.querySelector('.op-rail-count'),String(turns.length));
-    const signature = JSON.stringify([cfg.language,turns.map(turn => Adapters.textOf(turn))]);
+    const signature = JSON.stringify([cfg.language,turns.map(turn => Adapters.cleanTurnText(turn))]);
     if (signature !== railSignature) {
       railSignature = signature;
       const ticks = rail.querySelector('.op-rail-ticks');
@@ -287,7 +289,7 @@
         const index = count === 1 ? 0 : Math.round(i*(turns.length-1)/(count-1));
         const tick = make('button','op-rail-tick');
         tick.dataset.turn = String(index);
-        tick.title = Adapters.textOf(turns[index]).trim().slice(0,100);
+        tick.title = Adapters.cleanTurnText(turns[index]).replace(/\s+/g,' ').trim().slice(0,100);
         tick.setAttribute('aria-label',`${local('跳到提问','Go to question')} ${index+1}: ${tick.title}`);
         tick.addEventListener('click', () => jump(index));
         fragment.append(tick);
@@ -337,16 +339,36 @@
     jump(index + (event.key === 'ArrowUp' ? -1 : 1));
   }
 
+  const WIDTH_LABELS = {standard:'widthStandard', wide:'widthWide', full:'widthFull'};
   function setDockOpen(open) {
     if (!dock) return;
     const popover = dock.querySelector('.op-vial-popover');
     if (popover) popover.hidden = !open;
     dock.querySelector('.op-vial-pill')?.setAttribute('aria-expanded',String(open));
   }
-  function syncDock() {
-    if (!cfg.contextVial) { dock?.remove(); dock=null; return; }
-    if (!dock) { dock=own(make('aside','op-dock')); dock.id='op-bottom-dock'; document.body.append(dock); }
-    if (!dock.isConnected) document.body.append(dock);
+  function syncWidthToggle() {
+    let widthBtn = dock.querySelector('.op-width-toggle');
+    if (!widthBtn) {
+      widthBtn = make('button','op-width-toggle');
+      widthBtn.addEventListener('click', event => {
+        if (!event.isTrusted || !enabled) return;
+        const presets = Schema.ENUMS.contentWidth;
+        const next = presets[(presets.indexOf(cfg.contentWidth) + 1) % presets.length];
+        Schema.saveContentWidth(next).then(updated => {
+          if (updated && !stopped && cfg.contentWidth !== updated.contentWidth) configure(updated);
+        }).catch(() => {});
+      });
+      dock.prepend(widthBtn);
+    }
+    const preset = WIDTH_LABELS[cfg.contentWidth] ? cfg.contentWidth : 'standard';
+    const widthLabel = t(WIDTH_LABELS[preset]);
+    const widthTip = `${t('widthToggleLabel')}: ${widthLabel}`;
+    setText(widthBtn, widthLabel);
+    widthBtn.setAttribute('data-width-preset', preset);
+    widthBtn.title = widthTip;
+    widthBtn.setAttribute('aria-label', widthTip);
+  }
+  function syncContextVial() {
     let vial = dock.querySelector('.op-vial-pill');
     if (!cfg.contextVial) { vial?.remove(); dock.querySelector('.op-vial-popover')?.remove(); return; }
     if (!vial) {
@@ -359,31 +381,56 @@
       vial.addEventListener('click', () => setDockOpen(popover.hidden));
       dock.append(vial,popover);
     }
+    const modelLabel=adapter.activeModelLabel?.()||'';
+    const attachments=(adapter.visibleAttachments?.()||[]).length;
+    const capacity=Adapters.resolveReferenceCapacity(host,modelLabel,cfg.contextWindowTokens);
     const now=performance.now();
-    if (!lastEstimate || now-lastEstimate>750) {
-      const users=adapter.userTurns(), assistants=adapter.assistantTurns();
-      estimate.user=users.reduce((sum,node)=>sum+Adapters.estimateTokens(Adapters.textOf(node)),0);
-      estimate.assistant=assistants.reduce((sum,node)=>sum+Adapters.estimateTokens(Adapters.textOf(node)),0);
-      estimate.code=adapter.codeBlocks().reduce((sum,node)=>sum+Adapters.estimateTokens(Adapters.textOf(node.querySelector('code')||node)),0);
-      estimate.total=estimate.user+estimate.assistant; lastEstimate=now;
+    if (!lastEstimate || now-lastEstimate>750 || lastModelLabel!==modelLabel || lastAttachments!==attachments) {
+      let user=0, assistant=0, code=0;
+      for (const node of adapter.userTurns()) {
+        const turn=Adapters.estimateTurnTokens(node);
+        user+=turn.total; code+=turn.code;
+      }
+      for (const node of adapter.assistantTurns()) {
+        const turn=Adapters.estimateTurnTokens(node);
+        assistant+=turn.total; code+=turn.code;
+      }
+      estimate={user, assistant, code, total:user+assistant};
+      lastEstimate=now; lastModelLabel=modelLabel; lastAttachments=attachments;
     }
     const format = number => number>=1000000 ? (number/1000000).toFixed(1)+'M' : number>=1000 ? (number/1000).toFixed(1)+'K' : String(number);
-    const percent=Math.min(100,estimate.total/cfg.contextWindowTokens*100);
-    setText(vial.querySelector('.op-vial-summary'),`≈ ${format(estimate.total)} / ${format(cfg.contextWindowTokens)}`);
-    vial.setAttribute('aria-label',`${t('vialTitle')}: ${estimate.total.toLocaleString()} tokens`);
+    const percent=Math.min(100,capacity.tokens>0?estimate.total/capacity.tokens*100:0);
+    setText(vial.querySelector('.op-vial-summary'),`≈ ${format(estimate.total)}${attachments>0?'+':''} / ${format(capacity.tokens)}`);
+    vial.setAttribute('aria-label',`${t('vialTitle')}: ${estimate.total.toLocaleString()}${attachments>0?'+':''} / ${capacity.tokens.toLocaleString()} tokens`);
     const liquid=vial.querySelector('.op-vial-liquid');
     if(liquid.style.height!==percent.toFixed(1)+'%') liquid.style.height=percent.toFixed(1)+'%';
     const popover=dock.querySelector('.op-vial-popover');
     setText(popover.querySelector('.op-vial-title'),t('vialTitle'));
-    setText(popover.querySelector('.op-vial-note'),t('vialNote'));
-    const signature=JSON.stringify([cfg.language,estimate,cfg.contextWindowTokens]);
+    setText(popover.querySelector('.op-vial-note'),attachments>0?`${t('vialNote')} ${t('vialAttachmentNote')}`:t('vialNote'));
+    const signature=JSON.stringify([cfg.language,estimate,capacity,attachments]);
     if(popover.dataset.signature!==signature) {
       popover.dataset.signature=signature;
       const details=popover.querySelector('.op-vial-details');
       const fragment=document.createDocumentFragment();
-      for(const [label,value] of [['vialTotal',estimate.total],['vialUser',estimate.user],['vialAssistant',estimate.assistant],['vialCode',estimate.code]]) fragment.append(make('dt','',t(label)),make('dd','',value.toLocaleString()));
+      const sourceKey=capacity.mode==='manual'?'vialSourceManual':capacity.matched?'vialSourceAutoMatched':'vialSourceAutoFallback';
+      const sourceText=capacity.modelLabel?`${t(sourceKey)} · ${capacity.modelLabel}`:t(sourceKey);
+      const rows=[
+        ['vialTotal',estimate.total.toLocaleString()],
+        ['vialUser',estimate.user.toLocaleString()],
+        ['vialAssistant',estimate.assistant.toLocaleString()],
+        ['vialCode',estimate.code.toLocaleString()],
+        ['vialCapacity',`${capacity.tokens.toLocaleString()} (${sourceText})`]
+      ];
+      if(attachments>0) rows.push(['vialUncountedAttachments',`${attachments} ${t('vialAttachmentsUnit')}`]);
+      for(const [label,value] of rows) fragment.append(make('dt','',t(label)),make('dd','',value));
       details.replaceChildren(fragment);
     }
+  }
+  function syncDock() {
+    if (!dock) { dock=own(make('aside','op-dock')); dock.id='op-bottom-dock'; document.body.append(dock); }
+    if (!dock.isConnected) document.body.append(dock);
+    syncWidthToggle();
+    syncContextVial();
   }
 
   function applyThoughtView(element,entry) {
@@ -481,10 +528,27 @@
       if (!targets.has(element)) targets.set(element,new Set());
       targets.get(element).add(attribute);
     };
+    const isNativePalette = Schema.resolvePalette(cfg) === 'host';
+    const isHome = !adapter.userTurns().length && !adapter.assistantTurns().length;
     const nextPrimary = adapter.primarySurface?.() || null;
     add(nextPrimary,'data-op-main-surface');
+    for (const element of adapter.threadColumns?.() || []) add(element,'data-op-thread-column');
     const composer = adapter.composerSurface?.() || null;
-    if (cfg.composerRestyle) add(composer,'data-op-composer-surface');
+    for (const element of adapter.composerColumns?.(composer) || []) add(element,'data-op-composer-column');
+    if (!isNativePalette) {
+      for (const element of adapter.codeSurfaces?.() || []) add(element,'data-op-code-surface');
+      for (const element of adapter.codeHeaders?.() || []) add(element,'data-op-code-header');
+      if (!isHome) {
+        add(adapter.composerScrimSurface?.(composer),'data-op-composer-scrim');
+        for (const element of adapter.threadTailSpacers?.() || []) add(element,'data-op-thread-spacer');
+      }
+      if (cfg.composerRestyle) {
+        add(composer,'data-op-composer-surface');
+        add(adapter.composerAddTrigger?.(composer),'data-op-composer-add');
+        add(adapter.modelSelectorTrigger?.(),'data-op-model-capsule');
+        for (const element of adapter.composerChips?.(composer) || []) add(element,'data-op-composer-chip');
+      }
+    }
     // Backdrops belong to the page canvas, not the input card. Keep their
     // reversible bridge independent of the optional composer restyling.
     for (const element of adapter.composerBackdropSurfaces?.(composer) || []) {
@@ -518,7 +582,7 @@
         surfaceObserver.observe(primarySurface);
       }
     }
-    const home = String(!adapter.userTurns().length && !adapter.assistantTurns().length);
+    const home = String(isHome);
     if (document.documentElement.getAttribute('data-op-home') !== home) document.documentElement.setAttribute('data-op-home',home);
     document.documentElement.setAttribute('data-op-visibility',document.hidden?'hidden':'visible');
   }
@@ -556,7 +620,7 @@
     updateAmbientGeometry();
   }
   function resetConversation() {
-    activeTurn=-1; railSignature=''; lastEstimate=0;
+    activeTurn=-1; railSignature=''; lastEstimate=0; lastModelLabel=''; lastAttachments=0;
     for(const [element,entry] of thoughts) cleanupThought(element,entry);
     for(const [pre,entry] of codes) cleanupCode(pre,entry);
     clearActivity();
@@ -583,7 +647,7 @@
     for(const [pre,entry] of codes) cleanupCode(pre,entry);
     for(const [element,entry] of thoughts) cleanupThought(element,entry);
     rail?.remove();dock?.remove();ambient?.remove();rail=dock=ambient=null;
-    railSignature='';lastEstimate=0;activeTurn=-1;
+    railSignature='';lastEstimate=0;lastModelLabel='';lastAttachments=0;activeTurn=-1;
   }
   function activate() {
     if(enabled || !document.body || stopped) return;

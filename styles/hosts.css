@@ -202,30 +202,30 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([role="
 }
 
 /* Shared typography enhancements are limited to actual conversation blocks. */
-html[data-op-enabled="true"] :is([data-message-author-role],user-query,model-response) pre,
-html[data-op-enabled="true"] :is([data-message-author-role],user-query,model-response) code {
+html[data-op-enabled="true"] :is([data-message-author-role],[data-turn],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response) pre,
+html[data-op-enabled="true"] :is([data-message-author-role],[data-turn],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response) code {
   font-family: var(--op-code-font-family) !important;
 }
-html[data-op-enabled="true"] :is([data-message-author-role],user-query,model-response) pre {
+html[data-op-enabled="true"] :is([data-message-author-role],[data-turn],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response) pre {
   border-radius: var(--op-radius-md) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role],user-query,model-response) pre {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role],[data-turn],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response) pre {
   background: var(--op-code-well) !important;
   border: 1px solid var(--op-border) !important;
   color: var(--op-fg) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role],model-response) a:not([role="button"]) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role],[data-turn="assistant"],[data-testid="assistant-message"],.agent-turn,model-response) a:not([role="button"]) {
   color: var(--op-link) !important;
 }
-html[data-op-enabled="true"][data-op-sticky-code="true"] :is(code-block .code-block-decoration,[data-message-author-role="assistant"] .code-header,[data-testid="code-block-header"],[data-test-id="code-block-header"]) {
+html[data-op-enabled="true"][data-op-sticky-code="true"] :is([data-op-code-header="true"],code-block .code-block-decoration,[data-message-author-role="assistant"] .code-header,[data-turn="assistant"] .code-header,[data-testid="code-block-header"],[data-test-id="code-block-header"]) {
   position: sticky !important;
   top: 0;
   z-index: 5;
 }
-html[data-op-enabled="true"][data-op-sticky-code="true"]:not([data-op-effective-palette="host"]) :is(code-block .code-block-decoration,[data-message-author-role="assistant"] .code-header,[data-testid="code-block-header"],[data-test-id="code-block-header"]) {
+html[data-op-enabled="true"][data-op-sticky-code="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"],code-block .code-block-decoration,[data-message-author-role="assistant"] .code-header,[data-turn="assistant"] .code-header,[data-testid="code-block-header"],[data-test-id="code-block-header"]) {
   background: var(--op-code-header) !important;
-  color: var(--op-fg-secondary) !important;
-  border-bottom: 1px solid var(--op-border);
+  color: var(--op-code-header-fg) !important;
+  border-bottom: 1px solid var(--op-border) !important;
 }
 html[data-op-enabled="true"] pre.op-code-folded {
   max-height: 260px !important;
@@ -491,7 +491,7 @@ html[data-op-motion="off"] .op-aurora { transform: none;will-change: auto; }
 html[data-op-visibility="hidden"] #op-ambient-stage,
 html[data-op-visibility="hidden"] #op-ambient-stage * { animation-play-state: paused !important;transition: none !important;will-change: auto; }
 @media (prefers-reduced-motion: reduce) {
-  [data-op-owned],[data-op-owned] *,[data-op-composer-surface="true"],[data-op-sidebar-surface="true"] * { animation: none !important;transition: none !important;scroll-behavior: auto !important; }
+  [data-op-owned],[data-op-owned] *,[data-op-composer-surface="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-chip="true"],[data-op-sidebar-surface="true"] * { animation: none !important;transition: none !important;scroll-behavior: auto !important; }
   .op-aurora { transform: none;will-change: auto; }
 }
 @media (max-width: 700px) {
@@ -505,4 +505,305 @@ html[data-op-visibility="hidden"] #op-ambient-stage * { animation-play-state: pa
   [data-op-owned] { display: none !important; }
   html[data-op-enabled="true"] pre.op-code-folded { max-height: none !important;overflow: visible !important;mask-image: none !important; }
   html[data-op-enabled="true"] .op-thought-hidden { display: revert !important; }
+}
+
+/* === Bottom Spacing & Composer Scrim (v0.3.0) === */
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-spacer="true"] {
+  min-height: 20px !important;
+  height: 20px !important;
+  padding-bottom: 0 !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-column="true"] {
+  padding-bottom: 24px !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"] :is(.composer-container,[data-op-composer-column="true"]) {
+  padding-top: 8px !important;
+  padding-bottom: 14px !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"] .composer-hint {
+  margin-top: 6px !important;
+  margin-bottom: 0 !important;
+}
+
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])::before,
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])::after,
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) .native-composer-fade:not([data-op-composer-scrim="true"]) {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"] {
+  background-color: transparent !important;
+  background-image: linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--op-canvas) 82%, transparent) 18%, color-mix(in srgb, var(--op-canvas) 96%, transparent) 44%, var(--op-canvas) 100%) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
+  pointer-events: none !important;
+  background-color: transparent !important;
+  background-image: linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--op-canvas) 78%, transparent) 100%) !important;
+}
+
+/* === Code Surface Readability (v0.3.0) === */
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) {
+  background: var(--op-code-surface) !important;
+  border: 1px solid var(--op-border-strong) !important;
+  border-radius: var(--op-radius-md) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) :is(.formatted-code-block-internal-container, pre, pre code),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"],
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code {
+  background: var(--op-code-well) !important;
+  color: var(--op-code-fg) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) :is(.formatted-code-block-internal-container, pre) {
+  border: 0 !important;
+  border-radius: 0 0 var(--op-radius-md) var(--op-radius-md) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) {
+  background: var(--op-code-header) !important;
+  color: var(--op-code-header-fg) !important;
+  border-bottom: 1px solid var(--op-border) !important;
+  border-radius: var(--op-radius-md) var(--op-radius-md) 0 0;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(span, p, label, strong) {
+  color: var(--op-code-header-fg) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a) span {
+  color: var(--op-code-header-icon) !important;
+  border-color: var(--op-border-strong) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg {
+  color: var(--op-code-header-icon) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg :is(path, rect, circle, polygon, line, polyline)[stroke]:not([stroke="none"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[stroke]:not([stroke="none"]) {
+  stroke: currentColor !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg :is(path, rect, circle, polygon)[fill]:not([fill="none"]):not([fill="transparent"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[fill]:not([fill="none"]):not([fill="transparent"]) {
+  fill: currentColor !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code span,
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code span {
+  color: var(--op-code-fg) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-deletion, .token.keyword, .token.atrule, .token.important, .token.deleted),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-deletion, .token.keyword, .token.atrule, .token.important, .token.deleted) {
+  color: var(--op-syn-keyword) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-template-tag, .hljs-template-variable, .token.string, .token.char, .token.regex, .token.inserted),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-template-tag, .hljs-template-variable, .token.string, .token.char, .token.regex, .token.inserted) {
+  color: var(--op-syn-string) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet, .token.number, .token.boolean, .token.constant, .token.symbol),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet, .token.number, .token.boolean, .token.constant, .token.symbol) {
+  color: var(--op-syn-number) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-title, .hljs-title.function_, .hljs-section, .hljs-name, .token.function, .token.function-name, .token.selector),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-title, .hljs-title.function_, .hljs-section, .hljs-name, .token.function, .token.function-name, .token.selector) {
+  color: var(--op-syn-function) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-type, .hljs-title.class_, .hljs-class .hljs-title, .hljs-variable.constant_, .hljs-meta, .token.class-name, .token.builtin, .token.namespace),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-type, .hljs-title.class_, .hljs-class .hljs-title, .hljs-variable.constant_, .hljs-meta, .token.class-name, .token.builtin, .token.namespace) {
+  color: var(--op-syn-type) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-comment, .hljs-quote, .hljs-doctag, .token.comment, .token.prolog, .token.doctype, .token.cdata),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-comment, .hljs-quote, .hljs-doctag, .token.comment, .token.prolog, .token.doctype, .token.cdata) {
+  color: var(--op-syn-comment) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-operator, .hljs-punctuation, .hljs-subst, .token.operator, .token.punctuation, .token.entity, .token.url),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-operator, .hljs-punctuation, .hljs-subst, .token.operator, .token.punctuation, .token.entity, .token.url) {
+  color: var(--op-syn-operator) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-attr, .hljs-attribute, .hljs-property, .hljs-variable, .hljs-params, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id, .token.attr-name, .token.attr-value, .token.property, .token.variable, .token.tag),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-attr, .hljs-attribute, .hljs-property, .hljs-variable, .hljs-params, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id, .token.attr-name, .token.attr-value, .token.property, .token.variable, .token.tag) {
+  color: var(--op-syn-attr) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response) :not(pre) > code:not(pre *):not([data-op-owned] *) {
+  background: var(--op-code-inline-bg) !important;
+  color: var(--op-code-inline-fg) !important;
+  border: 1px solid var(--op-code-inline-border) !important;
+  padding: 0.12em 0.42em;
+  border-radius: 6px;
+}
+
+/* === Content Width Presets (v0.3.0) === */
+html[data-op-enabled="true"][data-op-content-width="wide"] :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2):not(:is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) *) {
+  --thread-content-max-width: min(1080px, calc(100% - 140px));
+  width: min(1080px, calc(100% - 140px)) !important;
+  max-width: 1080px !important;
+  margin-inline: auto !important;
+}
+html[data-op-enabled="true"][data-op-content-width="wide"] :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) {
+  --thread-content-max-width: 100%;
+  width: 100% !important;
+  max-width: none !important;
+  margin-inline: 0 !important;
+}
+
+html[data-op-enabled="true"][data-op-content-width="full"] :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2):not(:is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) *) {
+  --thread-content-max-width: calc(100% - 76px);
+  width: calc(100% - 76px) !important;
+  max-width: none !important;
+  margin-left: 20px !important;
+  margin-right: 56px !important;
+}
+html[data-op-enabled="true"][data-op-content-width="full"] :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) {
+  --thread-content-max-width: 100%;
+  width: 100% !important;
+  max-width: none !important;
+  margin-inline: 0 !important;
+}
+
+html[data-op-enabled="true"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-message-author-role="user"] > div,[data-message-author-role="user"] :where(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"]),[data-testid="user-message"],[data-turn="user"] .user-message-bubble-color,[data-turn="user"] > div > div,user-query .user-query-bubble-with-background,user-query-content.user-query-bubble-with-background) {
+  max-width: min(78%, 820px) !important;
+}
+
+@media (max-width: 900px) {
+  html[data-op-enabled="true"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2):not(:is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) *) {
+    --thread-content-max-width: calc(100% - 32px);
+    width: calc(100% - 32px) !important;
+    max-width: 100% !important;
+    margin-inline: auto !important;
+  }
+  html[data-op-enabled="true"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) {
+    --thread-content-max-width: 100%;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin-inline: 0 !important;
+  }
+}
+
+.op-width-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 38px;
+  border-radius: 999px;
+  border: 1px solid var(--op-border-strong);
+  background: var(--op-card);
+  color: var(--op-fg-secondary);
+  padding: 7px 13px;
+  font-size: 11px;
+  font-weight: 500;
+  white-space: nowrap;
+  box-shadow: 0 5px 20px #00000014;
+}
+.op-width-toggle:hover { border-color: var(--op-accent); color: var(--op-fg); }
+.op-width-toggle[data-width-preset="wide"],
+.op-width-toggle[data-width-preset="full"] {
+  border-color: color-mix(in srgb, var(--op-accent) 45%, var(--op-border-strong));
+  color: var(--op-fg);
+}
+@media (max-width: 700px) {
+  .op-width-toggle { padding: 6px 9px; }
+}
+
+/* === Reference Composer Surface & Model Capsule (v0.3.0) === */
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] {
+  padding: 14px 16px 12px !important;
+  border-radius: calc(var(--op-radius-lg) + 4px) !important;
+  border: 1px solid var(--op-border-strong) !important;
+  box-shadow: inset 0 1px 0 var(--op-glass-specular), 0 14px 40px -18px var(--op-surface-shadow), 0 2px 10px -4px var(--op-surface-shadow) !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-composer-glow="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] {
+  box-shadow: inset 0 1px 0 var(--op-glass-specular), 0 14px 40px -18px var(--op-surface-shadow), 0 3px 30px -12px color-mix(in srgb, var(--op-horizon-violet) 42%, transparent), 0 -1px 15px -8px color-mix(in srgb, var(--op-horizon-cyan) 32%, transparent) !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"]:focus-within {
+  border-color: color-mix(in srgb, var(--op-accent) 52%, var(--op-border-strong)) !important;
+  outline-color: color-mix(in srgb, var(--op-accent) 46%, transparent);
+  box-shadow: inset 0 1px 0 var(--op-glass-specular), 0 0 0 3px color-mix(in srgb, var(--op-accent) 9%, transparent), 0 14px 40px -16px var(--op-surface-shadow) !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-composer-glow="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"]:focus-within {
+  box-shadow: inset 0 1px 0 var(--op-glass-specular), 0 0 0 3px color-mix(in srgb, var(--op-accent) 9%, transparent), 0 14px 42px -16px color-mix(in srgb, var(--op-horizon-blue) 32%, var(--op-surface-shadow)), 0 3px 30px -12px color-mix(in srgb, var(--op-horizon-violet) 38%, transparent) !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is(textarea, [contenteditable="true"], .ql-editor) {
+  min-height: 44px;
+  padding-bottom: 6px;
+  line-height: 1.55;
+  caret-color: var(--op-accent);
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] .composer-tools {
+  margin-top: 10px;
+}
+
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-add="true"] {
+  min-width: 32px !important;
+  width: 32px !important;
+  height: 32px !important;
+  padding: 0 !important;
+  border-radius: 999px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  border: 1px solid var(--op-border-strong) !important;
+  background: var(--op-secondary) !important;
+  color: var(--op-fg-secondary) !important;
+  transition: border-color .2s ease, background-color .2s ease, color .2s ease;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-add="true"]:hover {
+  border-color: color-mix(in srgb, var(--op-accent) 48%, var(--op-border-strong)) !important;
+  background: color-mix(in srgb, var(--op-accent) 10%, var(--op-secondary)) !important;
+  color: var(--op-fg) !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-add="true"]:focus-visible {
+  outline: 2px solid var(--op-accent);
+  outline-offset: 2px;
+}
+
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] {
+  border-radius: 999px !important;
+  border: 1px solid color-mix(in srgb, var(--op-accent) 26%, var(--op-border-strong)) !important;
+  background: color-mix(in srgb, var(--op-accent) 7%, var(--op-secondary)) !important;
+  color: var(--op-fg) !important;
+  padding: 5px 11px !important;
+  gap: 6px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  transition: border-color .2s ease, background-color .2s ease;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"]::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--op-accent);
+  flex: none;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] :is(.model-tier, .mode-tier) {
+  color: var(--op-accent) !important;
+  font-weight: 600;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"]:hover {
+  border-color: color-mix(in srgb, var(--op-accent) 55%, var(--op-border-strong)) !important;
+  background: color-mix(in srgb, var(--op-accent) 12%, var(--op-secondary)) !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"]:focus-visible {
+  outline: 2px solid var(--op-accent);
+  outline-offset: 2px;
+}
+
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-chip="true"] {
+  border-radius: 999px !important;
+  border: 1px solid var(--op-border-strong) !important;
+  background: var(--op-secondary) !important;
+  color: var(--op-fg-secondary) !important;
+  padding: 5px 11px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 6px !important;
+  transition: border-color .2s ease, background-color .2s ease, color .2s ease;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-chip="true"]:hover {
+  border-color: color-mix(in srgb, var(--op-accent) 45%, var(--op-border-strong)) !important;
+  background: color-mix(in srgb, var(--op-accent) 9%, var(--op-secondary)) !important;
+  color: var(--op-fg) !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-chip="true"]:focus-visible {
+  outline: 2px solid var(--op-accent);
+  outline-offset: 2px;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-motion="off"]:not([data-op-effective-palette="host"]) :is([data-op-composer-add="true"], [data-op-model-capsule="true"], [data-op-composer-chip="true"]) {
+  transition: none !important;
 }
