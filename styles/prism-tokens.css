@@ -1,0 +1,314 @@
+/**
+ * Obsidian Prism Web — Optical Color & Typography Tokens
+ * Derived & adapted from RMvdesi/obsidian-prism (https://github.com/RMvdesi/obsidian-prism)
+ * Modified by bahayonghang on 2026-11-21 for Chrome/Firefox WebExtension (ChatGPT & Gemini Web).
+ * License: GNU General Public License v3.0 (GPL-3.0-only)
+ */
+
+html[data-op-enabled="true"] {
+  --op-ambient-alpha: 0.14;
+  --op-radius-sm: 8px;
+  --op-radius-md: 12px;
+  --op-radius-lg: 18px;
+  --op-radius-pill: 999px;
+  --op-code-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+  --op-spring-fast: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ==========================================================================
+   1. FOUR OPTICAL PALETTES (adapted from RMvdesi/obsidian-prism style.css)
+   ========================================================================== */
+
+/* 1A. Deep Space Obsidian (深空黑曜 — Dark) */
+html[data-op-enabled="true"][data-op-effective-palette="obsidian"] {
+  color-scheme: dark;
+  --op-bg: #0B0B0E;
+  --op-canvas: #0E0E11;
+  --op-sidebar: #09090B;
+  --op-card: #141418;
+  --op-secondary: #1C1C22;
+  --op-muted: #141418;
+  --op-tonal-0: #08090C;
+  --op-tonal-1: #0D0F14;
+  --op-tonal-2: #13161E;
+  --op-tonal-3: #1A1E29;
+  --op-tonal-4: #202534;
+  --op-fg: #F2F2F5;
+  --op-fg-secondary: #C4C4CE;
+  --op-fg-muted: #8A8A98;
+  --op-placeholder: #626270;
+  --op-border: rgba(255, 255, 255, 0.08);
+  --op-border-strong: rgba(255, 255, 255, 0.14);
+  --op-primary: #669DF6;
+  --op-primary-fg: #FFFFFF;
+  --op-link: #8AB4F8;
+  --op-error: #E5534B;
+  --op-warning: #F2B84B;
+  --op-success: #50A37B;
+  --op-code-well: #08090C;
+  --op-code-header: #11131A;
+}
+
+/* 1B. Warm Basalt (暖炭玄岩 — Dark, warm neutral) */
+html[data-op-enabled="true"][data-op-effective-palette="warm"] {
+  color-scheme: dark;
+  --op-bg: #141413;
+  --op-canvas: #141413;
+  --op-sidebar: #10100F;
+  --op-card: #1B1A18;
+  --op-secondary: #22201D;
+  --op-muted: #1B1A18;
+  --op-tonal-0: #0E0D0C;
+  --op-tonal-1: #141312;
+  --op-tonal-2: #1B1917;
+  --op-tonal-3: #23201D;
+  --op-tonal-4: #2B2723;
+  --op-fg: #F2EFE9;
+  --op-fg-secondary: #CEC8BC;
+  --op-fg-muted: #A39E93;
+  --op-placeholder: #6E6A61;
+  --op-border: rgba(242, 239, 233, 0.08);
+  --op-border-strong: rgba(242, 239, 233, 0.15);
+  --op-primary: #D97757;
+  --op-primary-fg: #FFFFFF;
+  --op-link: #E59377;
+  --op-error: #E5534B;
+  --op-warning: #E5A93B;
+  --op-success: #56A87E;
+  --op-code-well: #0E0D0C;
+  --op-code-header: #181614;
+}
+
+/* 1C. Daylight Crystal (白昼冷晶 — Light) */
+html[data-op-enabled="true"][data-op-effective-palette="crystal"] {
+  color-scheme: light;
+  --op-bg: #F4F7FB;
+  --op-canvas: #F4F7FB;
+  --op-sidebar: #E8EEF6;
+  --op-card: #FFFFFF;
+  --op-secondary: #E9EFF8;
+  --op-muted: #ECF1F9;
+  --op-tonal-0: #E6EDF7;
+  --op-tonal-1: #F4F7FB;
+  --op-tonal-2: #FFFFFF;
+  --op-tonal-3: #EDF3FB;
+  --op-tonal-4: #FFFFFF;
+  --op-fg: #0F172A;
+  --op-fg-secondary: #334155;
+  --op-fg-muted: #5B6B82;
+  --op-placeholder: #7C8CA5;
+  --op-border: rgba(15, 23, 42, 0.09);
+  --op-border-strong: rgba(15, 23, 42, 0.16);
+  --op-primary: #2563EB;
+  --op-primary-fg: #FFFFFF;
+  --op-link: #1D4ED8;
+  --op-error: #DC2626;
+  --op-warning: #D97706;
+  --op-success: #059669;
+  --op-code-well: #EAF0F8;
+  --op-code-header: #DFE8F4;
+}
+
+/* 1D. Warm Alabaster (暖白画册 — Light, paper contrast) */
+html[data-op-enabled="true"][data-op-effective-palette="alabaster"] {
+  color-scheme: light;
+  --op-bg: #F6F4EE;
+  --op-canvas: #F6F4EE;
+  --op-sidebar: #EBE6DC;
+  --op-card: #FFFFFF;
+  --op-secondary: #EFECE3;
+  --op-muted: #F1EEE6;
+  --op-tonal-0: #EAE4D8;
+  --op-tonal-1: #F6F4EE;
+  --op-tonal-2: #FFFFFF;
+  --op-tonal-3: #F1ECE2;
+  --op-tonal-4: #FFFFFF;
+  --op-fg: #1C1814;
+  --op-fg-secondary: #3F3830;
+  --op-fg-muted: #6B6257;
+  --op-placeholder: #8E8477;
+  --op-border: rgba(28, 24, 20, 0.09);
+  --op-border-strong: rgba(28, 24, 20, 0.16);
+  --op-primary: #C25934;
+  --op-primary-fg: #FFFFFF;
+  --op-link: #B54D28;
+  --op-error: #DC2626;
+  --op-warning: #D97706;
+  --op-success: #15803D;
+  --op-code-well: #ECE7DC;
+  --op-code-header: #E2DDD0;
+}
+
+/* ==========================================================================
+   2. FIVE INDUSTRIAL ACCENT TONES (follow / cobalt / iris / amber / mono)
+   ========================================================================== */
+
+/* Follow Host Model Accent */
+html[data-op-enabled="true"][data-op-accent="follow"] {
+  --op-accent: var(--op-primary);
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-accent="follow"][data-op-scheme="dark"] {
+  --op-accent: #34D399;
+  --op-primary: #10A37F;
+  --op-link: #5EEAD4;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-accent="follow"][data-op-scheme="light"] {
+  --op-accent: #0D9488;
+  --op-primary: #10A37F;
+  --op-link: #0F766E;
+}
+html[data-op-enabled="true"][data-op-host="gemini"][data-op-accent="follow"][data-op-scheme="dark"] {
+  --op-accent: #7BAaf7;
+  --op-primary: #669DF6;
+  --op-link: #8AB4F8;
+}
+html[data-op-enabled="true"][data-op-host="gemini"][data-op-accent="follow"][data-op-scheme="light"] {
+  --op-accent: #2563EB;
+  --op-primary: #1A73E8;
+  --op-link: #174EA6;
+}
+
+/* Cobalt (钴蓝) */
+html[data-op-enabled="true"][data-op-accent="cobalt"][data-op-scheme="dark"] {
+  --op-accent: #669DF6;
+  --op-primary: #669DF6;
+  --op-primary-fg: #0B101B;
+  --op-link: #8AB4F8;
+}
+html[data-op-enabled="true"][data-op-accent="cobalt"][data-op-scheme="light"] {
+  --op-accent: #2563EB;
+  --op-primary: #2563EB;
+  --op-primary-fg: #FFFFFF;
+  --op-link: #1D4ED8;
+}
+
+/* Iris (鸢尾紫) */
+html[data-op-enabled="true"][data-op-accent="iris"][data-op-scheme="dark"] {
+  --op-accent: #A58AF8;
+  --op-primary: #A58AF8;
+  --op-primary-fg: #120D24;
+  --op-link: #BBA6FF;
+}
+html[data-op-enabled="true"][data-op-accent="iris"][data-op-scheme="light"] {
+  --op-accent: #7C3AED;
+  --op-primary: #7C3AED;
+  --op-primary-fg: #FFFFFF;
+  --op-link: #6D28D9;
+}
+
+/* Amber (琥珀金) */
+html[data-op-enabled="true"][data-op-accent="amber"][data-op-scheme="dark"] {
+  --op-accent: #F2B84B;
+  --op-primary: #F2B84B;
+  --op-primary-fg: #14120E;
+  --op-link: #F6CB75;
+}
+html[data-op-enabled="true"][data-op-accent="amber"][data-op-scheme="light"] {
+  --op-accent: #D97706;
+  --op-primary: #D97706;
+  --op-primary-fg: #FFFFFF;
+  --op-link: #B45309;
+}
+
+/* Mono (纯银钛单色) */
+html[data-op-enabled="true"][data-op-accent="mono"][data-op-scheme="dark"] {
+  --op-accent: #D4D7E0;
+  --op-primary: #D4D7E0;
+  --op-primary-fg: #0E0F14;
+  --op-link: #E2E5EE;
+}
+html[data-op-enabled="true"][data-op-accent="mono"][data-op-scheme="light"] {
+  --op-accent: #334155;
+  --op-primary: #334155;
+  --op-primary-fg: #F8FAFC;
+  --op-link: #1E293B;
+}
+
+/* ==========================================================================
+   3. CORNER RADII & CODE TYPOGRAPHY
+   ========================================================================== */
+
+html[data-op-enabled="true"][data-op-corners="sharp"] {
+  --op-radius-sm: 4px;
+  --op-radius-md: 6px;
+  --op-radius-lg: 8px;
+}
+
+html[data-op-enabled="true"][data-op-corners="balanced"] {
+  --op-radius-sm: 8px;
+  --op-radius-md: 12px;
+  --op-radius-lg: 18px;
+}
+
+html[data-op-enabled="true"][data-op-corners="soft"] {
+  --op-radius-sm: 12px;
+  --op-radius-md: 18px;
+  --op-radius-lg: 26px;
+}
+
+html[data-op-enabled="true"][data-op-code-font="jetbrains"] {
+  --op-code-font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+html[data-op-enabled="true"][data-op-code-font="fira"] {
+  --op-code-font-family: "Fira Code", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+html[data-op-enabled="true"][data-op-code-font="cascadia"] {
+  --op-code-font-family: "Cascadia Code", "Cascadia Mono", ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+html[data-op-enabled="true"][data-op-ligatures="true"] pre,
+html[data-op-enabled="true"][data-op-ligatures="true"] code {
+  font-variant-ligatures: contextual common-ligatures !important;
+  font-feature-settings: "calt" 1, "liga" 1 !important;
+}
+
+html[data-op-enabled="true"][data-op-ligatures="false"] pre,
+html[data-op-enabled="true"][data-op-ligatures="false"] code {
+  font-variant-ligatures: none !important;
+  font-feature-settings: "calt" 0, "liga" 0 !important;
+}
+
+/* ==========================================================================
+   4. 5-TIER VELVET STREAM INK FADE-IN (Ported from RMvdesi/obsidian-prism)
+   Progressive enhancement; readable throughout, no DOM wrapping.
+   ========================================================================== */
+
+::highlight(op-stream-f0) {
+  color: color-mix(in srgb, var(--op-fg, currentColor) 60%, transparent);
+}
+::highlight(op-stream-f1) {
+  color: color-mix(in srgb, var(--op-fg, currentColor) 70%, transparent);
+}
+::highlight(op-stream-f2) {
+  color: color-mix(in srgb, var(--op-fg, currentColor) 80%, transparent);
+}
+::highlight(op-stream-f3) {
+  color: color-mix(in srgb, var(--op-fg, currentColor) 85%, transparent);
+}
+::highlight(op-stream-f4) {
+  color: color-mix(in srgb, var(--op-fg, currentColor) 94%, transparent);
+}
+
+/* Native palette leaves host surfaces unchanged, while our widgets remain legible. */
+html[data-op-enabled="true"][data-op-effective-palette="host"][data-op-scheme="dark"] {
+  --op-bg: #171717; --op-canvas: #212121; --op-sidebar: #171717;
+  --op-card: #292929; --op-secondary: #323232; --op-muted: #292929;
+  --op-tonal-0: #141414; --op-tonal-1: #212121; --op-tonal-2: #292929;
+  --op-tonal-3: #323232; --op-tonal-4: #393939;
+  --op-fg: #f3f3f3; --op-fg-secondary: #d1d1d1; --op-fg-muted: #a8a8a8;
+  --op-placeholder: #a0a0a0; --op-border: #ffffff1a; --op-border-strong: #ffffff30;
+  --op-primary: #8ab4f8; --op-primary-fg: #121820; --op-link: #a3c9ff;
+  --op-code-well: #171717; --op-code-header: #262626;
+  --op-error: #ff8a80; --op-warning: #f6cb75; --op-success: #81c995;
+}
+html[data-op-enabled="true"][data-op-effective-palette="host"][data-op-scheme="light"] {
+  --op-bg: #fff; --op-canvas: #fff; --op-sidebar: #f5f5f5;
+  --op-card: #fff; --op-secondary: #eee; --op-muted: #f6f6f6;
+  --op-tonal-0: #ececec; --op-tonal-1: #f5f5f5; --op-tonal-2: #fff;
+  --op-tonal-3: #eee; --op-tonal-4: #fff;
+  --op-fg: #202124; --op-fg-secondary: #444; --op-fg-muted: #666;
+  --op-placeholder: #777; --op-border: #0000001a; --op-border-strong: #00000030;
+  --op-primary: #1a73e8; --op-primary-fg: #fff; --op-link: #1558b0;
+  --op-code-well: #f4f4f4; --op-code-header: #eaeaea;
+  --op-error: #b3261e; --op-warning: #995500; --op-success: #137333;
+}

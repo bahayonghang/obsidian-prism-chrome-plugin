@@ -1,0 +1,19 @@
+{
+  "name": "obsidian-prism-chrome-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Community WebExtension adaptation of Obsidian Prism for ChatGPT and Gemini",
+  "license": "GPL-3.0-only",
+  "author": "bahayonghang",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/bahayonghang/obsidian-prism-chrome-plugin.git"
+  },
+  "engines": {"node": ">=22"},
+  "scripts": {
+    "check": "node scripts/check.mjs",
+    "test": "node --test tests/*.test.cjs",
+    "test:browser": "node tests/browser-smoke.mjs",
+    "build": "python3 scripts/build.py"
+  }
+}
