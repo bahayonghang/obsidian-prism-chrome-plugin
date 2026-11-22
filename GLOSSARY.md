@@ -59,7 +59,7 @@ The complete code presentation inside a conversation turn, encompassing its oute
 _Avoid_: Code box, pre block, snippet
 
 **Composer Surface**:
-The elevated input card housing the host's native prompt editor, circular add button, Model Capsule, and action controls.
+The elevated input card housing the host's native prompt editor, circular add button, Model Capsule, and action controls. When restyled it uses the prototype two-row layout: attachment previews, then the editor on a full-width row, then the add button on the left and the Model Capsule with voice/send controls on the right, arranged only by overriding the host's own grid areas.
 _Avoid_: Input box, prompt bar, chat form
 
 **Composer Scrim**:

@@ -36,5 +36,5 @@ v0.3.0 的夹具是按推测的结构手写的，浏览器测试量的是扩展�
 - 宽度：standard 用宿主原生宽度；full 等于可用宽度减去安全边；wide 等于两者的中点，最多 1200px。限宽通过每个站点声明的选择器实现，**运行时不做几何查找、不逐节点打标记**（Gemini 是逐块限宽，逐节点打标记在流式输出时开销太大）。
 - ChatGPT 容量：Pro / Thinking / High / xHigh 为 400K，Instant 为 128K；识别不了的标签按 128K 兜底，并显示 `?`。
 - Composer Scrim：改成半透明画布色加背景模糊，不画实色底。已否决的方案：给滚动容器加 mask（会把 ChatGPT 的 sticky 输入框一起淡化）；在 scrim 里再复制一份光晕（会和背景错位）。
-- 两行输入框：只改宿主 grid 的排布，不移动节点（ADR-0002）。
+- 两行输入框（已实现，#19）：只改宿主 grid 的排布，不移动节点（ADR-0002）。适配器只在宿主 grid 的直接子节点用到全部约定的 area 名时才重排（ChatGPT `leading`/`primary`/`trailing`，Gemini `leading-actions`/`text-input`/`trailing-actions`），否则保留原生单行；ChatGPT 的卡片是带底色的 `[data-composer-layout]`。
 - 标题：跟随正文字体，并保证层级正确；扩展不新增阅读字体选项。

@@ -11,7 +11,7 @@ Updated 2026-11-22. This document distinguishes implemented checks from complete
 | `npm run build` | Allowlisted files, valid browser manifest inputs, PNG sizes, ZIP integrity, deterministic ordering and SHA-256 output | Store acceptance or Mozilla signing |
 | `npm run test:browser` | Local ChatGPT/Gemini fixtures in Chromium; extension settings when available | Current live site variants, real model output or paid translation |
 | `PRISM_BROWSER=firefox npm run test:browser` | The shared DOM runtime against local fixtures in Firefox | A fully installed/signed Firefox extension lifecycle |
-| `PRISM_SUITE=live-fixtures npm run test:browser` | Only the probe-derived ChatGPT/Gemini fixtures: native baselines without the extension and structure-probe privacy (also part of every full run) | A full browser pass, or anything about a signed-in page |
+| `PRISM_SUITE=live-fixtures npm run test:browser` | Only the probe-derived ChatGPT/Gemini fixtures: native baselines without the extension, structure-probe privacy and the two-row Composer Surface checks (also part of every full run) | A full browser pass, or anything about a signed-in page |
 
 The probe-derived fixtures, the shared measurement helpers in `tests/measure.mjs` and the read-only structure probe `tools/structure-probe.js` are described in `tests/README.md`. The probe is a developer tool, outside the release packages. Running it on a signed-in ChatGPT or Gemini page is a manual evidence step. Its derived facts belong in `.trellis/research/live-host-dom.md`; raw output must not be committed.
 
