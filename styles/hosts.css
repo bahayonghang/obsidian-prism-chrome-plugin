@@ -507,7 +507,6 @@ html[data-op-visibility="hidden"] #op-ambient-stage * { animation-play-state: pa
   html[data-op-enabled="true"] .op-thought-hidden { display: revert !important; }
 }
 
-<<<<<<< HEAD
 /* === Bottom Spacing & Composer Scrim (v0.3.0) === */
 html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-spacer="true"] {
   min-height: 20px !important;
