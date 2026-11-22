@@ -1,5 +1,5 @@
 /* Obsidian Prism Web — site adapters. Copyright (c) 2026 bahayonghang.
- * Modified 2026-11-21. GPL-3.0-only. See NOTICE and MODIFICATIONS.md. */
+ * Modified 2026-11-22. GPL-3.0-only. See NOTICE and MODIFICATIONS.md. */
 (function (global) {
   'use strict';
 
@@ -11,6 +11,7 @@
       primary: ['main', '[role="main"]', '[data-testid="conversation-pane"]', '[data-testid="chat-main"]', '#main-content'],
       editors: ['#prompt-textarea', '[data-testid="prompt-textarea"]', 'textarea[name="prompt-textarea"]', 'main [contenteditable="true"][role="textbox"]', 'main textarea'],
       composers: ['#composer-background', '[data-testid="chat-composer"]', '[data-testid="composer"]', '[data-composer-surface]', '.composer-parent'],
+      composerBackdrops: '#thread-bottom,[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
       sidebars: ['#stage-slideover-sidebar', '#stage-sidebar', '#app-rail', '[data-testid="app-rail"]', '[data-testid="app-sidebar"]', '[data-testid="history-sidebar"]', '[data-testid="sidebar"]', '[data-testid="sidebar-container"]', '[data-testid="stage-thread-flyout"]', '[data-testid="conversation-history"]', '[data-testid="chat-history"]'],
       sidebarLinks: 'a[href^="/c/"],a[href^="/g/"],a[href^="/project/"]',
       thoughts: '[data-testid="reasoning-content"], [data-testid="thoughts-content"], [data-testid="thinking-content"]',
@@ -23,6 +24,7 @@
       primary: ['chat-window', 'main', '[role="main"]', '.chat-app'],
       editors: ['input-area-v2 .ql-editor[contenteditable="true"]', 'rich-textarea .ql-editor', 'input-area-v2 [contenteditable="true"]', 'rich-textarea [contenteditable="true"]', 'textarea[aria-label]', 'main [contenteditable="true"][role="textbox"]'],
       composers: ['input-area-v2 .text-input-field', 'input-area-v2 .input-area-container', '.input-area-container', '[data-test-id="input-area"]', 'input-area-v2', 'input-area'],
+      composerBackdrops: 'input-area-v2,input-area,.input-area-container,[data-test-id="input-area"],[data-test-id="input-area-container"],.input-area-wrapper',
       sidebars: ['bard-sidenav', 'side-navigation-v2', 'side-navigation', 'mat-sidenav', '[data-test-id="side-nav"]', '[data-test-id="side-navigation"]', '[data-testid="sidebar"]'],
       sidebarLinks: 'a[href^="/app/"]',
       thoughts: 'model-thoughts .thoughts-content, model-thoughts .thought-content, model-thoughts .markdown, [data-test-id="thoughts-content"], [data-test-id="thinking-content"]',
@@ -128,6 +130,53 @@
     // A genuine form with controls is safer than styling an arbitrary ancestor.
     return fallback;
   }
+  function findComposerBackdrops(spec, composer) {
+    if (!composer || isOwned(composer)) return [];
+    const view = composer.ownerDocument?.defaultView;
+    if (!view?.getComputedStyle) return [];
+    const composerRect = composer.getBoundingClientRect();
+    if (composerRect.width <= 0 || composerRect.height <= 0) return [];
+    const viewportHeight = view.innerHeight || composer.ownerDocument.documentElement.clientHeight;
+    const path = [];
+    let boundary = -1;
+    // Recognize only the small docking region around a known native editor.
+    // Structure and positioning remain stable after its paint is overridden.
+    for (let node = composer.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth++) {
+      if (node.matches('main,[role="main"],body,html,chat-window,dialog,[role="dialog"],[aria-modal="true"],aside,nav,[role="navigation"]') ||
+          node.querySelector(MESSAGE_AREAS)) break;
+      if (isOwned(node)) break;
+      path.push(node);
+      const rect = node.getBoundingClientRect();
+      const style = view.getComputedStyle(node);
+      const smallRegion = rect.height > 0 && rect.height <= Math.max(composerRect.height + 160, viewportHeight * .5) &&
+        rect.width >= composerRect.width - 24 && rect.right > composerRect.left && rect.left < composerRect.right &&
+        rect.bottom >= composerRect.top - 80 && rect.top <= composerRect.bottom + 80;
+      const bottomDock = ['sticky','fixed','absolute'].includes(style.position) &&
+        rect.bottom >= Math.min(viewportHeight - 96, composerRect.bottom - 4);
+      if (smallRegion && (node.matches(spec.composerBackdrops) || bottomDock)) boundary = path.length - 1;
+    }
+    if (boundary < 0) return [];
+    const surfaces = path.slice(0, boundary + 1);
+    // Native fade siblings may sit above the shell. Only empty, noninteractive,
+    // full-width absolute decorations qualify; buttons and attachments do not.
+    for (const surface of [...surfaces]) {
+      const bounds = surface.getBoundingClientRect();
+      for (const child of surface.children) {
+        if (child.contains(composer) || isOwned(child) || !child.matches('div,span') ||
+            child.matches('[role="button"],[role="link"],[tabindex],[contenteditable]') || child.textContent.trim() ||
+            child.querySelector('a[href],button,input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex],[role="button"],[role="link"]')) continue;
+        const style = view.getComputedStyle(child);
+        if (!['absolute','fixed'].includes(style.position) ||
+            (style.pointerEvents !== 'none' && child.getAttribute('aria-hidden') !== 'true')) continue;
+        const rect = child.getBoundingClientRect();
+        if (rect.width >= bounds.width * .8 && rect.height > 0 && rect.height <= bounds.height + 80 &&
+            rect.right > bounds.left && rect.left < bounds.right && rect.bottom >= bounds.top - 80 && rect.top <= bounds.bottom + 1) {
+          surfaces.push(child);
+        }
+      }
+    }
+    return [...new Set(surfaces)];
+  }
   function findSidebars(spec, root) {
     const result = [];
     const add = node => {
@@ -170,6 +219,42 @@
     // A single outer surface per sidebar prevents nested, doubled glass frames.
     return result.filter(node => !result.some(parent => parent !== node && parent.contains(node)));
   }
+  const ACTIVE_NAV_STATE = '[aria-current="page"],[aria-current="true"],[data-active="true"],[aria-selected="true"]';
+  const NAV_ROW = 'a[href],button,[role="link"],[role="button"],[role="option"]';
+  function findSidebarActiveRows(sidebars) {
+    const rows = new Set();
+    for (const sidebar of sidebars) {
+      const isRow = node => {
+        if (!node || node === sidebar || !sidebar.contains(node) || isOwned(node) || !isVisible(node)) return false;
+        const rect = node.getBoundingClientRect();
+        // A project/tree group can contain active rows without being one itself.
+        return rect.height > 0 && rect.height <= 96 &&
+          node.querySelectorAll('a[href],[role="link"]').length <= 1;
+      };
+      for (const state of sidebar.querySelectorAll(ACTIVE_NAV_STATE)) {
+        if (isOwned(state) || !isVisible(state)) continue;
+        let row = state.closest(NAV_ROW);
+        if (!isRow(row)) {
+          const links = [...state.querySelectorAll('a[href],[role="link"]')].filter(isRow);
+          // A noninteractive wrapper may carry the state for its single link.
+          // Never transfer a group's state to all of its conversations.
+          row = links.length === 1 && state.getBoundingClientRect().height <= 96 ? links[0] : null;
+        }
+        if (row) {
+          // A nested title/action can carry the only active flag. Its enclosing
+          // navigation row still owns the highlight, even without its own flag.
+          for (let parent = row.parentElement; parent && parent !== sidebar; parent = parent.parentElement) {
+            if (!parent.matches(NAV_ROW)) continue;
+            if (!isRow(parent)) break;
+            row = parent;
+          }
+          rows.add(row);
+        }
+      }
+    }
+    const result = [...rows];
+    return result.filter(node => !result.some(parent => parent !== node && parent.contains(node)));
+  }
   function forHost(host, root = document) {
     const spec = HOSTS[host];
     if (!spec) return null;
@@ -182,7 +267,9 @@
       conversationRoot: () => root.querySelector(spec.conversation) || root.body || root,
       primarySurface: () => findPrimary(spec, root),
       composerSurface: () => findComposer(spec, root),
+      composerBackdropSurfaces: (composer) => findComposerBackdrops(spec, composer === undefined ? findComposer(spec, root) : composer),
       sidebarSurfaces: () => findSidebars(spec, root),
+      sidebarActiveRows: (sidebars) => findSidebarActiveRows(sidebars === undefined ? findSidebars(spec, root) : sidebars),
       codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))],
       thoughtBlocks: () => collect(spec.thoughts),
       isAssistantNode(node) {

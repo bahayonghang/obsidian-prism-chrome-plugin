@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reproducible, dependency-free browser packages. Modified 2026-11-21; GPL-3.0-only."""
+"""Reproducible, dependency-free browser packages. Modified 2026-11-22; GPL-3.0-only."""
 from __future__ import annotations
 
 import hashlib
@@ -15,7 +15,7 @@ FIXED_TIME = (2026, 11, 21, 0, 0, 0)
 # Explicit allowlist: never discover and bundle the developer's working directory.
 FILES = (
     "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "README.md", "PRIVACY.md", "MODIFICATIONS.md",
-    "docs/ARCHITECTURE.md", "docs/TESTING.md", "docs/IMPLEMENTATION_PLAN.md", "docs/UX_REFRESH_PLAN.md",
+    "docs/ARCHITECTURE.md", "docs/TESTING.md", "docs/IMPLEMENTATION_PLAN.md", "docs/UX_REFRESH_PLAN.md", "docs/REGRESSION_FIX_PLAN.md",
     "icons/icon.svg", "icons/icon-16.png", "icons/icon-48.png", "icons/icon-128.png",
     "styles/prism-tokens.css", "styles/hosts.css",
     "src/config-schema.js", "src/early-boot.js", "src/adapters.js", "src/content.js", "src/background.js",

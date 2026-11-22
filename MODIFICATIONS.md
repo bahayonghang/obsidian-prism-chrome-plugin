@@ -2,8 +2,8 @@
 
 **Project:** Obsidian Prism Web — Community Edition  
 **Maintainer:** bahayonghang  
-**Date:** 2026-11-21  
-**Version:** 0.2.0
+**Date:** 2026-11-22\
+**Version:** 0.2.1
 
 **License:** GPL-3.0-only
 
@@ -30,6 +30,10 @@ CDP bindings, localhost desktop daemons, local-file previews, IDE engineering co
 ## v0.2.0 visual iteration
 
 Issue #3 responds to installed-extension feedback: remove the pixel pets, restore a horizon-light visual language, identify and theme current sidebar/composer surfaces, and make motion controls easy to discover. The original reference appearance informed the palette and composition; the implementation uses lightweight browser-scoped CSS and does not copy the desktop telemetry dashboard or its WebGL/physics subsystem. Native editor and navigation ownership stays with the host websites.
+
+## v0.2.1 regression fixes
+
+Issues #5 and #6 address installed-browser regressions: give the toolbar popup an intrinsic size independent of its initial viewport, keep full-page options responsive, identify and clear only verified composer backdrop layers, and draw sidebar selection once per navigation item. Validation now distinguishes an actual Chromium action popup from a page with a forced viewport and adds opaque footer / nested-selection fixtures. No permissions, host access, translation behavior or remote dependencies are added.
 
 ## File attribution
 

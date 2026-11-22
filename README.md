@@ -46,8 +46,8 @@ Windows若只有 `py` 命令，可将最后一步改为 `py -3 scripts/build.py`
 |---|---|
 | `dist/chrome/` | Chrome解压扩展目录 |
 | `dist/firefox/` | Firefox临时加载目录，使用独立Firefox清单 |
-| `dist/obsidian-prism-web-0.2.0-chrome.zip` | Chrome开发/提交包 |
-| `dist/obsidian-prism-web-0.2.0-firefox.zip` | Firefox开发/提交包，未签名 |
+| `dist/obsidian-prism-web-0.2.1-chrome.zip` | Chrome开发/提交包 |
+| `dist/obsidian-prism-web-0.2.1-firefox.zip` | Firefox开发/提交包，未签名 |
 | `dist/SHA256SUMS` | 两个ZIP的SHA-256校验值 |
 
 构建采用明确文件白名单，不包含Git目录、测试数据、开发依赖或本地密钥。相同源码与Python/zlib环境可生成相同ZIP字节。
@@ -69,11 +69,13 @@ Windows若只有 `py` 命令，可将最后一步改为 `py -3 scripts/build.py`
 
 临时加载在重启Firefox后结束。普通Firefox的长期安装需要Mozilla签名；把ZIP改名为XPI不会完成签名。详见 [Mozilla安装文档](https://extensionworkshop.com/documentation/develop/temporary-installation-in-firefox/) 和 [签名说明](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/)。
 
-### 从 v0.1.0 更新
+### 从 v0.1.0 / v0.2.0 更新
 
 Chrome：用新版包的内容覆盖原来加载的扩展目录，在 `chrome://extensions` 点击该扩展的“重新加载”，然后刷新所有已打开的 ChatGPT/Gemini 页面。保持原目录可以保留原有扩展身份与设置；不要同时启用新旧两份扩展。
 
 Firefox：在 `about:debugging` 重新载入新版 Firefox 包，并刷新目标网页。
+
+v0.2.1 修复了工具栏弹窗缩成小白框、对话底栏露出白色背景、侧栏嵌套高亮的问题。修复规划与验证范围见 [回归修复计划](docs/REGRESSION_FIX_PLAN.md)。
 
 旧配色与浓度会保留，宠物设置自动失效。想直接查看新版完整环境效果，可先选择“流光”场景，再在“光影”中微调。正文中的光场会主动减弱，首页的光场更明显。完整设置页可通过弹窗右上角按钮打开。
 

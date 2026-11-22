@@ -11,6 +11,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
+import { checkRealActionPopup, checkPopupIntrinsicSize } from './popup-regressions.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ARTIFACTS = path.join(ROOT, 'test-artifacts');
@@ -47,6 +48,32 @@ async function interceptFixtures(context) {
   });
 }
 
+async function prepareNativeOptionsWindow(page) {
+  // With viewport:null, script readiness can precede the first native window
+  // layout. Activate this ordinary tab and size its containing browser window;
+  // never emulate the viewport of the later action-popup target.
+  const bounds = await page.evaluate(async () => {
+    const tab = await chrome.tabs.getCurrent();
+    if (!tab || !document.body.classList.contains('is-options-page')) throw new Error('Expected an ordinary full-options tab');
+    await chrome.windows.update(tab.windowId, { state: 'normal', focused: true });
+    return chrome.windows.update(tab.windowId, { width: 1280, height: 900 });
+  });
+  await page.bringToFront();
+  await page.waitForFunction(async () => {
+    const measure = () => {
+      const body = document.body?.getBoundingClientRect();
+      const workspace = document.querySelector('#settings-scroll')?.getBoundingClientRect();
+      return body && workspace ? [innerWidth, innerHeight, document.documentElement.clientWidth, document.documentElement.clientHeight, body.width, body.height, workspace.width, workspace.height] : null;
+    };
+    const before = measure();
+    if (document.visibilityState !== 'visible' || !before || before[0] < 1000 || before[1] < 600 || before.some(value => value <= 0)) return false;
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    const after = measure();
+    return after && after.every((value, index) => value > 0 && Math.abs(value - before[index]) < 1);
+  }, undefined, { timeout: 10000 });
+  console.log(`NOTE native options window ready: ${bounds.width}×${bounds.height}, state=${bounds.state}`);
+}
+
 async function actualChromiumExtension() {
   const extensionDir = path.resolve(ROOT, process.env.PRISM_EXTENSION_DIR || 'dist/chrome');
   const manifest = JSON.parse(await fs.readFile(path.join(extensionDir, 'manifest.json'), 'utf8'));
@@ -55,8 +82,10 @@ async function actualChromiumExtension() {
   try {
     context = await playwright.chromium.launchPersistentContext(profile, {
       ...launchOptions, channel: executable ? undefined : 'chromium',
+      headless: process.env.PRISM_ACTION_HEADED === '1' ? false : launchOptions.headless,
+      viewport: null,
       ignoreDefaultArgs: ['--disable-extensions'],
-      args: [`--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`]
+      args: ['--window-size=1280,900', `--disable-extensions-except=${extensionDir}`, `--load-extension=${extensionDir}`]
     });
     await interceptFixtures(context);
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker', { timeout: 20000 });
@@ -72,6 +101,7 @@ async function actualChromiumExtension() {
       await ObsidianPrismSchema.saveConfig({ themeMode: 'dark', palette: 'warm', language: 'en-US' });
     });
     await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'dark');
+    await prepareNativeOptionsWindow(options);
     await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-dark.png'), fullPage: true });
     await options.locator('#tab-motion').click();
     await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-motion-dark.png'), fullPage: true });
@@ -96,6 +126,8 @@ async function actualChromiumExtension() {
     await options.locator('#tab-appearance').focus();
     await options.keyboard.press('ArrowRight');
     assert.equal(await options.locator('#tab-motion').getAttribute('aria-selected'), 'true');
+    await checkRealActionPopup({ context, worker, options, popupURL: extensionOrigin + '/' + manifest.action.default_popup, artifacts: ARTIFACTS });
+    // Ordinary-tab interactions below supplement the real action-popup check.
     popup = await context.newPage();
     await popup.setViewportSize({ width: 440, height: 600 });
     popup.on('pageerror', error => errors.push(error.message));
@@ -112,9 +144,9 @@ async function actualChromiumExtension() {
     await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientStyle === 'spotlight');
     await popup.locator('#cfg-ambientTexture').selectOption('grid');
     await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientTexture === 'grid');
-    await popup.setViewportSize({ width: 420, height: 600 });
-    assert.equal(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'popup also fits a 420-pixel viewport');
-    await popup.screenshot({ path: path.join(ARTIFACTS, 'chromium-popup-420.png') });
+    await options.setViewportSize({ width: 420, height: 600 });
+    assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options remain responsive at 420 pixels');
+    await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-420.png') });
     await popup.locator('#file-import').setInputFiles({ name: 'legacy-prism-settings.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'obsidian-prism-web', settings: { mascot: 'cat', palette: 'warm', ambientIntensity: 35, thoughtTranslate: true } })) });
     await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientIntensity === 35);
     const imported = await popup.evaluate(() => ObsidianPrismSchema.loadConfig());
@@ -135,13 +167,97 @@ async function actualChromiumExtension() {
 async function surfaceSnapshot(page) {
   return page.evaluate(() => {
     const read = selector => {
-      const node = document.querySelector(selector), style = getComputedStyle(node);
+      const node = typeof selector === 'string' ? document.querySelector(selector) : selector;
+      if (!node) return null;
+      const style = getComputedStyle(node);
       const borderWidth = style.borderWidth;
       const hasBorder = borderWidth.split(' ').some(value => parseFloat(value) > 0);
       return { background: style.backgroundColor, backgroundImage: style.backgroundImage, border: hasBorder ? style.borderColor : null, borderWidth, radius: style.borderRadius, shadow: style.boxShadow };
     };
-    return { sidebar: read('[data-fixture-sidebar]'), composer: read('[data-fixture-composer]') };
+    const pseudo = (node, type) => {
+      const style = getComputedStyle(node, type);
+      return { background: style.backgroundColor, backgroundImage: style.backgroundImage, content: style.content, display: style.display };
+    };
+    return { sidebar: read('[data-fixture-sidebar]'), composer: read('[data-fixture-composer]'), footerAttachment: read('[data-fixture-footer-attachment]'),
+      backdrops: [...document.querySelectorAll('[data-fixture-backdrop]')].map(node => ({ ...read(node), before: pseudo(node, '::before'), after: pseudo(node, '::after') })) };
   });
+}
+
+async function assertComposerBackdrops(page, nativeSurfaces) {
+  await page.waitForFunction(() => [...document.querySelectorAll('[data-fixture-backdrop]')].every(node => node.getAttribute('data-op-composer-backdrop') === 'true'));
+  const current = await surfaceSnapshot(page);
+  assert.ok(current.backdrops.length >= 4, 'conversation fixture must include multiple opaque dock layers and a decorative fade');
+  const transparent = value => value === 'transparent' || /^rgba\(\s*0,\s*0,\s*0,\s*0\s*\)$/.test(value);
+  for (const [index, layer] of current.backdrops.entries()) {
+    assert.ok(transparent(layer.background) && layer.backgroundImage === 'none', `dock layer ${index} must reveal the themed canvas instead of a native white block`);
+    for (const type of ['before', 'after']) {
+      assert.ok(transparent(layer[type].background) && layer[type].backgroundImage === 'none', `dock layer ${index} ${type} must not retain an opaque fade`);
+      assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
+      assert.equal(layer[type].display, nativeSurfaces.backdrops[index][type].display, 'decorative pseudo display is preserved');
+    }
+  }
+  assert.deepEqual(current.footerAttachment, nativeSurfaces.footerAttachment, 'native footer attachments retain their own painted controls');
+  assert.equal(await page.locator('[data-fixture-footer-attachment][data-op-composer-backdrop]').count(), 0);
+  assert.equal(await page.locator('[data-fixture-composer][data-op-composer-backdrop]').count(), 0, 'the input card is not part of the page backdrop');
+}
+
+async function sidebarSelectionSnapshot(page) {
+  return page.locator('[data-fixture-current-row]').evaluate(row => [row, ...row.querySelectorAll('*')].map(node => {
+    const style = getComputedStyle(node);
+    return { background: style.backgroundColor, shadow: style.boxShadow, color: style.color };
+  }));
+}
+
+async function assertSingleSidebarHighlight(page) {
+  await page.waitForFunction(() => document.querySelector('[data-fixture-current-row]')?.getAttribute('data-op-sidebar-active') === 'true');
+  await settledSurfaceStyle(page, '[data-fixture-current-row]', 'boxShadow');
+  const layers = await sidebarSelectionSnapshot(page);
+  assert.match(layers[0].shadow, /inset/, 'the selected interactive row has one selection edge');
+  assert.deepEqual(layers.slice(1).map(value => value.shadow), layers.slice(1).map(() => 'none'), 'nested links and title markers must not paint extra selection brackets');
+  assert.equal(await page.locator('[data-fixture-current-row] [data-op-sidebar-active]').count(), 0, 'selection belongs to the outer interactive row only');
+}
+
+async function exerciseSidebarSelection(page, nativeSelection) {
+  await assertSingleSidebarHighlight(page);
+  for (let pass = 0; pass < 3; pass++) {
+    const before = await page.evaluate(() => { const count = ObsidianPrismRuntime.diagnostics().passes; ObsidianPrismRuntime.refresh(); return count; });
+    await page.waitForFunction(before => ObsidianPrismRuntime.diagnostics().passes > before, before);
+    await assertSingleSidebarHighlight(page);
+  }
+  // A child title alone may carry active state; the outer row still owns paint.
+  const beforeInnerState = await page.evaluate(() => {
+    const row = document.querySelector('[data-fixture-current-row]');
+    window.__nativeActiveAttributes = [row, ...row.querySelectorAll('*')].map(node => [node, ['aria-current', 'aria-selected', 'data-active'].map(name => [name, node.getAttribute(name)])]);
+    for (const [node, attributes] of __nativeActiveAttributes) for (const [name] of attributes) node.removeAttribute(name);
+    row.querySelector('[data-fixture-selected-title]').setAttribute('aria-selected', 'true');
+    return ObsidianPrismRuntime.diagnostics().passes;
+  });
+  await page.waitForFunction(before => ObsidianPrismRuntime.diagnostics().passes > before, beforeInnerState);
+  await assertSingleSidebarHighlight(page);
+  // Change only active-state attributes, as a client-side navigation does.
+  await page.evaluate(() => {
+    for (const [node, attributes] of __nativeActiveAttributes) for (const [name] of attributes) node.removeAttribute(name);
+    document.querySelector('[data-fixture-sidebar] a[href="#energy"]').setAttribute('aria-current', 'page');
+  });
+  await page.waitForFunction(() => document.querySelector('[data-fixture-sidebar] a[href="#energy"]')?.getAttribute('data-op-sidebar-active') === 'true' && !document.querySelector('[data-fixture-current-row]')?.hasAttribute('data-op-sidebar-active'));
+  assert.equal(await page.locator('[data-fixture-sidebar] [data-op-sidebar-active="true"]').count(), 1, 'selection moves without leaving the previous edge behind');
+  await page.evaluate(() => {
+    document.querySelector('[data-fixture-sidebar] a[href="#energy"]').removeAttribute('aria-current');
+    for (const [node, attributes] of __nativeActiveAttributes) for (const [name, value] of attributes) if (value !== null) node.setAttribute(name, value);
+    const group = document.createElement('div'); group.id = 'prism-independent-active-rows'; group.setAttribute('data-active', 'true');
+    group.innerHTML = '<a href="#project-a" aria-selected="true"><span data-active="true">Synthetic project A</span></a><a href="#project-b" aria-selected="true"><span data-active="true">Synthetic project B</span></a>';
+    document.querySelector('[data-fixture-sidebar] .history-list').append(group);
+  });
+  await page.waitForFunction(() => document.querySelectorAll('#prism-independent-active-rows > a[data-op-sidebar-active="true"]').length === 2);
+  assert.equal(await page.locator('#prism-independent-active-rows[data-op-sidebar-active], #prism-independent-active-rows span[data-op-sidebar-active]').count(), 0, 'a noninteractive group does not swallow independent active rows or style their titles');
+  await page.evaluate(() => document.getElementById('prism-independent-active-rows').remove());
+  await assertSingleSidebarHighlight(page);
+  await page.evaluate(() => __prismFixture.patch({ sidebarStyle: 'native' }));
+  await page.waitForFunction(() => !document.querySelector('[data-fixture-sidebar] [data-op-sidebar-active]'));
+  await settledSurfaceStyle(page, '[data-fixture-current-row]', 'boxShadow');
+  assert.deepEqual(await sidebarSelectionSnapshot(page), nativeSelection, 'native sidebar mode restores each original nested row style');
+  await page.evaluate(() => __prismFixture.patch({ sidebarStyle: 'glass' }));
+  await assertSingleSidebarHighlight(page);
 }
 
 async function settledSurfaceStyle(page, selector, property) {
@@ -191,7 +307,7 @@ async function settleFixtureScreenshot(page) {
   // Only native surface transitions; the ambient drift intentionally remains live.
   await Promise.all([
     settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow'),
-    assertReadableSurface(page, '[data-fixture-sidebar] [aria-current="page"]', 'active history')
+    assertReadableSurface(page, '[data-fixture-current-row]', 'active history')
   ]);
 }
 
@@ -437,6 +553,7 @@ async function exerciseFixture(browser, host) {
     const originalText = await page.locator('pre code').textContent();
     const originalBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
     const originalSurfaces = await surfaceSnapshot(page);
+    const originalSidebarSelection = await sidebarSelectionSnapshot(page);
     // Read the element that paints the bubble, not its transparent turn wrapper.
     const bubbleSelector = host === 'chatgpt'
       ? '[data-testid="conversation-turn-0"] [data-message-author-role="user"] > div'
@@ -464,6 +581,8 @@ async function exerciseFixture(browser, host) {
     assert.notDeepEqual(themedSurfaces.composer, originalSurfaces.composer, 'the complete composer shell must actually receive the theme');
     assert.equal(await page.evaluate(() => document.querySelector('[data-fixture-composer] [contenteditable="true"]') === __nativeEditor), true);
     assert.equal(await page.locator('[class*="mascot"],[id*="mascot"]').count(), 0, 'pet UI is removed completely');
+    await assertComposerBackdrops(page, originalSurfaces);
+    await assertSingleSidebarHighlight(page);
     await settleFixtureScreenshot(page);
     await assertReadableSurface(page, bubbleSelector, `${host} dark user bubble`);
     await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-default.png`), fullPage: true });
@@ -471,10 +590,17 @@ async function exerciseFixture(browser, host) {
     await page.evaluate(() => __prismFixture.patch({ themeMode: 'light', lightPreset: 'crystal' }));
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
     await assertReadableSurface(page, bubbleSelector, `${host} light user bubble`);
+    await assertComposerBackdrops(page, originalSurfaces);
+    await assertSingleSidebarHighlight(page);
+    await settleFixtureScreenshot(page);
+    await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-conversation-light.png`), fullPage: true });
     await page.evaluate(() => __prismFixture.patch({ themeMode: 'dark', palette: 'host' }));
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'host');
     await settledSurfaceStyle(page, bubbleSelector, 'backgroundColor');
     assert.deepEqual(await surfaceColors(page, bubbleSelector), originalBubbleColors, `${host}: host palette preserves native user bubble colors`);
+    assert.deepEqual((await surfaceSnapshot(page)).backdrops, originalSurfaces.backdrops, `${host}: host palette preserves native sticky footer backgrounds`);
+    await settledSurfaceStyle(page, '[data-fixture-current-row]', 'boxShadow');
+    assert.deepEqual(await sidebarSelectionSnapshot(page), originalSidebarSelection, `${host}: host palette preserves native nested sidebar styles`);
 
     // An explicit nested bubble must work too, without repainting an attachment.
     if (host === 'chatgpt') await page.evaluate(() => {
@@ -490,6 +616,10 @@ async function exerciseFixture(browser, host) {
       assert.equal((await surfaceColors(page, '#prism-bubble-attachment')).background, attachmentBackground, 'the bubble theme leaves native attachment backgrounds intact');
       await page.evaluate(() => document.getElementById('prism-nested-bubble-regression').remove());
     }
+    await exerciseSidebarSelection(page, originalSidebarSelection);
+    await page.evaluate(() => __prismFixture.patch({ composerRestyle: false }));
+    await assertComposerBackdrops(page, originalSurfaces);
+    await page.evaluate(() => __prismFixture.patch({ composerRestyle: true }));
     await exerciseNativeComposer(page);
 
     assert.equal(await page.evaluate(host => ObsidianPrismAdapters.forHost(host).userTurns().length, host), 3, `${host}: no nested duplicate turns`);
@@ -612,10 +742,11 @@ async function exerciseFixture(browser, host) {
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), originalBackground);
     assert.deepEqual(await surfaceSnapshot(page), originalSurfaces, 'disable restores native sidebar and composer styles');
+    assert.deepEqual(await sidebarSelectionSnapshot(page), originalSidebarSelection, 'disable restores native nested sidebar styles');
     await settledSurfaceStyle(page, bubbleSelector, 'backgroundColor');
     assert.deepEqual(await surfaceColors(page, bubbleSelector), originalBubbleColors, `${host}: disable restores native user bubble colors`);
     assert.equal(await page.locator('[data-fixture-composer]').getAttribute('data-op-composer-surface'), 'fixture-original');
-    assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-sidebar-active="true"],[data-op-composer-backdrop="true"]').count(), 0);
     assert.equal(await page.locator('pre code').textContent(), originalText);
     assert.equal(await page.evaluate(() => ObsidianPrismRuntime.diagnostics().observing), false);
     await page.evaluate(() => __prismFixture.patch({ enabled: true }));
@@ -645,6 +776,8 @@ async function exerciseFixture(browser, host) {
     assert.equal(await page.locator('#op-rail-root').count(), 1);
     assert.equal(await page.locator('pre code').textContent(), originalText);
     await page.waitForFunction(() => document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'true');
+    await assertComposerBackdrops(page, originalSurfaces);
+    await assertSingleSidebarHighlight(page);
     assert.equal(await page.evaluate(() => __nativeComposer.getAttribute('data-op-composer-surface')), 'fixture-original', 'replaced native surfaces are restored before being forgotten');
     await page.waitForTimeout(250);
     await page.evaluate(() => {
@@ -663,7 +796,7 @@ async function exerciseFixture(browser, host) {
     assert.equal(stopped.codeBlocks, 0);
     assert.equal(stopped.thoughtBlocks, 0);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
-    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-enabled')), false);
     await page.evaluate(() => { __prismFixture.patch({ enabled: true }); window.dispatchEvent(new Event('pageshow')); document.body.append(document.createElement('div')); });
@@ -682,6 +815,7 @@ if (engine === 'chromium' && process.env.PRISM_SKIP_EXTENSION !== '1') await act
 else console.log(`NOTE ${engine}: this run covers injected offline DOM fixtures only, not native extension installation.`);
 const browser = await type.launch(launchOptions);
 try {
+  await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
   await savedDisabledStartup(browser);
   for (const host of ['chatgpt', 'gemini']) {
     await exerciseHomeEffects(browser, host);
