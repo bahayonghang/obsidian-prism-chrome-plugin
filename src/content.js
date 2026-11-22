@@ -481,10 +481,27 @@
       if (!targets.has(element)) targets.set(element,new Set());
       targets.get(element).add(attribute);
     };
+    const isNativePalette = Schema.resolvePalette(cfg) === 'host';
+    const isHome = !adapter.userTurns().length && !adapter.assistantTurns().length;
     const nextPrimary = adapter.primarySurface?.() || null;
     add(nextPrimary,'data-op-main-surface');
+    for (const element of adapter.threadColumns?.() || []) add(element,'data-op-thread-column');
     const composer = adapter.composerSurface?.() || null;
-    if (cfg.composerRestyle) add(composer,'data-op-composer-surface');
+    for (const element of adapter.composerColumns?.(composer) || []) add(element,'data-op-composer-column');
+    if (!isNativePalette) {
+      for (const element of adapter.codeSurfaces?.() || []) add(element,'data-op-code-surface');
+      for (const element of adapter.codeHeaders?.() || []) add(element,'data-op-code-header');
+      add(adapter.composerScrimSurface?.(composer),'data-op-composer-scrim');
+      if (!isHome) {
+        for (const element of adapter.threadTailSpacers?.() || []) add(element,'data-op-thread-spacer');
+      }
+      if (cfg.composerRestyle) {
+        add(composer,'data-op-composer-surface');
+        add(adapter.composerAddTrigger?.(composer),'data-op-composer-add');
+        add(adapter.modelSelectorTrigger?.(),'data-op-model-capsule');
+        for (const element of adapter.composerChips?.(composer) || []) add(element,'data-op-composer-chip');
+      }
+    }
     // Backdrops belong to the page canvas, not the input card. Keep their
     // reversible bridge independent of the optional composer restyling.
     for (const element of adapter.composerBackdropSurfaces?.(composer) || []) {
@@ -518,7 +535,7 @@
         surfaceObserver.observe(primarySurface);
       }
     }
-    const home = String(!adapter.userTurns().length && !adapter.assistantTurns().length);
+    const home = String(isHome);
     if (document.documentElement.getAttribute('data-op-home') !== home) document.documentElement.setAttribute('data-op-home',home);
     document.documentElement.setAttribute('data-op-visibility',document.hidden?'hidden':'visible');
   }

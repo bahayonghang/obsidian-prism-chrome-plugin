@@ -624,6 +624,14 @@ async function exerciseFixture(browser, host) {
 
     assert.equal(await page.evaluate(host => ObsidianPrismAdapters.forHost(host).userTurns().length, host), 3, `${host}: no nested duplicate turns`);
     assert.equal(await page.evaluate(host => ObsidianPrismAdapters.forHost(host).assistantTurns().length, host), 3);
+    assert.equal(await page.evaluate(host => Boolean(ObsidianPrismAdapters.forHost(host).activeModelLabel()), host), true, `${host}: active model label detected`);
+    assert.ok(await page.evaluate(host => ObsidianPrismAdapters.forHost(host).visibleAttachments().length >= 1, host), `${host}: visible attachment detected`);
+    assert.ok(await page.evaluate(host => ObsidianPrismAdapters.forHost(host).codeSurfaces().length >= 1, host), `${host}: code surface detected`);
+    assert.equal(await page.evaluate(host => Boolean(ObsidianPrismAdapters.forHost(host).composerAddTrigger()), host), true, `${host}: composer add trigger detected`);
+    assert.equal(await page.evaluate(host => Boolean(ObsidianPrismAdapters.forHost(host).modelSelectorTrigger()), host), true, `${host}: model trigger detected`);
+    assert.equal(await page.locator('[data-op-code-surface="true"]').count(), 1);
+    assert.equal(await page.locator('[data-op-composer-add="true"]').count(), 1);
+    assert.equal(await page.locator('[data-op-model-capsule="true"]').count(), 1);
     assert.equal(await page.locator('.op-code-fold-bar').count(), 1);
     assert.equal(await page.locator('.op-code-fold-bar').evaluate(node => node.tagName), 'BUTTON');
     await page.locator('.op-code-fold-bar').click();
@@ -796,7 +804,7 @@ async function exerciseFixture(browser, host) {
     assert.equal(stopped.codeBlocks, 0);
     assert.equal(stopped.thoughtBlocks, 0);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
-    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-composer-scrim="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-enabled')), false);
     await page.evaluate(() => { __prismFixture.patch({ enabled: true }); window.dispatchEvent(new Event('pageshow')); document.body.append(document.createElement('div')); });

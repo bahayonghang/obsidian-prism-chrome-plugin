@@ -5,13 +5,24 @@
 
   const HOSTS = Object.freeze({
     chatgpt: {
-      users: '[data-message-author-role="user"]',
-      assistants: '[data-message-author-role="assistant"]',
+      users: '[data-message-author-role="user"], article[data-turn="user"], [data-testid="user-message"]',
+      assistants: '[data-message-author-role="assistant"], article[data-turn="assistant"], [data-testid="assistant-message"], .agent-turn',
+      turnContainers: 'article[data-testid^="conversation-turn-"]',
       conversation: 'main',
       primary: ['main', '[role="main"]', '[data-testid="conversation-pane"]', '[data-testid="chat-main"]', '#main-content'],
       editors: ['#prompt-textarea', '[data-testid="prompt-textarea"]', 'textarea[name="prompt-textarea"]', 'main [contenteditable="true"][role="textbox"]', 'main textarea'],
       composers: ['#composer-background', '[data-testid="chat-composer"]', '[data-testid="composer"]', '[data-composer-surface]', '.composer-parent'],
       composerBackdrops: '#thread-bottom,[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
+      codeSurfaces: '[data-testid="code-block"], .code-block-wrapper',
+      codeHeaders: '.code-header, [data-testid="code-block-header"]',
+      modelTriggers: '[data-testid="model-switcher-dropdown-button"], [data-testid="composer-model-switcher"], button[aria-label*="model" i], button[aria-label*="模型"]',
+      modelLabels: '[data-testid="model-switcher-dropdown-button"], [data-testid="composer-model-switcher"], .model-label',
+      addTriggers: '[data-testid="composer-plus-btn"], button[aria-label*="Add files" i], button[aria-label*="Attach" i], button[aria-label*="上传"], button[aria-label*="添加"]',
+      composerChips: '[data-testid="composer-mode-pill"], [data-testid="composer-chip"], [data-testid="composer-tool-chip"]',
+      attachments: '[data-testid="attachment-card"], [data-testid="file-attachment"], [data-testid="uploaded-file"], [data-testid="image-attachment"], .native-footer-attachment',
+      threadColumns: '.thread, [data-testid="conversation-thread"], [class*="thread-content"]',
+      composerColumns: '.composer-container, [data-testid="composer-container"]',
+      tailSpacers: '[data-testid="conversation-turn-spacer"], .thread-bottom-spacer',
       sidebars: ['#stage-slideover-sidebar', '#stage-sidebar', '#app-rail', '[data-testid="app-rail"]', '[data-testid="app-sidebar"]', '[data-testid="history-sidebar"]', '[data-testid="sidebar"]', '[data-testid="sidebar-container"]', '[data-testid="stage-thread-flyout"]', '[data-testid="conversation-history"]', '[data-testid="chat-history"]'],
       sidebarLinks: 'a[href^="/c/"],a[href^="/g/"],a[href^="/project/"]',
       thoughts: '[data-testid="reasoning-content"], [data-testid="thoughts-content"], [data-testid="thinking-content"]',
@@ -20,11 +31,22 @@
     gemini: {
       users: 'user-query, [data-test-id="user-query"], .user-query-container',
       assistants: 'model-response, [data-test-id="model-response"], .model-response-text',
+      turnContainers: '',
       conversation: 'chat-window, main, [role="main"]',
       primary: ['chat-window', 'main', '[role="main"]', '.chat-app'],
       editors: ['input-area-v2 .ql-editor[contenteditable="true"]', 'rich-textarea .ql-editor', 'input-area-v2 [contenteditable="true"]', 'rich-textarea [contenteditable="true"]', 'textarea[aria-label]', 'main [contenteditable="true"][role="textbox"]'],
       composers: ['input-area-v2 .text-input-field', 'input-area-v2 .input-area-container', '.input-area-container', '[data-test-id="input-area"]', 'input-area-v2', 'input-area'],
       composerBackdrops: 'input-area-v2,input-area,.input-area-container,[data-test-id="input-area"],[data-test-id="input-area-container"],.input-area-wrapper',
+      codeSurfaces: 'code-block, .code-block',
+      codeHeaders: '.code-block-decoration, [data-test-id="code-block-header"]',
+      modelTriggers: 'bard-mode-switcher button, [data-test-id="bard-mode-menu-button"], .input-area-switch',
+      modelLabels: 'bard-mode-switcher button, [data-test-id="bard-mode-menu-button"], .input-area-switch, .model-label',
+      addTriggers: '[data-test-id="upload-file-button"], button[aria-label*="Add files" i], button[aria-label*="Upload" i], button[aria-label*="上传"], button[aria-label*="添加"]',
+      composerChips: '.toolbox-drawer-item-button, [data-test-id="composer-chip"]',
+      attachments: '[data-test-id="file-preview-chip"], [data-test-id="attachment-card"], file-preview-chip, .native-footer-attachment',
+      threadColumns: '.thread, .conversation-container, .response-container',
+      composerColumns: '.composer-container, input-area-v2',
+      tailSpacers: '',
       sidebars: ['bard-sidenav', 'side-navigation-v2', 'side-navigation', 'mat-sidenav', '[data-test-id="side-nav"]', '[data-test-id="side-navigation"]', '[data-testid="sidebar"]'],
       sidebarLinks: 'a[href^="/app/"]',
       thoughts: 'model-thoughts .thoughts-content, model-thoughts .thought-content, model-thoughts .markdown, [data-test-id="thoughts-content"], [data-test-id="thinking-content"]',
@@ -93,7 +115,7 @@
     }
     return element?.ownerDocument.scrollingElement || document.scrollingElement;
   }
-  const MESSAGE_AREAS = '[data-message-author-role],user-query,model-response,[data-test-id="model-response"],.model-response-text';
+  const MESSAGE_AREAS = '[data-message-author-role],[data-turn="user"],[data-turn="assistant"],article[data-testid^="conversation-turn-"],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response,[data-test-id="model-response"],.model-response-text';
   function firstVisible(selectors, root, predicate = () => true) {
     for (const selector of selectors) {
       const found = [...root.querySelectorAll(selector)].find(node => !isOwned(node) && isVisible(node) && predicate(node));
@@ -255,19 +277,205 @@
     const result = [...rows];
     return result.filter(node => !result.some(parent => parent !== node && parent.contains(node)));
   }
+  function findTurns(spec, role, root) {
+    const selector = role === 'user' ? spec.users : spec.assistants;
+    const explicit = topLevelMatches(selector, root).filter(isVisible);
+    if (!spec.turnContainers) return explicit;
+    const result = [...explicit];
+    const seen = new Set(explicit);
+    const containers = topLevelMatches(spec.turnContainers, root).filter(isVisible);
+    for (const container of containers) {
+      if (seen.has(container) || result.some(node => node.contains(container) || container.contains(node))) continue;
+      if (container.querySelector(spec.users) || container.querySelector(spec.assistants)) continue;
+      const heading = container.querySelector('.sr-only');
+      const srText = heading ? textOf(heading).trim().toLowerCase() : '';
+      const turnAttr = container.getAttribute('data-turn');
+      const isUser = turnAttr === 'user' || Boolean(container.querySelector('.user-message-bubble-color')) || srText.startsWith('you said');
+      const isAssistant = turnAttr === 'assistant' || Boolean(container.querySelector('.agent-turn')) || srText.startsWith('chatgpt said');
+      if (role === 'user' && isUser && !isAssistant) {
+        seen.add(container);
+        result.push(container);
+      } else if (role === 'assistant' && isAssistant && !isUser) {
+        seen.add(container);
+        result.push(container);
+      }
+    }
+    return result;
+  }
+  function normalizeModelText(raw) {
+    return String(raw || '').replace(/[⌄▾▼›❯]/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+  function findModelTrigger(spec, root) {
+    if (!spec.modelTriggers) return null;
+    for (const selector of spec.modelTriggers.split(',').map(s => s.trim()).filter(Boolean)) {
+      const found = [...root.querySelectorAll(selector)].find(node =>
+        !isOwned(node) && isVisible(node) && !node.closest('dialog,[role="dialog"],[aria-modal="true"]') && !node.closest(MESSAGE_AREAS)
+      );
+      if (found) return found;
+    }
+    return null;
+  }
+  function findActiveModelLabel(spec, root) {
+    const trigger = findModelTrigger(spec, root);
+    if (trigger) {
+      const label = normalizeModelText(textOf(trigger) || trigger.getAttribute('aria-label') || '');
+      if (label) return label;
+    }
+    if (!spec.modelLabels) return '';
+    for (const selector of spec.modelLabels.split(',').map(s => s.trim()).filter(Boolean)) {
+      const found = [...root.querySelectorAll(selector)].find(node =>
+        !isOwned(node) && isVisible(node) && !node.closest('dialog,[role="dialog"],[aria-modal="true"]') && !node.closest(MESSAGE_AREAS)
+      );
+      if (found) {
+        const label = normalizeModelText(textOf(found) || found.getAttribute('aria-label') || '');
+        if (label) return label;
+      }
+    }
+    return '';
+  }
+  function findCodeSurfaces(spec, messages, root) {
+    const surfaces = [];
+    const seen = new Set();
+    const add = node => {
+      if (!node || isOwned(node) || !isVisible(node) || seen.has(node)) return;
+      if (node.matches(MESSAGE_AREAS) || node.matches('.markdown')) return;
+      seen.add(node);
+      surfaces.push(node);
+    };
+    const scope = messages.length ? messages : [root];
+    for (const container of scope) {
+      if (spec.codeSurfaces) {
+        for (const node of container.querySelectorAll(spec.codeSurfaces)) add(node);
+      }
+      for (const pre of container.querySelectorAll('pre')) {
+        if (isOwned(pre) || !isVisible(pre)) continue;
+        if (surfaces.some(surface => surface.contains(pre))) continue;
+        const parent = pre.parentElement;
+        if (parent && !isOwned(parent) && !parent.matches(MESSAGE_AREAS) && !parent.matches('.markdown') &&
+            spec.codeHeaders && parent.querySelector(spec.codeHeaders) && parent.querySelectorAll('pre').length === 1) {
+          add(parent);
+        } else {
+          add(pre);
+        }
+      }
+    }
+    return surfaces.filter(node => !surfaces.some(other => other !== node && other.contains(node)));
+  }
+  function findCodeHeaders(spec, messages) {
+    if (!spec.codeHeaders) return [];
+    const out = [];
+    for (const message of messages) {
+      for (const hdr of message.querySelectorAll(spec.codeHeaders)) {
+        if (!isOwned(hdr) && isVisible(hdr) && !out.includes(hdr)) out.push(hdr);
+      }
+    }
+    return out;
+  }
+  function findVisibleAttachments(spec, messages, composer, root) {
+    if (!spec.attachments) return [];
+    const candidates = new Set();
+    for (const scope of [...messages, composer?.parentElement || composer, root]) {
+      if (!scope?.querySelectorAll) continue;
+      for (const node of scope.querySelectorAll(spec.attachments)) {
+        if (isOwned(node) || !isVisible(node) || node.closest('dialog,[role="dialog"],[aria-modal="true"]')) continue;
+        const rect = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
+        if (rect && rect.width > 0 && rect.height > 0 && rect.width <= 36 && rect.height <= 36) continue;
+        candidates.add(node);
+      }
+    }
+    const list = [...candidates];
+    return list.filter(node => !list.some(other => other !== node && other.contains(node)));
+  }
+  function findComposerAddTrigger(spec, composer) {
+    if (!composer || !spec.addTriggers) return null;
+    const scope = composer.parentElement || composer;
+    for (const selector of spec.addTriggers.split(',').map(s => s.trim()).filter(Boolean)) {
+      const found = [...scope.querySelectorAll(selector)].find(node =>
+        !isOwned(node) && isVisible(node) && composer.contains(node) && !node.classList.contains('send-button')
+      );
+      if (found) return found;
+    }
+    return null;
+  }
+  function findComposerChips(spec, composer, addTrigger, modelTrigger) {
+    if (!composer || !spec.composerChips) return [];
+    const chips = [];
+    const scopes = [composer, composer.parentElement].filter(Boolean);
+    for (const scope of scopes) {
+      for (const node of scope.querySelectorAll(spec.composerChips)) {
+        if (isOwned(node) || !isVisible(node) || node === addTrigger || node === modelTrigger) continue;
+        if (node.contains(addTrigger) || node.contains(modelTrigger) || node.classList?.contains('send-button')) continue;
+        if (!chips.includes(node)) chips.push(node);
+      }
+    }
+    return chips.filter(node => !chips.some(other => other !== node && other.contains(node)));
+  }
+  function findComposerScrim(spec, composer) {
+    const backdrops = findComposerBackdrops(spec, composer);
+    if (!backdrops.length) return null;
+    // Outermost structural ancestor in the bounded dock chain (ignore empty fade siblings).
+    const ancestors = [];
+    for (let node = composer.parentElement; node; node = node.parentElement) {
+      if (backdrops.includes(node)) ancestors.push(node);
+    }
+    return ancestors.length ? ancestors[ancestors.length - 1] : null;
+  }
+  function findThreadTailSpacers(spec, primary, messages) {
+    if (!primary || !spec.tailSpacers || !messages.length) return [];
+    const lastMessage = messages[messages.length - 1];
+    const spacers = [];
+    for (const node of primary.querySelectorAll(spec.tailSpacers)) {
+      if (isOwned(node) || node.closest(MESSAGE_AREAS)) continue;
+      if (textOf(node).trim() || node.querySelector('button,a[href],[role="button"],input,textarea')) continue;
+      if (lastMessage.contains(node)) continue;
+      spacers.push(node);
+    }
+    return spacers;
+  }
+  function findColumnSurfaces(selector, primary, anchor) {
+    if (!selector || !primary) return [];
+    const out = [];
+    for (const node of primary.querySelectorAll(selector)) {
+      if (!isOwned(node) && isVisible(node) && primary.contains(node) && (!anchor || node.contains(anchor) || anchor.contains(node))) {
+        if (!out.includes(node)) out.push(node);
+      }
+    }
+    if (!out.length && anchor) {
+      for (let node = anchor.parentElement; node && node !== primary; node = node.parentElement) {
+        if (!isOwned(node) && node.matches && node.matches(selector)) { out.push(node); break; }
+      }
+    }
+    return out;
+  }
   function forHost(host, root = document) {
     const spec = HOSTS[host];
     if (!spec) return null;
     const collect = selectors => topLevelMatches(selectors, root).filter(isVisible);
-    const messages = () => [...collect(spec.users), ...collect(spec.assistants)];
+    const userTurns = () => findTurns(spec, 'user', root);
+    const assistantTurns = () => findTurns(spec, 'assistant', root);
+    const messages = () => [...userTurns(), ...assistantTurns()];
     return Object.freeze({
       host,
-      userTurns: () => collect(spec.users),
-      assistantTurns: () => collect(spec.assistants),
+      userTurns,
+      assistantTurns,
       conversationRoot: () => root.querySelector(spec.conversation) || root.body || root,
       primarySurface: () => findPrimary(spec, root),
       composerSurface: () => findComposer(spec, root),
       composerBackdropSurfaces: (composer) => findComposerBackdrops(spec, composer === undefined ? findComposer(spec, root) : composer),
+      composerScrimSurface: (composer) => findComposerScrim(spec, composer === undefined ? findComposer(spec, root) : composer),
+      composerAddTrigger: (composer) => findComposerAddTrigger(spec, composer === undefined ? findComposer(spec, root) : composer),
+      modelSelectorTrigger: () => findModelTrigger(spec, root),
+      activeModelLabel: () => findActiveModelLabel(spec, root),
+      composerChips: (composer) => {
+        const comp = composer === undefined ? findComposer(spec, root) : composer;
+        return findComposerChips(spec, comp, findComposerAddTrigger(spec, comp), findModelTrigger(spec, root));
+      },
+      visibleAttachments: (composer) => findVisibleAttachments(spec, messages(), composer === undefined ? findComposer(spec, root) : composer, root),
+      codeSurfaces: () => findCodeSurfaces(spec, messages(), root),
+      codeHeaders: () => findCodeHeaders(spec, messages()),
+      threadTailSpacers: () => findThreadTailSpacers(spec, findPrimary(spec, root), messages()),
+      threadColumns: () => findColumnSurfaces(spec.threadColumns, findPrimary(spec, root), messages()[0]),
+      composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, findPrimary(spec, root), composer === undefined ? findComposer(spec, root) : composer),
       sidebarSurfaces: () => findSidebars(spec, root),
       sidebarActiveRows: (sidebars) => findSidebarActiveRows(sidebars === undefined ? findSidebars(spec, root) : sidebars),
       codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))],

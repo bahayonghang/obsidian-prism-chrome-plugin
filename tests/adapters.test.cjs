@@ -97,3 +97,264 @@ test('token estimation is deterministic for empty, Latin, CJK and surrogate-pair
   assert.equal(A.estimateTokens('😀😀😀😀'), 2, 'count Unicode code points, not surrogate halves');
   assert.equal(A.forHost('unrelated-host', {}), null);
 });
+
+function domNode(tagName, attrs = {}, options = {}) {
+  const node = {
+    nodeType: 1,
+    tagName: String(tagName || 'DIV').toUpperCase(),
+    attributesMap: new Map(Object.entries(attrs).map(([k, v]) => [k, String(v)])),
+    children: [],
+    parentElement: null,
+    isConnected: true,
+    textContent: options.textContent || '',
+    innerText: options.innerText ?? options.textContent ?? '',
+    rect: options.rect || { left: 100, right: 860, top: 100, bottom: 200, width: 760, height: 100 },
+    style: options.style || { display: 'block', visibility: 'visible', opacity: '1', contentVisibility: 'visible', position: 'static', backgroundColor: 'transparent' },
+    get classList() {
+      const cls = (this.attributesMap.get('class') || '').split(/\s+/).filter(Boolean);
+      return { contains: name => cls.includes(name) };
+    },
+    getAttribute(name) { return this.attributesMap.get(name) ?? null; },
+    setAttribute(name, value) { this.attributesMap.set(name, String(value)); },
+    removeAttribute(name) { this.attributesMap.delete(name); },
+    hasAttribute(name) { return this.attributesMap.has(name); },
+    getBoundingClientRect() { return this.rect; },
+    append(...kids) {
+      for (const kid of kids) {
+        kid.parentElement = this;
+        kid.ownerDocument = this.ownerDocument;
+        this.children.push(kid);
+      }
+      return this;
+    },
+    contains(other) {
+      for (let cur = other; cur; cur = cur.parentElement) if (cur === this) return true;
+      return false;
+    },
+    matches(selectorList) { return matchesAny(this, selectorList); },
+    closest(selectorList) {
+      for (let cur = this; cur; cur = cur.parentElement) if (matchesAny(cur, selectorList)) return cur;
+      return null;
+    },
+    querySelectorAll(selectorList) {
+      const out = [];
+      const walk = cur => {
+        for (const child of cur.children) {
+          if (matchesAny(child, selectorList)) out.push(child);
+          walk(child);
+        }
+      };
+      walk(this);
+      return out;
+    },
+    querySelector(selectorList) { return this.querySelectorAll(selectorList)[0] || null; }
+  };
+  return node;
+}
+
+function splitSelectors(selectorList) {
+  const parts = [];
+  let current = '', depth = 0, quote = '';
+  for (const ch of String(selectorList || '')) {
+    if (quote) {
+      current += ch;
+      if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; current += ch; continue; }
+    if (ch === '(' || ch === '[') depth++;
+    else if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1);
+    if (ch === ',' && depth === 0) { parts.push(current.trim()); current = ''; continue; }
+    current += ch;
+  }
+  if (current.trim()) parts.push(current.trim());
+  return parts;
+}
+
+function matchCompound(node, compound) {
+  if (!node || node.nodeType !== 1) return false;
+  let rest = compound.trim();
+  if (!rest) return false;
+  if (rest.startsWith(':not(') && rest.endsWith(')')) return !matchesAny(node, rest.slice(5, -1));
+  const tagMatch = rest.match(/^([a-zA-Z0-9_-]+)/);
+  if (tagMatch) {
+    if (node.tagName !== tagMatch[1].toUpperCase()) return false;
+    rest = rest.slice(tagMatch[0].length);
+  }
+  while (rest.length) {
+    if (rest.startsWith('#')) {
+      const m = rest.match(/^#([a-zA-Z0-9_-]+)/);
+      if (!m || node.getAttribute('id') !== m[1]) return false;
+      rest = rest.slice(m[0].length);
+    } else if (rest.startsWith('.')) {
+      const m = rest.match(/^\.([a-zA-Z0-9_-]+)/);
+      if (!m || !node.classList.contains(m[1])) return false;
+      rest = rest.slice(m[0].length);
+    } else if (rest.startsWith('[')) {
+      const m = rest.match(/^\[([a-zA-Z0-9_:-]+)(?:(\^=|\*=|=)"([^"]*)")?\]/);
+      if (!m) return false;
+      const val = node.getAttribute(m[1]);
+      if (m[2] === '=' && val !== m[3]) return false;
+      if (m[2] === '^=' && (!val || !val.startsWith(m[3]))) return false;
+      if (m[2] === '*=' && (!val || !val.includes(m[3]))) return false;
+      if (!m[2] && val === null) return false;
+      rest = rest.slice(m[0].length);
+    } else {
+      return false;
+    }
+  }
+  return true;
+}
+
+function matchesAny(node, selectorList) {
+  for (const sel of splitSelectors(selectorList)) {
+    const tokens = sel.trim().split(/\s+/);
+    if (tokens.length === 1) {
+      if (matchCompound(node, tokens[0])) return true;
+    } else if (tokens.length === 2 && tokens[1] && matchCompound(node, tokens[1])) {
+      for (let anc = node.parentElement; anc; anc = anc.parentElement) {
+        if (matchCompound(anc, tokens[0])) return true;
+      }
+    } else if (tokens.length === 3 && tokens[1] === '>' && matchCompound(node, tokens[2])) {
+      if (node.parentElement && matchCompound(node.parentElement, tokens[0])) return true;
+    }
+  }
+  return false;
+}
+
+function makeDoc(host = 'chatgpt') {
+  const doc = {
+    body: null,
+    documentElement: null,
+    defaultView: {
+      innerWidth: 1280,
+      innerHeight: 900,
+      getComputedStyle: node => node.style || { display: 'block', visibility: 'visible', opacity: '1', contentVisibility: 'visible' }
+    }
+  };
+  const body = domNode('body', { class: host });
+  body.ownerDocument = doc;
+  doc.body = body;
+  doc.documentElement = domNode('html');
+  doc.documentElement.ownerDocument = doc;
+  doc.querySelectorAll = sel => body.querySelectorAll(sel);
+  doc.querySelector = sel => body.querySelector(sel);
+  return { doc, body, el: (tag, attrs, opts) => { const n = domNode(tag, attrs, opts); n.ownerDocument = doc; return n; } };
+}
+
+test('ChatGPT 2026 turns with data-turn or structural fallbacks are recognized without duplicates', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const thread = el('div', { class: 'thread' });
+
+  // Turn 0: modern data-turn without data-message-author-role
+  const t0 = el('article', { 'data-testid': 'conversation-turn-0', 'data-turn': 'user' });
+  const b0 = el('div', { class: 'user-message-bubble-color' }, { textContent: 'First synthetic question' });
+  t0.append(b0);
+
+  // Turn 1: modern assistant turn without data-message-author-role, with code wrapper
+  const t1 = el('article', { 'data-testid': 'conversation-turn-1', 'data-turn': 'assistant' });
+  const md1 = el('div', { class: 'markdown' }, { textContent: 'Use a calibrated pipeline.' });
+  const cb = el('div', { 'data-testid': 'code-block', class: 'code-block-wrapper' });
+  const hdr = el('div', { class: 'code-header' }, { textContent: 'JavaScript' });
+  const pre = el('pre');
+  pre.append(el('code', {}, { textContent: 'const x = 1;' }));
+  cb.append(hdr, pre);
+  md1.append(cb);
+  t1.append(md1);
+
+  // Turn 2 & 3: structural fallback only (.sr-only heading + .agent-turn)
+  const t2 = el('article', { 'data-testid': 'conversation-turn-2' });
+  t2.append(el('h5', { class: 'sr-only' }, { textContent: 'You said:' }), el('div', {}, { textContent: 'Second synthetic question' }));
+  const t3 = el('article', { 'data-testid': 'conversation-turn-3' });
+  t3.append(el('h6', { class: 'sr-only' }, { textContent: 'ChatGPT said:' }), el('div', { class: 'agent-turn' }, { textContent: 'Second reply' }));
+
+  const spacer = el('div', { 'data-testid': 'conversation-turn-spacer', class: 'thread-bottom-spacer', 'aria-hidden': 'true' }, { textContent: '', rect: { left: 100, right: 860, top: 600, bottom: 820, width: 760, height: 220 } });
+  thread.append(t0, t1, t2, t3, spacer);
+
+  const dock = el('div', { id: 'thread-bottom', class: 'native-composer-dock' }, { rect: { left: 0, right: 1280, top: 760, bottom: 900, width: 1280, height: 140 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'sticky', backgroundColor: '#ffffff' } });
+  const composerCol = el('div', { class: 'composer-container' });
+  const composer = el('div', { id: 'composer-background', 'data-testid': 'composer' }, { rect: { left: 260, right: 1020, top: 775, bottom: 870, width: 760, height: 95 } });
+  const editor = el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' });
+  const addBtn = el('button', { type: 'button', 'data-testid': 'composer-plus-btn', 'aria-label': 'Add files' }, { rect: { left: 274, right: 306, top: 828, bottom: 860, width: 32, height: 32 } });
+  const modeChip = el('button', { type: 'button', 'data-testid': 'composer-mode-pill' }, { textContent: 'Search' });
+  const modelBtn = el('button', { type: 'button', 'data-testid': 'model-switcher-dropdown-button', 'aria-haspopup': 'menu' }, { textContent: 'ChatGPT 5.2 ⌄' });
+  const attCard = el('div', { 'data-testid': 'attachment-card' }, { textContent: 'report.pdf', rect: { left: 274, right: 410, top: 780, bottom: 816, width: 136, height: 36 } });
+  composer.append(attCard, editor, addBtn, modeChip, modelBtn);
+  composerCol.append(composer);
+  dock.append(composerCol);
+  main.append(thread, dock);
+  body.append(main);
+
+  const adapter = A.forHost('chatgpt', doc);
+  assert.equal(adapter.userTurns().length, 2);
+  assert.equal(adapter.assistantTurns().length, 2);
+  assert.deepEqual([...adapter.codeSurfaces()], [cb]);
+  assert.deepEqual([...adapter.codeHeaders()], [hdr]);
+  assert.equal(adapter.modelSelectorTrigger(), modelBtn);
+  assert.equal(adapter.activeModelLabel(), 'ChatGPT 5.2');
+  assert.deepEqual([...adapter.visibleAttachments()], [attCard]);
+  assert.equal(adapter.composerAddTrigger(composer), addBtn);
+  assert.deepEqual([...adapter.composerChips(composer)], [modeChip]);
+  assert.equal(adapter.composerScrimSurface(composer), dock);
+  assert.deepEqual([...adapter.threadTailSpacers()], [spacer]);
+  assert.equal(adapter.threadColumns().includes(thread), true);
+  assert.equal(adapter.composerColumns(composer).includes(composerCol), true);
+});
+
+test('Gemini 2026 adapter exposes code-block shell, mode switcher, add trigger, chips and attachments', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('gemini');
+  const chatWindow = el('chat-window');
+  const main = el('main', { id: 'main' });
+  const thread = el('div', { class: 'thread' });
+
+  const uq = el('user-query');
+  const uqInner = el('div', { 'data-test-id': 'user-query' }, { textContent: 'Inspect Gemini block' });
+  uq.append(uqInner);
+
+  const mr = el('model-response');
+  const mrText = el('div', { class: 'model-response-text' });
+  const cb = el('code-block', { class: 'code-block' });
+  const hdr = el('div', { class: 'code-block-decoration' }, { textContent: 'Python' });
+  const pre = el('pre');
+  pre.append(el('code', {}, { textContent: 'print(1)' }));
+  cb.append(hdr, pre);
+  const att = el('div', { 'data-test-id': 'file-preview-chip' }, { textContent: 'spec.pdf', rect: { left: 100, right: 240, top: 300, bottom: 340, width: 140, height: 40 } });
+  mrText.append(cb, att);
+  mr.append(mrText);
+  thread.append(uq, mr);
+
+  const dock = el('div', { id: 'thread-bottom', class: 'input-area-wrapper' }, { rect: { left: 0, right: 1280, top: 760, bottom: 900, width: 1280, height: 140 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'sticky', backgroundColor: '#ffffff' } });
+  const composerCol = el('div', { class: 'composer-container' });
+  const inputArea = el('input-area-v2');
+  const composer = el('div', { class: 'text-input-field input-area-container' }, { rect: { left: 260, right: 1020, top: 775, bottom: 870, width: 760, height: 95 } });
+  const editor = el('div', { class: 'ql-editor', contenteditable: 'true', role: 'textbox' });
+  const addBtn = el('button', { type: 'button', 'data-test-id': 'upload-file-button', 'aria-label': 'Add files' }, { rect: { left: 274, right: 306, top: 828, bottom: 860, width: 32, height: 32 } });
+  const chip = el('button', { type: 'button', class: 'toolbox-drawer-item-button' }, { textContent: 'Deep Research' });
+  const modeWrap = el('bard-mode-switcher');
+  const modelBtn = el('button', { type: 'button', 'data-test-id': 'bard-mode-menu-button', class: 'input-area-switch', 'aria-haspopup': 'menu' }, { textContent: 'Gemini 2.5 Pro ⌄' });
+  modeWrap.append(modelBtn);
+  composer.append(editor, addBtn, chip, modeWrap);
+  inputArea.append(composer);
+  composerCol.append(inputArea);
+  dock.append(composerCol);
+  main.append(thread, dock);
+  chatWindow.append(main);
+  body.append(chatWindow);
+
+  const adapter = A.forHost('gemini', doc);
+  assert.equal(adapter.userTurns().length, 1);
+  assert.equal(adapter.assistantTurns().length, 1);
+  assert.deepEqual([...adapter.codeSurfaces()], [cb]);
+  assert.deepEqual([...adapter.codeHeaders()], [hdr]);
+  assert.equal(adapter.modelSelectorTrigger(), modelBtn);
+  assert.equal(adapter.activeModelLabel(), 'Gemini 2.5 Pro');
+  assert.deepEqual([...adapter.visibleAttachments()], [att]);
+  assert.equal(adapter.composerAddTrigger(composer), addBtn);
+  assert.deepEqual([...adapter.composerChips(composer)], [chip]);
+  assert.equal(adapter.composerScrimSurface(composer), dock);
+  assert.equal(adapter.threadColumns().includes(thread), true);
+  assert.equal(adapter.composerColumns(composer).includes(composerCol), true);
+});
