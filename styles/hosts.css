@@ -506,3 +506,37 @@ html[data-op-visibility="hidden"] #op-ambient-stage * { animation-play-state: pa
   html[data-op-enabled="true"] pre.op-code-folded { max-height: none !important;overflow: visible !important;mask-image: none !important; }
   html[data-op-enabled="true"] .op-thought-hidden { display: revert !important; }
 }
+
+/* === Bottom Spacing & Composer Scrim (v0.3.0) === */
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-spacer="true"] {
+  min-height: 20px !important;
+  height: 20px !important;
+  padding-bottom: 0 !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-column="true"] {
+  padding-bottom: 24px !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"] :is(.composer-container,[data-op-composer-column="true"]) {
+  padding-top: 8px !important;
+  padding-bottom: 14px !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"] .composer-hint {
+  margin-top: 6px !important;
+  margin-bottom: 0 !important;
+}
+
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])::before,
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])::after,
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) .native-composer-fade:not([data-op-composer-scrim="true"]) {
+  background-color: transparent !important;
+  background-image: none !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"] {
+  background-color: transparent !important;
+  background-image: linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--op-canvas) 82%, transparent) 18%, color-mix(in srgb, var(--op-canvas) 96%, transparent) 44%, var(--op-canvas) 100%) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
+  background-color: transparent !important;
+  background-image: linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--op-canvas) 78%, transparent) 100%) !important;
+}
