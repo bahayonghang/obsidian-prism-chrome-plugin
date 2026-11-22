@@ -94,19 +94,94 @@
     copy.querySelectorAll('[data-op-owned],script,style,[hidden],[aria-hidden="true"]').forEach(node => node.remove());
     return copy.textContent || '';
   }
+  const TURN_NOISE_SELECTOR = '[data-op-owned],script,style,svg,[hidden],[aria-hidden="true"],.sr-only,button,[role="button"],.turn-actions,[data-testid="turn-actions"],.code-header,.code-block-decoration,[data-testid="code-block-header"],[data-test-id="code-block-header"],[data-testid="citation-pill"],.citation-chip,message-actions';
+  function cleanTurnText(element, options = {}) {
+    if (!element) return '';
+    const selector = options && options.excludeCode ? `${TURN_NOISE_SELECTOR},pre` : TURN_NOISE_SELECTOR;
+    if (element.matches && element.matches(selector)) return '';
+    if (typeof element.cloneNode === 'function') {
+      if (!element.querySelector || !element.querySelector(selector)) {
+        return (element.textContent || '').trim();
+      }
+      const copy = element.cloneNode(true);
+      copy.querySelectorAll(selector).forEach(node => node.remove());
+      return (copy.textContent || '').trim();
+    }
+    const collectText = node => {
+      if (!node) return '';
+      if (node.nodeType === 3) return node.nodeValue ?? node.textContent ?? '';
+      if (node !== element && node.matches && node.matches(selector)) return '';
+      let out = node.textContent || '';
+      if (Array.isArray(node.children)) {
+        for (const child of node.children) {
+          const part = collectText(child);
+          if (part) out += (out ? ' ' : '') + part;
+        }
+      }
+      return out;
+    };
+    return collectText(element).trim();
+  }
   function visibleText(element) {
     if (!isVisible(element)) return '';
     // innerText follows rendered visibility, including collapsed native details.
     return typeof element.innerText === 'string' ? element.innerText.trim() : textOf(element).trim();
   }
-  function estimateTokens(text) {
+  function estimateTokens(text, options = {}) {
+    const source = String(text || '');
+    if (!source.trim()) return 0;
     let cjk = 0;
     let other = 0;
-    for (const character of String(text || '')) {
+    for (const character of source) {
       if (/[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff]/u.test(character)) cjk++;
       else other++;
     }
-    return Math.ceil(cjk * 1.45 + other / 3.8);
+    const divisor = options && options.mode === 'code' ? 3.2 : 4;
+    return Math.ceil(cjk * 0.7 + other / divisor);
+  }
+  function estimateTurnTokens(turn) {
+    if (!turn) return { prose: 0, code: 0, total: 0 };
+    const prose = estimateTokens(cleanTurnText(turn, { excludeCode: true }));
+    let code = 0;
+    if (typeof turn.querySelectorAll === 'function') {
+      const pres = [...turn.querySelectorAll('pre')].filter(pre =>
+        !isOwned(pre) &&
+        !pre.closest?.('[hidden],[aria-hidden="true"]') &&
+        !pre.parentElement?.closest?.('pre')
+      );
+      for (const pre of pres) {
+        if (pre.parentElement && pre.parentElement !== turn) {
+          const noiseAnc = pre.closest?.(TURN_NOISE_SELECTOR);
+          if (noiseAnc && turn.contains?.(noiseAnc)) continue;
+        }
+        const codeText = cleanTurnText(pre.querySelector?.('code') || pre);
+        code += estimateTokens(codeText, { mode: 'code' });
+      }
+    }
+    return { prose, code, total: prose + code };
+  }
+  function resolveReferenceCapacity(host, modelLabel, configured) {
+    const rawLabel = String(modelLabel || '').trim();
+    if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
+      return { tokens: configured, mode: 'manual', matched: true, modelLabel: rawLabel };
+    }
+    const label = rawLabel.toLowerCase();
+    if (host === 'gemini') {
+      if (/\b1\.5\s*pro\b/.test(label)) return { tokens: 2000000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      if (/\b(?:3(?:\.\d+)?|2\.5|2\.0|flash|pro|thinking|ultra)\b/.test(label)) {
+        return { tokens: 1000000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      }
+      return { tokens: 1000000, mode: 'auto', matched: false, modelLabel: rawLabel };
+    }
+    if (host === 'chatgpt') {
+      if (/\b4\.1\b/.test(label)) return { tokens: 1000000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      if (/\b(?:gpt-?5|chatgpt\s*5|5\.[12])\b/.test(label)) return { tokens: 400000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      if (/\bo[134]\b/.test(label)) return { tokens: 200000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      if (/\b4o\b|gpt-?4/.test(label)) return { tokens: 128000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      if (/\b3\.5\b/.test(label)) return { tokens: 32000, mode: 'auto', matched: true, modelLabel: rawLabel };
+      return { tokens: 128000, mode: 'auto', matched: false, modelLabel: rawLabel };
+    }
+    return { tokens: 128000, mode: 'auto', matched: false, modelLabel: rawLabel };
   }
   function scrollContainer(element) {
     for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
@@ -489,6 +564,6 @@
     });
   }
   global.ObsidianPrismAdapters = Object.freeze({
-    forHost, topLevelMatches, estimateTokens, textOf, visibleText, isOwned, isVisible, scrollContainer
+    forHost, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, scrollContainer
   });
 })(globalThis);
