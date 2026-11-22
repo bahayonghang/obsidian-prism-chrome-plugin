@@ -74,7 +74,8 @@ function list(directory) {
     return entry.isDirectory() ? list(path) : [path];
   });
 }
-const javascript = ['src', 'popup', 'scripts'].flatMap(list).filter(path => ['.js', '.mjs', '.cjs'].includes(extname(path)));
+// tools/ holds developer-only scripts (the structure probe); they are syntax-checked but never packaged.
+const javascript = ['src', 'popup', 'scripts', 'tools'].flatMap(list).filter(path => ['.js', '.mjs', '.cjs'].includes(extname(path)));
 for (const path of javascript) {
   const result = spawnSync(process.execPath, ['--check', resolve(root, path)], { encoding: 'utf8' });
   assert.equal(result.status, 0, `${path}: ${result.stderr || result.error || 'syntax check failed'}`);
