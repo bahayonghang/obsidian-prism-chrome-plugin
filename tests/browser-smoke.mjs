@@ -183,22 +183,110 @@ async function surfaceSnapshot(page) {
   });
 }
 
+async function chatgptLayoutSnapshot(page) {
+  return page.evaluate(() => {
+    const spacer = document.querySelector('[data-testid="conversation-turn-spacer"], .thread-bottom-spacer');
+    const thread = document.querySelector('.thread');
+    const scrim = document.querySelector('#thread-bottom');
+    const composerCol = scrim?.querySelector('.composer-container');
+    const hint = scrim?.querySelector('.composer-hint');
+    const composer = document.querySelector('[data-fixture-composer]');
+    return {
+      spacerHeight: spacer ? Math.round(spacer.getBoundingClientRect().height * 10) / 10 : null,
+      threadPaddingBottom: thread ? parseFloat(getComputedStyle(thread).paddingBottom) : null,
+      composerColPaddingTop: composerCol ? parseFloat(getComputedStyle(composerCol).paddingTop) : null,
+      composerColPaddingBottom: composerCol ? parseFloat(getComputedStyle(composerCol).paddingBottom) : null,
+      hintMarginTop: hint ? parseFloat(getComputedStyle(hint).marginTop) : null,
+      hintMarginBottom: hint ? parseFloat(getComputedStyle(hint).marginBottom) : null,
+      hintBottomGap: hint ? Math.round((innerHeight - hint.getBoundingClientRect().bottom) * 10) / 10 : null,
+      composerBottomGap: composer ? Math.round((innerHeight - composer.getBoundingClientRect().bottom) * 10) / 10 : null
+    };
+  });
+}
+
 async function assertComposerBackdrops(page, nativeSurfaces) {
-  await page.waitForFunction(() => [...document.querySelectorAll('[data-fixture-backdrop]')].every(node => node.getAttribute('data-op-composer-backdrop') === 'true'));
+  await page.waitForFunction(() =>
+    [...document.querySelectorAll('[data-fixture-backdrop]')].every(node => node.getAttribute('data-op-composer-backdrop') === 'true') &&
+    Boolean(document.querySelector('[data-op-composer-scrim="true"]'))
+  );
   const current = await surfaceSnapshot(page);
+  const backdropMeta = await page.evaluate(() => [...document.querySelectorAll('[data-fixture-backdrop]')].map(node => ({
+    isScrim: node.getAttribute('data-op-composer-scrim') === 'true',
+    isNativeFade: node.classList.contains('native-composer-fade')
+  })));
   assert.ok(current.backdrops.length >= 4, 'conversation fixture must include multiple opaque dock layers and a decorative fade');
+  assert.equal(backdropMeta.filter(meta => meta.isScrim).length, 1, 'exactly one outermost dock layer acts as the feathered composer scrim');
   const transparent = value => value === 'transparent' || /^rgba\(\s*0,\s*0,\s*0,\s*0\s*\)$/.test(value);
   for (const [index, layer] of current.backdrops.entries()) {
-    assert.ok(transparent(layer.background) && layer.backgroundImage === 'none', `dock layer ${index} must reveal the themed canvas instead of a native white block`);
-    for (const type of ['before', 'after']) {
-      assert.ok(transparent(layer[type].background) && layer[type].backgroundImage === 'none', `dock layer ${index} ${type} must not retain an opaque fade`);
-      assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
-      assert.equal(layer[type].display, nativeSurfaces.backdrops[index][type].display, 'decorative pseudo display is preserved');
+    const meta = backdropMeta[index];
+    assert.ok(transparent(layer.background), `dock layer ${index} background-color must stay transparent`);
+    assert.notEqual(layer.background, 'rgb(255, 255, 255)', `dock layer ${index} must not paint a solid white slab`);
+    if (meta.isScrim) {
+      assert.ok(layer.backgroundImage.includes('linear-gradient'), `scrim host layer ${index} must paint a feathered linear-gradient toward --op-canvas`);
+      assert.ok(transparent(layer.before.background) && layer.before.backgroundImage.includes('linear-gradient'), `scrim host layer ${index} ::before must paint a feathered top linear-gradient`);
+      assert.ok(transparent(layer.after.background) && layer.after.backgroundImage === 'none', `scrim host layer ${index} ::after must remain transparent`);
+      for (const type of ['before', 'after']) {
+        assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
+        assert.equal(layer[type].display, nativeSurfaces.backdrops[index][type].display, 'decorative pseudo display is preserved');
+      }
+    } else {
+      assert.equal(layer.backgroundImage, 'none', `inner dock layer ${index}${meta.isNativeFade ? ' (.native-composer-fade)' : ''} must reveal the themed canvas without a solid slab`);
+      for (const type of ['before', 'after']) {
+        assert.ok(transparent(layer[type].background) && layer[type].backgroundImage === 'none', `inner dock layer ${index} ${type} must not retain an opaque fade`);
+        assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
+        assert.equal(layer[type].display, nativeSurfaces.backdrops[index][type].display, 'decorative pseudo display is preserved');
+      }
     }
   }
   assert.deepEqual(current.footerAttachment, nativeSurfaces.footerAttachment, 'native footer attachments retain their own painted controls');
   assert.equal(await page.locator('[data-fixture-footer-attachment][data-op-composer-backdrop]').count(), 0);
   assert.equal(await page.locator('[data-fixture-composer][data-op-composer-backdrop]').count(), 0, 'the input card is not part of the page backdrop');
+
+  const isActiveChatGPT = await page.evaluate(() =>
+    document.documentElement.getAttribute('data-op-host') === 'chatgpt' &&
+    document.documentElement.getAttribute('data-op-home') === 'false'
+  );
+  if (isActiveChatGPT) {
+    const layout = await chatgptLayoutSnapshot(page);
+    assert.ok(layout.spacerHeight !== null && layout.spacerHeight > 0 && layout.spacerHeight <= 32, `ChatGPT active spacer must converge cleanly (<= 32px), got ${layout.spacerHeight}`);
+    assert.equal(layout.threadPaddingBottom, 24, 'ChatGPT active thread column bottom padding should tighten to 24px');
+    assert.equal(layout.composerColPaddingTop, 8, 'ChatGPT composer column top padding should tighten to 8px');
+    assert.equal(layout.composerColPaddingBottom, 14, 'ChatGPT composer column bottom padding should be 14px');
+    assert.equal(layout.hintMarginTop, 6, 'ChatGPT composer hint top margin should be 6px');
+    assert.equal(layout.hintMarginBottom, 0, 'ChatGPT composer hint bottom margin should be 0px');
+    assert.ok(layout.hintBottomGap >= 12 && layout.hintBottomGap <= 28, `ChatGPT composer footer bottom margin should stay between 12px and 28px, got ${layout.hintBottomGap}`);
+    assert.ok(layout.composerBottomGap >= 12 && layout.composerBottomGap <= 40, `ChatGPT composer surface bottom gap with compact hint should stay tight, got ${layout.composerBottomGap}`);
+
+    const previousScrollTop = await page.evaluate(() => {
+      const scroller = document.querySelector('[data-prism-test-scroller]');
+      const prev = scroller.scrollTop;
+      scroller.scrollTop = scroller.scrollHeight;
+      return prev;
+    });
+    const turnActionsCheck = await page.evaluate(() => {
+      const scroller = document.querySelector('[data-prism-test-scroller]');
+      const scrim = document.querySelector('[data-op-composer-scrim="true"]');
+      const actions = document.querySelector('.thread article:last-of-type .turn-actions, .thread article:last-of-type [data-testid="turn-actions"]');
+      const btn = actions?.querySelector('button');
+      if (!scroller || !scrim || !actions || !btn) return null;
+      const scrollerRect = scroller.getBoundingClientRect();
+      const scrimRect = scrim.getBoundingClientRect();
+      const actionsRect = actions.getBoundingClientRect();
+      const btnRect = btn.getBoundingClientRect();
+      const hit = document.elementFromPoint(btnRect.left + btnRect.width / 2, btnRect.top + btnRect.height / 2);
+      return {
+        visibleInScroller: actionsRect.top >= scrollerRect.top - 1 && actionsRect.bottom <= scrollerRect.bottom + 1,
+        aboveScrim: actionsRect.bottom <= scrimRect.top,
+        clickable: Boolean(hit && actions.contains(hit))
+      };
+    });
+    assert.ok(turnActionsCheck, 'last assistant turn must expose .turn-actions');
+    assert.equal(turnActionsCheck.visibleInScroller, true, 'last .turn-actions must remain completely inside the visible scroll viewport');
+    assert.equal(turnActionsCheck.aboveScrim, true, 'last .turn-actions must not overlap the composer scrim');
+    assert.equal(turnActionsCheck.clickable, true, 'last .turn-actions button must remain hit-testable and clickable');
+    await page.locator('.thread article:last-of-type .turn-actions button').first().click({ trial: true });
+    await page.evaluate(prev => { document.querySelector('[data-prism-test-scroller]').scrollTop = prev; }, previousScrollTop);
+  }
 }
 
 async function sidebarSelectionSnapshot(page) {
@@ -553,6 +641,7 @@ async function exerciseFixture(browser, host) {
     const originalText = await page.locator('pre code').textContent();
     const originalBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
     const originalSurfaces = await surfaceSnapshot(page);
+    const originalChatGPTLayout = host === 'chatgpt' ? await chatgptLayoutSnapshot(page) : null;
     const originalSidebarSelection = await sidebarSelectionSnapshot(page);
     // Read the element that paints the bubble, not its transparent turn wrapper.
     const bubbleSelector = host === 'chatgpt'
@@ -599,6 +688,9 @@ async function exerciseFixture(browser, host) {
     await settledSurfaceStyle(page, bubbleSelector, 'backgroundColor');
     assert.deepEqual(await surfaceColors(page, bubbleSelector), originalBubbleColors, `${host}: host palette preserves native user bubble colors`);
     assert.deepEqual((await surfaceSnapshot(page)).backdrops, originalSurfaces.backdrops, `${host}: host palette preserves native sticky footer backgrounds`);
+    if (host === 'chatgpt') {
+      assert.deepEqual(await chatgptLayoutSnapshot(page), originalChatGPTLayout, 'chatgpt: host palette restores native bottom spacing and spacer geometry');
+    }
     await settledSurfaceStyle(page, '[data-fixture-current-row]', 'boxShadow');
     assert.deepEqual(await sidebarSelectionSnapshot(page), originalSidebarSelection, `${host}: host palette preserves native nested sidebar styles`);
 
@@ -750,6 +842,9 @@ async function exerciseFixture(browser, host) {
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), originalBackground);
     assert.deepEqual(await surfaceSnapshot(page), originalSurfaces, 'disable restores native sidebar and composer styles');
+    if (host === 'chatgpt') {
+      assert.deepEqual(await chatgptLayoutSnapshot(page), originalChatGPTLayout, 'chatgpt: disable restores native bottom spacing and spacer geometry');
+    }
     assert.deepEqual(await sidebarSelectionSnapshot(page), originalSidebarSelection, 'disable restores native nested sidebar styles');
     await settledSurfaceStyle(page, bubbleSelector, 'backgroundColor');
     assert.deepEqual(await surfaceColors(page, bubbleSelector), originalBubbleColors, `${host}: disable restores native user bubble colors`);
