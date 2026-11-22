@@ -89,7 +89,8 @@ assert(!/\son[a-z]+\s*=/i.test(html), 'Popup cannot use inline event handlers');
 for (const script of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {
   const source = script[1].match(/\bsrc=["']([^"']+)["']/i);
   assert(source && !script[2].trim(), 'Popup scripts must be packaged external files');
-  const path = relative(root, resolve(root, 'popup', source[1]));
+  assert(!source[1].includes('\\'), `non-local resource: ${source[1]}`);
+  const path = relative(root, resolve(root, 'popup', source[1])).replaceAll('\\', '/');
   resource(path);
 }
 for (const [size, path] of Object.entries(chrome.icons)) {
