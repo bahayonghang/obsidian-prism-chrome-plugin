@@ -63,15 +63,46 @@ async function prepareNativeOptionsWindow(page) {
     const measure = () => {
       const body = document.body?.getBoundingClientRect();
       const workspace = document.querySelector('#settings-scroll')?.getBoundingClientRect();
-      return body && workspace ? [innerWidth, innerHeight, document.documentElement.clientWidth, document.documentElement.clientHeight, body.width, body.height, workspace.width, workspace.height] : null;
+      return body && workspace ? [innerWidth, innerHeight, document.documentElement.clientWidth, document.documentElement.clientHeight, document.documentElement.scrollWidth, document.documentElement.scrollHeight, body.width, body.height, workspace.width, workspace.height] : null;
     };
     const before = measure();
     if (document.visibilityState !== 'visible' || !before || before[0] < 1000 || before[1] < 600 || before.some(value => value <= 0)) return false;
-    await new Promise(resolve => requestAnimationFrame(resolve));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
     const after = measure();
     return after && after.every((value, index) => value > 0 && Math.abs(value - before[index]) < 1);
   }, undefined, { timeout: 10000 });
+  const cdp = await page.context().newCDPSession(page);
+  try {
+    const deadline = Date.now() + 10000;
+    let ready = false;
+    while (Date.now() < deadline) {
+      const metrics = await cdp.send('Page.getLayoutMetrics');
+      const viewport = metrics.cssLayoutViewport || metrics.layoutViewport;
+      const content = metrics.cssContentSize || metrics.contentSize;
+      if (viewport && content && viewport.clientWidth >= 1000 && viewport.clientHeight >= 600 && content.width > 0 && content.height > 0) {
+        ready = true;
+        break;
+      }
+      await page.waitForTimeout(100);
+    }
+    if (!ready) throw new Error('Timed out waiting for non-zero native options window CDP layout metrics');
+  } finally {
+    await cdp.detach().catch(() => {});
+  }
   console.log(`NOTE native options window ready: ${bounds.width}×${bounds.height}, state=${bounds.state}`);
+}
+
+async function captureNativeScreenshot(page, screenshotOptions) {
+  for (let attempt = 1; attempt <= 5; attempt++) {
+    try {
+      return await page.screenshot(screenshotOptions);
+    } catch (error) {
+      if (attempt === 5 || !/Cannot take screenshot with 0 (width|height)/i.test(error?.message || '')) throw error;
+      await page.bringToFront();
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      await page.waitForTimeout(200);
+    }
+  }
 }
 
 async function actualChromiumExtension() {
@@ -102,14 +133,14 @@ async function actualChromiumExtension() {
     });
     await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'dark');
     await prepareNativeOptionsWindow(options);
-    await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-dark.png'), fullPage: true });
+    await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-dark.png'), fullPage: true });
     await options.locator('#tab-motion').click();
-    await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-motion-dark.png'), fullPage: true });
+    await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-motion-dark.png'), fullPage: true });
     await options.evaluate(() => ObsidianPrismSchema.saveConfig({ themeMode: 'light', lightPreset: 'alabaster' }));
     await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
-    await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-motion-light.png'), fullPage: true });
+    await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-motion-light.png'), fullPage: true });
     await options.locator('#tab-appearance').click();
-    await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-light.png'), fullPage: true });
+    await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-light.png'), fullPage: true });
     await options.evaluate(() => ObsidianPrismSchema.saveConfig({ themeMode: 'dark' }));
     chat = await context.newPage();
     await chat.goto(fixtureURLs.chatgpt);
@@ -571,14 +602,17 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
   assert.equal(snap.addBtn.rect.height, 32, `${host} ${palette}: circular + height is 32px`);
   assert.ok(parseFloat(snap.addBtn.style.borderRadius) >= 999, `${host} ${palette}: circular + border-radius >= 999px`);
   assert.ok(parseFloat(snap.addBtn.style.borderTopWidth) >= 1);
-  assert.equal(snap.addBtn.style.display, 'inline-flex');
+  assert.ok(['inline-flex', 'flex'].includes(snap.addBtn.style.display), `${host} ${palette}: circular + uses flex layout, got ${snap.addBtn.style.display}`);
+  assert.equal(snap.addBtn.style.alignItems, 'center');
+  assert.equal(snap.addBtn.style.justifyContent, 'center');
   assert.notEqual(snap.addBtn.style.backgroundColor, nativeControls.addBtn.style.backgroundColor);
 
   assert.equal(snap.modelBtn.attr, 'true');
   assert.equal(snap.modelBtn.parentTag, nativeControls.modelBtn.parentTag);
   assert.ok(parseFloat(snap.modelBtn.style.borderRadius) >= 999);
   assert.ok(parseFloat(snap.modelBtn.style.borderTopWidth) >= 1);
-  assert.equal(snap.modelBtn.style.display, 'inline-flex');
+  assert.ok(['inline-flex', 'flex'].includes(snap.modelBtn.style.display), `${host} ${palette}: model capsule uses flex layout, got ${snap.modelBtn.style.display}`);
+  assert.equal(snap.modelBtn.style.alignItems, 'center');
   assert.equal(snap.modelBtn.style.paddingTop, '5px');
   assert.equal(snap.modelBtn.style.paddingLeft, '11px');
   assert.equal(snap.modelBtn.style.gap, '6px');
