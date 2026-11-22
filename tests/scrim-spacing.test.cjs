@@ -42,7 +42,8 @@ function parseRuleBlocks(css) {
 test('hosts.css includes Bottom Spacing & Composer Scrim section strictly gated off host palette and disabled mode', () => {
   const idx = hostsCss.indexOf(SECTION_MARKER);
   assert.notEqual(idx, -1, 'hosts.css must include Bottom Spacing & Composer Scrim (v0.3.0) marker');
-  const section = hostsCss.slice(idx);
+  const nextIdx = hostsCss.indexOf('/* === ', idx + SECTION_MARKER.length);
+  const section = nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx);
   const blocks = parseRuleBlocks(section);
   assert.ok(blocks.length >= 6, 'scrim & spacing section must define all layout and scrim rules');
 
@@ -60,7 +61,8 @@ test('hosts.css includes Bottom Spacing & Composer Scrim section strictly gated 
 test('hosts.css tightens ChatGPT active conversation bottom spacer, thread column, and composer container/hint', () => {
   const idx = hostsCss.indexOf(SECTION_MARKER);
   assert.notEqual(idx, -1);
-  const blocks = parseRuleBlocks(hostsCss.slice(idx));
+  const nextIdx = hostsCss.indexOf('/* === ', idx + SECTION_MARKER.length);
+  const blocks = parseRuleBlocks(nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx));
   const chatgptPrefix = 'html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"])';
 
   const findRule = selectorPredicate => blocks.find(b => b.selectors.some(selectorPredicate));
@@ -91,7 +93,8 @@ test('hosts.css tightens ChatGPT active conversation bottom spacer, thread colum
 test('hosts.css paints feathered var(--op-canvas) linear-gradient on scrim host and ::before while keeping inner layers transparent', () => {
   const idx = hostsCss.indexOf(SECTION_MARKER);
   assert.notEqual(idx, -1);
-  const blocks = parseRuleBlocks(hostsCss.slice(idx));
+  const nextIdx = hostsCss.indexOf('/* === ', idx + SECTION_MARKER.length);
+  const blocks = parseRuleBlocks(nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx));
   const dualPrefix = 'html[data-op-enabled="true"]:not([data-op-effective-palette="host"])';
 
   const innerRule = blocks.find(

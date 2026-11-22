@@ -373,9 +373,7 @@ async function surfaceColors(page, selector) {
   return page.locator(selector).evaluate(node => ({ foreground: getComputedStyle(node).color, background: getComputedStyle(node).backgroundColor }));
 }
 
-async function assertReadableSurface(page, selector, label) {
-  await settledSurfaceStyle(page, selector, 'backgroundColor');
-  const colors = await surfaceColors(page, selector);
+function assertContrastRatio(foregroundValue, backgroundValue, label) {
   const parse = value => {
     const srgb = value.startsWith('color(srgb ');
     if (!srgb && !/^rgba?\(/.test(value)) return null;
@@ -383,12 +381,60 @@ async function assertReadableSurface(page, selector, label) {
     if (!numbers || numbers.length < 3 || (numbers.length > 3 && numbers[3] !== 1)) return null;
     return numbers.slice(0, 3).map(number => number / (srgb ? 1 : value.includes('%') ? 100 : 255));
   };
-  const foreground = parse(colors.foreground), background = parse(colors.background);
-  assert.ok(foreground && background, `${label}: expected opaque sRGB fixture colors, received ${JSON.stringify(colors)}`);
+  const foreground = parse(foregroundValue), background = parse(backgroundValue);
+  assert.ok(foreground && background, `${label}: expected opaque sRGB fixture colors, received ${JSON.stringify({ foreground: foregroundValue, background: backgroundValue })}`);
   const luminance = rgb => rgb.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
   const a = luminance(foreground), b = luminance(background);
   const contrast = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
-  assert.ok(contrast >= 4.5, `${label}: settled text needs readable contrast; measured ${contrast.toFixed(2)}:1 (${colors.foreground} on ${colors.background})`);
+  assert.ok(contrast >= 4.5, `${label}: settled text needs readable contrast; measured ${contrast.toFixed(2)}:1 (${foregroundValue} on ${backgroundValue})`);
+}
+
+async function assertReadableSurface(page, selector, label) {
+  await settledSurfaceStyle(page, selector, 'backgroundColor');
+  const colors = await surfaceColors(page, selector);
+  assertContrastRatio(colors.foreground, colors.background, label);
+}
+
+async function codeSurfaceSnapshot(page) {
+  return page.evaluate(() => {
+    const read = (selector, props) => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const style = getComputedStyle(node);
+      return Object.fromEntries(props.map(prop => [prop, style[prop]]));
+    };
+    return {
+      shell: read('[data-testid="code-block"], code-block', ['backgroundColor', 'borderColor', 'overflow']),
+      header: read('.code-header, .code-block-decoration', ['backgroundColor', 'color']),
+      headerButton: read('.code-header button, .code-block-decoration button', ['color', 'borderColor']),
+      headerSvg: read('.code-header svg, .code-block-decoration svg', ['color', 'fill', 'stroke']),
+      well: read(':is([data-testid="code-block"], code-block) pre', ['backgroundColor', 'color']),
+      code: read(':is([data-testid="code-block"], code-block) pre code', ['backgroundColor', 'color']),
+      keyword: read(':is([data-testid="code-block"], code-block) pre code .hljs-keyword', ['color']),
+      number: read(':is([data-testid="code-block"], code-block) pre code .hljs-number', ['color']),
+      inlineCode: read('code.inline-code', ['backgroundColor', 'color', 'borderColor'])
+    };
+  });
+}
+
+async function assertCodeSurfaceContrast(page, host, palette) {
+  await page.waitForFunction(expected => document.documentElement.getAttribute('data-op-effective-palette') === expected, palette);
+  await settledSurfaceStyle(page, '[data-op-code-surface="true"]', 'backgroundColor');
+  await settledSurfaceStyle(page, '[data-op-code-header="true"]', 'backgroundColor');
+  const snap = await codeSurfaceSnapshot(page);
+  assert.ok(snap.shell && snap.header && snap.headerButton && snap.headerSvg && snap.well && snap.code && snap.keyword && snap.number && snap.inlineCode, `${host} ${palette}: all code surface fixture nodes must exist`);
+  assert.notEqual(snap.shell.overflow, 'hidden', `${host} ${palette}: outer code shell must not clip sticky headers with overflow:hidden`);
+  assert.equal(snap.headerSvg.fill, 'none', `${host} ${palette}: stroke-based header SVG must not be filled solid`);
+  assert.equal(snap.well.backgroundColor, snap.code.backgroundColor, `${host} ${palette}: pre and pre code share the code well background`);
+  assertContrastRatio(snap.header.color, snap.header.backgroundColor, `${host} ${palette} code header`);
+  assertContrastRatio(snap.headerButton.color, snap.header.backgroundColor, `${host} ${palette} code header button`);
+  assertContrastRatio(snap.headerSvg.color, snap.header.backgroundColor, `${host} ${palette} code header SVG`);
+  assertContrastRatio(snap.code.color, snap.code.backgroundColor, `${host} ${palette} code well text`);
+  assertContrastRatio(snap.keyword.color, snap.code.backgroundColor, `${host} ${palette} syntax .hljs-keyword`);
+  assertContrastRatio(snap.number.color, snap.code.backgroundColor, `${host} ${palette} syntax .hljs-number`);
+  assert.notEqual(snap.keyword.color, snap.code.color, `${host} ${palette}: .hljs-keyword uses distinct syntax token color`);
+  assert.notEqual(snap.number.color, snap.code.color, `${host} ${palette}: .hljs-number uses distinct syntax token color`);
+  assertContrastRatio(snap.inlineCode.color, snap.inlineCode.backgroundColor, `${host} ${palette} inline code`);
 }
 
 async function settleFixtureScreenshot(page) {
@@ -648,6 +694,7 @@ async function exerciseFixture(browser, host) {
       ? '[data-testid="conversation-turn-0"] [data-message-author-role="user"] > div'
       : '.thread > user-query:first-of-type user-query-content.user-query-bubble-with-background';
     const originalBubbleColors = await surfaceColors(page, bubbleSelector);
+    const originalCodeColors = await codeSurfaceSnapshot(page);
     await page.evaluate(() => {
       window.__nativeCode = document.querySelector('pre code');
       window.__nativeCopy = document.querySelector('[data-native-copy]');
@@ -674,11 +721,21 @@ async function exerciseFixture(browser, host) {
     await assertSingleSidebarHighlight(page);
     await settleFixtureScreenshot(page);
     await assertReadableSurface(page, bubbleSelector, `${host} dark user bubble`);
+    await assertCodeSurfaceContrast(page, host, 'obsidian');
+    await page.evaluate(() => __prismFixture.patch({ themeMode: 'dark', palette: 'warm' }));
+    await assertCodeSurfaceContrast(page, host, 'warm');
+    await page.evaluate(() => __prismFixture.patch({ themeMode: 'dark', palette: 'obsidian' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
     await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-default.png`), fullPage: true });
 
     await page.evaluate(() => __prismFixture.patch({ themeMode: 'light', lightPreset: 'crystal' }));
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
     await assertReadableSurface(page, bubbleSelector, `${host} light user bubble`);
+    await assertCodeSurfaceContrast(page, host, 'crystal');
+    await page.evaluate(() => __prismFixture.patch({ themeMode: 'light', lightPreset: 'alabaster' }));
+    await assertCodeSurfaceContrast(page, host, 'alabaster');
+    await page.evaluate(() => __prismFixture.patch({ themeMode: 'light', lightPreset: 'crystal' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'crystal');
     await assertComposerBackdrops(page, originalSurfaces);
     await assertSingleSidebarHighlight(page);
     await settleFixtureScreenshot(page);
@@ -687,6 +744,7 @@ async function exerciseFixture(browser, host) {
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'host');
     await settledSurfaceStyle(page, bubbleSelector, 'backgroundColor');
     assert.deepEqual(await surfaceColors(page, bubbleSelector), originalBubbleColors, `${host}: host palette preserves native user bubble colors`);
+    assert.deepEqual(await codeSurfaceSnapshot(page), originalCodeColors, `${host}: host palette restores native code surface colors`);
     assert.deepEqual((await surfaceSnapshot(page)).backdrops, originalSurfaces.backdrops, `${host}: host palette preserves native sticky footer backgrounds`);
     if (host === 'chatgpt') {
       assert.deepEqual(await chatgptLayoutSnapshot(page), originalChatGPTLayout, 'chatgpt: host palette restores native bottom spacing and spacer geometry');
