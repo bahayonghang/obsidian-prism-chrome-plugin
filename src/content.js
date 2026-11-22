@@ -544,6 +544,8 @@
       }
       if (cfg.composerRestyle) {
         add(composer,'data-op-composer-surface');
+        // v0.3.1 #19 two-row composer: the host grid is rearranged by CSS only, never re-parented.
+        add(adapter.composerGrid?.(composer),'data-op-composer-grid');
         add(adapter.composerAddTrigger?.(composer),'data-op-composer-add');
         add(adapter.modelSelectorTrigger?.(),'data-op-model-capsule');
         for (const element of adapter.composerChips?.(composer) || []) add(element,'data-op-composer-chip');

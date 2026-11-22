@@ -11,7 +11,7 @@
       conversation: 'main',
       primary: ['main', '[role="main"]', '[data-testid="conversation-pane"]', '[data-testid="chat-main"]', '#main-content'],
       editors: ['#prompt-textarea', '[data-testid="prompt-textarea"]', 'textarea[name="prompt-textarea"]', 'main [contenteditable="true"][role="textbox"]', 'main textarea'],
-      composers: ['#composer-background', '[data-testid="chat-composer"]', '[data-testid="composer"]', '[data-composer-surface]', '.composer-parent'],
+      composers: ['[data-composer-layout]', '#composer-background', '[data-testid="chat-composer"]', '[data-testid="composer"]', '[data-composer-surface]', '.composer-parent'],
       composerBackdrops: '#thread-bottom,[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
       codeSurfaces: '[data-testid="code-block"], .code-block-wrapper',
       codeHeaders: '.code-header, [data-testid="code-block-header"]',
@@ -22,6 +22,8 @@
       attachments: '[data-testid="attachment-card"], [data-testid="file-attachment"], [data-testid="uploaded-file"], [data-testid="image-attachment"], .native-footer-attachment',
       threadColumns: '.thread, [data-testid="conversation-thread"], [class*="thread-content"]',
       composerColumns: '.composer-container, [data-testid="composer-container"]',
+      // v0.3.1 #19: grid area names the two-row Composer Surface rearranges (probe 2026-11-22).
+      composerGridAreas: ['leading', 'primary', 'trailing'],
       tailSpacers: '[data-testid="conversation-turn-spacer"], .thread-bottom-spacer',
       sidebars: ['#stage-slideover-sidebar', '#stage-sidebar', '#app-rail', '[data-testid="app-rail"]', '[data-testid="app-sidebar"]', '[data-testid="history-sidebar"]', '[data-testid="sidebar"]', '[data-testid="sidebar-container"]', '[data-testid="stage-thread-flyout"]', '[data-testid="conversation-history"]', '[data-testid="chat-history"]'],
       sidebarLinks: 'a[href^="/c/"],a[href^="/g/"],a[href^="/project/"]',
@@ -46,6 +48,8 @@
       attachments: '[data-test-id="file-preview-chip"], [data-test-id="attachment-card"], file-preview-chip, .native-footer-attachment',
       threadColumns: '.thread, .response-container',
       composerColumns: '.composer-container, input-area-v2',
+      // v0.3.1 #19: grid area names the two-row Composer Surface rearranges (probe 2026-11-22).
+      composerGridAreas: ['leading-actions', 'text-input', 'trailing-actions'],
       tailSpacers: '',
       sidebars: ['bard-sidenav', 'side-navigation-v2', 'side-navigation', 'mat-sidenav', '[data-test-id="side-nav"]', '[data-test-id="side-navigation"]', '[data-testid="sidebar"]'],
       sidebarLinks: 'a[href^="/app/"]',
@@ -489,6 +493,27 @@
     }
     return chips.filter(node => !chips.some(other => other !== node && other.contains(node)));
   }
+  // v0.3.1 #19 two-row composer: the host's own grid that lays out the editor row. It qualifies only when
+  // its direct children are placed by every expected area name. Children are read, not the container,
+  // because our override changes the container's template; an unknown layout keeps its native row.
+  function findComposerGrid(spec, composer) {
+    if (!composer || !spec.composerGridAreas || isOwned(composer)) return null;
+    const view = composer.ownerDocument?.defaultView;
+    const editor = firstVisible(spec.editors, composer, node => composer.contains(node));
+    if (!editor || !view?.getComputedStyle) return null;
+    for (let node = editor.parentElement; node; node = node.parentElement) {
+      if (/grid/.test(view.getComputedStyle(node).display)) {
+        const names = new Set();
+        for (const child of node.children) {
+          const style = view.getComputedStyle(child);
+          names.add(style.gridRowStart); names.add(style.gridColumnStart);
+        }
+        if (spec.composerGridAreas.every(name => names.has(name))) return node;
+      }
+      if (node === composer) break;
+    }
+    return null;
+  }
   function findComposerScrim(spec, composer) {
     const backdrops = findComposerBackdrops(spec, composer);
     if (!backdrops.length) return null;
@@ -543,6 +568,7 @@
       composerSurface: () => findComposer(spec, root),
       composerBackdropSurfaces: (composer) => findComposerBackdrops(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerScrimSurface: (composer) => findComposerScrim(spec, composer === undefined ? findComposer(spec, root) : composer),
+      composerGrid: (composer) => findComposerGrid(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerAddTrigger: (composer) => findComposerAddTrigger(spec, composer === undefined ? findComposer(spec, root) : composer),
       modelSelectorTrigger: () => findModelTrigger(spec, root),
       activeModelLabel: () => findActiveModelLabel(spec, root),

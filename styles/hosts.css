@@ -807,3 +807,18 @@ html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-pal
 html[data-op-enabled="true"][data-op-composer="true"][data-op-motion="off"]:not([data-op-effective-palette="host"]) :is([data-op-composer-add="true"], [data-op-model-capsule="true"], [data-op-composer-chip="true"]) {
   transition: none !important;
 }
+
+/* === v0.3.1 #19 two-row composer ===
+ * Prototype Composer Surface: attachment preview, then the editor on a full-width row, then the leading +
+ * on the left and the trailing Model Capsule and voice/send controls on the right. Only the host's own
+ * grid columns and named areas are overridden on the grid the adapter verified (data-op-composer-grid);
+ * no node is moved or wrapped (ADR-0002). ChatGPT gets the same rows in its single-line and multi-line
+ * states. Removing the mark, composerRestyle off or Native Palette restores the native single row. */
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] {
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  grid-template-areas: "header header header" "primary primary primary" "leading footer trailing" !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] {
+  grid-template-columns: auto minmax(0, 1fr) auto !important;
+  grid-template-areas: "file-preview file-preview file-preview" "text-input text-input text-input" "leading-actions . trailing-actions" !important;
+}

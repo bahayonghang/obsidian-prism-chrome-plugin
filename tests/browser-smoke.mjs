@@ -13,6 +13,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { checkRealActionPopup, checkPopupIntrinsicSize } from './popup-regressions.mjs';
 import { checkLiveFixtureBaselines } from './live-fixtures.mjs';
+import { checkTwoRowComposer } from './composer-two-row.mjs';
 import { paragraphWidth } from './measure.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -1318,6 +1319,7 @@ else console.log(`NOTE ${engine}: this run covers injected offline DOM fixtures 
 const browser = await type.launch(launchOptions);
 try {
   await checkLiveFixtureBaselines({ browser, engine, interceptFixtures, probeSource, artifacts: ARTIFACTS });
+  await checkTwoRowComposer({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
   if (!liveOnly) {
     await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
     await savedDisabledStartup(browser);
