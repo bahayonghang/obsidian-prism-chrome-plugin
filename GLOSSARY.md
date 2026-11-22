@@ -49,7 +49,7 @@ The local-only token estimate pill and breakdown popover displaying approximate 
 _Avoid_: Token counter, quota meter, usage bar
 
 **Reference Capacity**:
-The denominator scale used by the Context Vial, resolved either automatically from the active model label or manually overridden in settings.
+The denominator scale used by the Context Vial, resolved either automatically from the active model label (on ChatGPT, the visible tier label) or manually overridden in settings. An automatic ChatGPT fallback for an unrecognized label is shown with a `?`.
 _Avoid_: Context limit, real window, token quota
 
 ### Code & Input Surfaces

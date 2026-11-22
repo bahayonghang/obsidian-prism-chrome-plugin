@@ -822,3 +822,20 @@ html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not
   grid-template-columns: auto minmax(0, 1fr) auto !important;
   grid-template-areas: "file-preview file-preview file-preview" "text-input text-input text-input" "leading-actions . trailing-actions" !important;
 }
+
+/* === v0.3.1 #20 conversation heading typography ===
+ * Outside Native Palette, h1–h4 inside User and Assistant Turns follow the message body font family, use
+ * the palette's primary foreground (--op-fg) and rank h1 ≥ h2 ≥ h3 ≥ h4 by weight (700/650/600/600).
+ * Sizes stay host-owned: both hosts already step them down, and the weight ladder never lowers ChatGPT's
+ * native 600, so its hierarchy cannot regress; it fixes Gemini's h2 (380) being lighter than h3 (470).
+ * Scoped to message bodies only (live ChatGPT/Gemini markers plus legacy ones); the sidebar, host chrome
+ * and extension-owned controls keep their own typography. No reading-font option: the body font stays
+ * whatever the host or the user chose, and headings inherit it. */
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-markdown-text-style="assistant-message"],[data-user-message-bubble],[data-message-author-role],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn .markdown,model-response :is(.md-content,.markdown),user-query) :is(h1,h2,h3,h4):not([data-op-owned] *) {
+  font-family: inherit !important;
+  color: var(--op-fg) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-markdown-text-style="assistant-message"],[data-user-message-bubble],[data-message-author-role],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn .markdown,model-response :is(.md-content,.markdown),user-query) h1:not([data-op-owned] *) { font-weight: 700 !important; }
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-markdown-text-style="assistant-message"],[data-user-message-bubble],[data-message-author-role],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn .markdown,model-response :is(.md-content,.markdown),user-query) h2:not([data-op-owned] *) { font-weight: 650 !important; }
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-markdown-text-style="assistant-message"],[data-user-message-bubble],[data-message-author-role],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn .markdown,model-response :is(.md-content,.markdown),user-query) h3:not([data-op-owned] *) { font-weight: 600 !important; }
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-markdown-text-style="assistant-message"],[data-user-message-bubble],[data-message-author-role],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn .markdown,model-response :is(.md-content,.markdown),user-query) h4:not([data-op-owned] *) { font-weight: 600 !important; }

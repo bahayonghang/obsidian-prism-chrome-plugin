@@ -396,6 +396,53 @@ test('syncDock resolves auto/manual reference capacity, renders attachment indic
   ctx.runtime.stop();
 });
 
+test('Context Vial flags an unrecognized ChatGPT tier with ? and a bilingual hint until a manual capacity is set', async () => {
+  const ctx = createRuntimeDom({ language: 'zh-CN', contextWindowTokens: 'auto' }, { host: 'chatgpt', modelLabel: 'Auto', attachments: [] });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const summary = ctx.body.querySelector('.op-vial-summary');
+  const details = ctx.body.querySelector('.op-vial-details');
+  const detailsText = () => details.children.map(n => n.textContent).join(' | ');
+  assert.match(summary.textContent, /^≈ \d+ \/ 128\.0K\?$/);
+  assert.equal(detailsText().includes('未识别型号，可在设置中指定'), true, detailsText());
+
+  ctx.setModel('Thinking');
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 180));
+  assert.match(summary.textContent, /^≈ \d+ \/ 400\.0K$/);
+  assert.equal(detailsText().includes('未识别'), false);
+
+  ctx.setModel('Instant');
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 180));
+  assert.match(summary.textContent, /^≈ \d+ \/ 128\.0K$/);
+
+  ctx.setModel('Mystery tier');
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, language: 'en-US', contextWindowTokens: 'auto' }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.match(summary.textContent, /^≈ \d+ \/ 128\.0K\?$/);
+  assert.equal(detailsText().includes('Unrecognized model; choose a capacity in settings'), true, detailsText());
+
+  // A manual capacity overrides auto and removes the flag.
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, language: 'en-US', contextWindowTokens: 200000 }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.match(summary.textContent, /^≈ \d+ \/ 200\.0K$/);
+  assert.equal(detailsText().includes('Unrecognized'), false);
+  assert.equal(detailsText().includes('Manual'), true);
+  ctx.runtime.stop();
+
+  // Gemini custom mode: 1M auto fallback, labelled as such, never flagged.
+  const gem = createRuntimeDom({ language: 'zh-CN', contextWindowTokens: 'auto' }, { host: 'gemini', modelLabel: 'Neon High', attachments: [] });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.match(gem.body.querySelector('.op-vial-summary').textContent, /^≈ \d+ \/ 1\.0M$/);
+  const gemDetails = gem.body.querySelector('.op-vial-details').children.map(n => n.textContent).join(' | ');
+  assert.equal(gemDetails.includes('自动兜底 · Neon High'), true, gemDetails);
+  gem.runtime.stop();
+});
+
 test('syncRail uses cleanTurnText to strip sr-only and button chrome from outline labels', async () => {
   const seen = [];
   const ctx = createRuntimeDom(

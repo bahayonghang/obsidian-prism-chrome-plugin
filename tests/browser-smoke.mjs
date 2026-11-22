@@ -14,6 +14,8 @@ import { createRequire } from 'node:module';
 import { checkRealActionPopup, checkPopupIntrinsicSize } from './popup-regressions.mjs';
 import { checkLiveFixtureBaselines } from './live-fixtures.mjs';
 import { checkTwoRowComposer } from './composer-two-row.mjs';
+import { checkLiveTurnsAndCapacity } from './live-turns.mjs';
+import { checkHeadingTypography } from './heading-typography.mjs';
 import { paragraphWidth } from './measure.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -1320,6 +1322,9 @@ const browser = await type.launch(launchOptions);
 try {
   await checkLiveFixtureBaselines({ browser, engine, interceptFixtures, probeSource, artifacts: ARTIFACTS });
   await checkTwoRowComposer({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
+  // v0.3.1 #18 live turns and tier-aware Reference Capacity
+  await checkLiveTurnsAndCapacity({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
+  await checkHeadingTypography({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
   if (!liveOnly) {
     await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
     await savedDisabledStartup(browser);

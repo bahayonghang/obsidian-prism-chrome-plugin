@@ -15,10 +15,10 @@
 | 设置中心 | 紧凑弹窗、完整设置工作台、常驻导航与保存状态、中英文、场景预设、外观/动效预览、JSON导入导出、跨标签页同步 |
 | 阅读工具 | 代码块顶栏与全主题高亮对比度统一、长代码手动折叠、带搜索的会话大纲、`Alt+↑` / `Alt+↓` 跳转、三档内容宽度（标准 / 加宽 / 全栏）及右下角单键循环按钮 |
 | 环境与动效 | Aurora/Spotlight底部光晕、Spotlight聚光、字符/网格纹理、光效浓度、移动速度、羽化 Composer Scrim、原位圆角悬浮输入框卡片与 Model Capsule、聚焦光效及回复活动余晖；全部可配置且支持原生配色零干预 |
-| 会话估算 | 按当前网页已加载文字校准估算 token 数；支持 `auto` 按可见模型标签自动匹配参考容量（未知时 Gemini 兜底 1M、ChatGPT 兜底 128K）或手动覆盖，并在检测到可见附件时附加 `+` 标记与未计入附件提示 |
+| 会话估算 | 按当前网页已加载文字校准估算 token 数；支持 `auto` 按可见模型标签自动匹配参考容量（ChatGPT 按档位：Pro / Thinking / High / xHigh 为 400K，Instant 为 128K，未识别的标签按 128K 兜底并显示 `?`；Gemini 未知模式按 1M 自动兜底）或手动覆盖，并在检测到可见附件时附加 `+` 标记与未计入附件提示 |
 | 可选翻译 | 关闭为默认状态；手动翻译网页已经显示的思考文字，自行配置兼容接口并授权目标站点 |
 
-网页无法提供原桌面版的可靠模型配额、真实上下文占用、缓存命中率或子代理遥测。因此会话估算**不是账号额度，也不是实际模型计费**；它不包括未加载历史、隐藏系统提示、图片或附件的真实 token 消耗。试管的参考容量支持 `auto`（根据当前识别到的可见模型标签映射常见参考尺度，未知时按站点默认）或手动选择（`32K`–`2M`），仅作阅读参考比例尺，不代表真实服务端截断窗口。
+网页无法提供原桌面版的可靠模型配额、真实上下文占用、缓存命中率或子代理遥测。因此会话估算**不是账号额度，也不是实际模型计费**；它不包括未加载历史、隐藏系统提示、图片或附件的真实 token 消耗。试管的参考容量支持 `auto`（根据当前识别到的可见模型标签映射常见参考尺度，未知时按站点兜底；ChatGPT 的未识别标签在试管中显示 `?`，弹层提示可在设置中指定）或手动选择（`32K`–`2M`），仅作阅读参考比例尺，不代表真实服务端截断窗口。
 
 CDP注入、Sidecar守护进程、本地文件网关、IDE模型档位滑块和工程模式没有移植。输入框继续使用网页原生编辑和光标，保留中文输入法与无障碍行为。
 
@@ -85,7 +85,7 @@ v0.3.0 升级了 2026 双端页面 DOM 适配器，新增「标准 / 加宽 / �
 
 会话大纲仅索引当前网页已加载的提问。快捷键在输入框、编辑区域和对话框内让位给网页原生操作。页面变窄或功能未能识别时，增强组件应安静退让。
 
-代码字体使用电脑已有字体，缺失时自动回退到等宽字体；扩展不从第三方字体服务下载文件。v0.2.0已完整移除像素宠物，旧版本配置中的宠物字段也不会使其恢复。
+代码字体使用电脑已有字体，缺失时自动回退到等宽字体；扩展不从第三方字体服务下载文件。非原生配色下，对话里的 h1–h4 跟随所在消息正文的字体、使用当前配色的主前景色，字重按 h1 > h2 > h3 > h4 排出层级；扩展不提供阅读字体选项，正文字体仍由宿主或用户决定。v0.2.0已完整移除像素宠物，旧版本配置中的宠物字段也不会使其恢复。
 
 ### 环境光与侧栏
 
@@ -141,11 +141,12 @@ npm run test:browser
 ### Included
 
 - Four light/dark palettes plus host colors; five accents, system appearance, rounded corners, installed code fonts, ligatures and compact sidebars.
+- Outside the host palette, conversation headings (h1–h4) follow the message body font, use the palette's primary foreground and keep a clear h1 > h2 > h3 > h4 weight hierarchy. There is no reading-font option; the body font stays the host's or yours.
 - A compact bilingual popup and full settings workspace with persistent navigation, motion preview, scene presets, live settings and sanitized JSON import/export.
 - Glass/solid/native sidebar surfaces and an elevated, in-place reversible two-row Composer Surface (editor on its own row; circular add trigger on the left, Model Capsule and voice/send on the right, rearranged only through the host's grid areas) with unified chips, and feathered Composer Scrim without DOM reparenting or text rewriting (ADR-0002).
 - Three Content Width Presets (`standard`, `wide`, `full`) synced between Reading settings and an independent Bottom Dock quick toggle, >= 4.5:1 WCAG AA Code Surface contrast across all four optical palettes, manual long-code folding, sticky headers, a searchable conversation outline and `Alt+Up/Down` navigation.
 - Configurable Aurora/Spotlight environments, decorative glyph/grid textures, motion speed, focus glow and optional stream highlighting. Pixel companions have been removed, including legacy settings support.
-- A calibrated local-only DOM estimate of currently loaded text (ADR-0001) with `auto` model-matched Reference Capacity (falling back to 1M on Gemini and 128K on ChatGPT when unrecognized, or manually overridden) and an explicit `+` indicator for uncounted visible attachments. It is **not** model quota, billing, or actual server-side context usage.
+- A calibrated local-only DOM estimate of currently loaded text (ADR-0001) with `auto` model-matched Reference Capacity (ChatGPT tiers: Pro / Thinking / High / xHigh map to 400K and Instant to 128K; an unrecognized ChatGPT label falls back to 128K and is flagged with `?`; Gemini custom modes use the 1M auto fallback; a manual override always wins) and an explicit `+` indicator for uncounted visible attachments. It is **not** model quota, billing, or actual server-side context usage.
 - Optional, manual translation of already visible thought text through a user-configured compatible endpoint. It is off by default, requires explicit origin/data permission, and never exposes credentials through host-page storage or config exports.
 
 Desktop-only CDP, Sidecar services, local-file gateways, IDE controls and account telemetry are excluded. The native composer and caret remain under the host site's control.
