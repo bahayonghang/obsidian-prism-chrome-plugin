@@ -105,6 +105,24 @@ This documentation-only completion record does not claim a further CI run. Final
 
 ## v0.2.1 regression execution record
 
-Tracked in [Issue #5](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/issues/5) and [Issue #6](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/issues/6). Execution evidence will be filled after CI completes.
+Completed on 2026-11-22 (America/New_York) for tested implementation commit `a509237c71763dcf3bd2db43f6212733b4e6f5a9`. [PR #7](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/pull/7) merged as `4394bd317f1d7de487fdba0405f5bcaa9974fb20` and closed [Issue #5](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/issues/5) and [Issue #6](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/issues/6).
+
+[GitHub Actions run 44990668077](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/actions/runs/44990668077) passed all three jobs:
+
+| Job | Actual outcome |
+|---|---|
+| `validate` | Static, manifest and resource checks passed, as did all 52 Node tests. Both 26-file browser archives were built twice with identical SHA-256 output. |
+| `browser-fixtures (chromium)` | Playwright 1.62.1 / Chrome for Testing 151.0.7922.34 loaded the unpacked extension. Actual `POPUP` contexts acquired 440×600 naturally in both color modes; settings interaction and close/reopen passed without an action-popup viewport override. Ordinary full options passed their 420px responsive check. Both host fixture suites passed. |
+| `browser-fixtures (firefox)` | Playwright 1.62.1 / Firefox 153.0 passed both host fixture suites and intrinsic popup sizing from a 25×25 container. A separate headed Firefox 153.0 / geckodriver 0.37.1 / Selenium 4.53.0 temporary-installation test opened a real action popup. Initial, motion and reopened views were all 440×600, without horizontal overflow; controls were visible and spotlight plus 77% intensity persisted. |
+
+The Firefox native test adds only a test background script to a temporary manifest. All 25 other release files are hash-verified unchanged, and the original built artifact remains unchanged. The test runs within its own extension through public APIs, sends synthetic measurements to a token-protected loopback reporter using ordinary CORS, and captures the actual Xvfb desktop. This is an installed add-on with explicitly recorded instrumentation, not an untouched ZIP installation or store-signing test. The harness is excluded from release archives. Product permissions and optional-translation state remain unchanged.
+
+Headed checks use Xvfb with Openbox. The containing window and ordinary options tab must finish normal focus/layout before screenshots; action popup dimensions remain entirely browser-selected. No popup auto-hide preference, privileged WebDriver context, system-access flag, protection bypass or browser downgrade is used.
+
+Two earlier attempts exposed automation setup gaps and are not counted as passing native Firefox validation. Run 44989518352 reached Firefox 153's protected-page navigation restriction after the shared fixtures passed. Run 44990354157 demonstrated a working extension-owned reporter but the native popup disappeared under Xvfb without a window manager; Chromium's first ordinary-options screenshot also encountered zero-width layout. The final run above resolves those setup gaps while preserving all popup assertions.
 
 The v0.2.0 popup screenshots came from ordinary extension tabs with a forced 440×600 or 420×600 viewport. They did not verify the browser action's intrinsic sizing. The new action check is deliberately separate from those page-layout checks. Footer fixtures now include opaque nested wrappers and decorative fade layers; sidebar fixtures include nested selected flags and dynamic state migration.
+
+Both engines verified four identified backdrop layers and preserved attachment paint, composer identity and pseudo-element content. Nested state normalization, repeated scans, title-only active flags, attribute-only selection migration and independent rows in project groups passed. Native palette, disabled composer restyling, native sidebar, extension disable and subsequent DOM replacement restored the expected original styles/attributes. Existing lifecycle, folding, keyboard, code-copy, reduced-motion, observer-idle and translation opt-in checks remained green. Representative dark/light conversation, home and popup screenshots were inspected.
+
+No authenticated ChatGPT/Gemini session or real model/translation service was used. Production account experiments, Windows/macOS-specific browser chrome, a real Chinese IME, minimum supported browser versions, store submission and Mozilla signing were not separately tested. The live-site acceptance checklist remains unchecked. This documentation-only completion record does not claim another CI run; final packages are rebuilt from main with the same tested executable files and updated bundled documentation.
