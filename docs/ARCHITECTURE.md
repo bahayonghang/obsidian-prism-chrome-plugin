@@ -1,0 +1,62 @@
+# Browser extension architecture
+
+Modified 2026-11-21 for the independent Obsidian Prism Web community port. GPL-3.0-only.
+
+## Execution boundaries
+
+| Component | Responsibility | Boundary |
+|---|---|---|
+| `src/config-schema.js` | Defaults, validation, presets, language strings, browser storage abstraction and root theme attributes | Ordinary preferences only; secrets excluded from exports and page mirrors |
+| `src/early-boot.js` | Start loading preferences at `document_start` and apply the initial visual state | Extension storage is asynchronous; do not claim guaranteed zero flash |
+| `src/adapters.js` | Identify supported host elements and extract currently loaded conversation structure | DOM selectors only; no internal ChatGPT/Gemini API calls |
+| `src/content.js` | Reversible reading tools, effects and optional manual-translation controls | Isolated content script; preserve host message/editor ownership |
+| `src/background.js` | Privileged optional translation requests and credential access | Validate messages, origins and endpoint settings; do not expose a general URL-fetch proxy |
+| `popup/*` | Settings popup and options page | Packaged scripts, no inline executable handlers or remote code |
+| `styles/*` | Palette variables, host-specific styling and extension-owned controls | Scope overrides under enabled extension attributes |
+
+Content scripts run only on the three explicitly supported HTTPS origins and only in the top-level document. The extension does not declare external messaging or public web-accessible resources.
+
+## Browser manifests
+
+`manifest.json` is the Chrome manifest. `manifests/firefox.json` is a complete Firefox variant; the build copies it to `dist/firefox/manifest.json`. Runtime files are shared.
+
+Chrome uses `background.service_worker`; Firefox uses `background.scripts` with the configuration module loaded before the background module. Both use Manifest V3, request `storage`, and include only the ChatGPT/Gemini host permissions by default.
+
+The optional host declarations allow user-selected HTTPS translation services and explicit HTTP loopback endpoints. Actual browser permission is requested for the configured scheme and hostname; match patterns do not isolate ports. Runtime requests retain the exact configured endpoint, including port and path. Firefox additionally declares optional data-transmission types, while core functionality declares `required: ["none"]`.
+
+Official references:
+
+- [Background compatibility](https://developer.mozilla.org/en-US/docs/Mozilla/Add-ons/WebExtensions/manifest.json/background)
+- [Firefox data collection consent](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/)
+- [Chrome cross-origin extension requests](https://developer.chrome.com/docs/extensions/develop/concepts/network-requests)
+- [Extension storage versus page storage](https://developer.chrome.com/docs/extensions/develop/concepts/storage-and-cookies)
+
+## Appearance and lifecycle
+
+Theme variables are supplied at `document_start`; stored preferences then determine which scoped overrides activate. Disabling the extension for a site removes its root flags, owned controls, temporary styles and active effects. The host retains its original classes and content.
+
+Site changes are detected by bounded, coalesced DOM work. A webpage is not a stable API: when a target cannot be identified, skip the enhancement instead of rewriting arbitrary DOM. Route changes, regenerated responses, streamed code and replaced composers must be treated as normal lifecycle events.
+
+Stream highlights are a progressive enhancement using `CSS.highlights`. They must not wrap or rewrite host text nodes. Reduced-motion users receive the static presentation. Animation work should cease when effects are disabled or the page is hidden; this is a statement about the extension's own work, not total site CPU/GPU usage.
+
+## Reading and estimation
+
+The outline derives from recognized user turns already loaded in the DOM. It does not fetch missing history. Keyboard navigation yields to text entry and modal interactions. Code folding is manual and reversible; copied code remains the original host text.
+
+The context display uses a documented heuristic rather than a model-specific tokenizer or account API. It cannot see the actual hidden prompt, server truncation, attachment encoding, cache accounting or model window size. Its user-selected reference capacity, defaulting to 128K, is only a visual scale; the fill level is not account quota or a detected model limit. Product text must label it as an estimate.
+
+Companions are local SVG pixel drawings of a crab and cat, with a two-companion arrangement, bounded pointer/keyboard movement and finite click effects. The browser adaptation does not include the upstream desktop physics simulation or a continuously running animation loop.
+
+## Optional translation
+
+Only a user-requested, already visible thought block is eligible. Settings contain the endpoint and model; credentials are stored separately. A configuration export never includes credentials. Importing preferences must not enable transmission or grant permissions silently.
+
+The background accepts a constrained translation operation, verifies its sender and the enabled site's configuration, builds the outgoing request from saved configuration, and applies limits and timeouts. It does not accept an arbitrary fetch URL or caller-provided authorization header. HTTPS is required except for explicit loopback hosts; redirects must not carry a key to another origin.
+
+Translation responses are rendered as text, never executable markup. No automatic background translation, full-history upload, bundled free endpoint, or hidden-reasoning retrieval is part of this release.
+
+## Builds and source provenance
+
+The Python builder uses a fixed runtime/documentation allowlist. Each output is rooted at `manifest.json`, uses sorted entries with fixed timestamps and permissions, and receives a SHA-256 checksum. Nothing is discovered recursively from the working tree, so untracked credentials and development files cannot accidentally enter a package.
+
+`npm run check` validates both manifests and packaged resources and runs JavaScript syntax checks. Node tests exercise behavior without paid services. Browser smoke tests use local fixtures; Chromium additionally loads the unpacked extension, while Firefox tests shared DOM behavior through injected runtime files. See [TESTING.md](TESTING.md) for the limits of that evidence.

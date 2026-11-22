@@ -1,0 +1,15 @@
+node_modules/
+dist/
+artifacts/
+test-results/
+playwright-report/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+.DS_Store
+Thumbs.db
+test-artifacts/

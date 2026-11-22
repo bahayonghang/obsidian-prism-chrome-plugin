@@ -1,0 +1,70 @@
+# Modified 2026-11-21: validate the independent browser port. GPL-3.0-only.
+name: Validate browser extension
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prism-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm run check
+      - run: npm test
+      - run: npm run build
+      - name: Verify reproducible archives
+        run: |
+          cp dist/SHA256SUMS /tmp/prism-first-build.sha256
+          npm run build
+          diff -u /tmp/prism-first-build.sha256 dist/SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: obsidian-prism-web-packages
+          path: |
+            dist/*.zip
+            dist/SHA256SUMS
+          if-no-files-found: error
+
+  browser-fixtures:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: npm run build
+      - name: Install optional browser test tools
+        run: npm install --no-save --package-lock=false playwright@1.62.1
+      - run: npx playwright install --with-deps ${{ matrix.browser }}
+      - run: npm run test:browser
+        env:
+          PRISM_BROWSER: ${{ matrix.browser }}
+          PRISM_EXTENSION_DIR: dist/${{ matrix.browser == 'chromium' && 'chrome' || 'firefox' }}
+      - name: Save synthetic browser screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: prism-fixtures-${{ matrix.browser }}
+          path: test-artifacts/
+          if-no-files-found: ignore
