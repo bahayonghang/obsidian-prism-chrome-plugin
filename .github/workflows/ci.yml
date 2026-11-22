@@ -57,7 +57,9 @@ jobs:
       - name: Install optional browser test tools
         run: npm install --no-save --package-lock=false playwright@1.62.1
       - run: npx playwright install --with-deps ${{ matrix.browser }}
-      - run: xvfb-run -a --server-args="-screen 0 1600x1200x24" npm run test:browser
+      - name: Install native window manager
+        run: sudo apt-get install --no-install-recommends -y openbox x11-utils
+      - run: xvfb-run -a --server-args="-screen 0 1600x1200x24" bash tests/with-window-manager.sh npm run test:browser
         env:
           PRISM_BROWSER: ${{ matrix.browser }}
           PRISM_ACTION_HEADED: ${{ matrix.browser == 'chromium' && '1' || '0' }}
@@ -73,7 +75,7 @@ jobs:
       - name: Verify native Firefox toolbar popup
         if: matrix.browser == 'firefox'
         run: |
-          xvfb-run -a --server-args="-screen 0 1600x1200x24" python3 tests/native-firefox-popup.py \
+          xvfb-run -a --server-args="-screen 0 1600x1200x24" bash tests/with-window-manager.sh python3 tests/native-firefox-popup.py \
             --firefox-binary "$(node -p "require('playwright').firefox.executablePath()")" \
             --geckodriver "$RUNNER_TEMP/prism-geckodriver/geckodriver" \
             --extension-dir dist/firefox --artifact-dir test-artifacts/native-firefox

@@ -48,6 +48,32 @@ async function interceptFixtures(context) {
   });
 }
 
+async function prepareNativeOptionsWindow(page) {
+  // With viewport:null, script readiness can precede the first native window
+  // layout. Activate this ordinary tab and size its containing browser window;
+  // never emulate the viewport of the later action-popup target.
+  const bounds = await page.evaluate(async () => {
+    const tab = await chrome.tabs.getCurrent();
+    if (!tab || !document.body.classList.contains('is-options-page')) throw new Error('Expected an ordinary full-options tab');
+    await chrome.windows.update(tab.windowId, { state: 'normal', focused: true });
+    return chrome.windows.update(tab.windowId, { width: 1280, height: 900 });
+  });
+  await page.bringToFront();
+  await page.waitForFunction(async () => {
+    const measure = () => {
+      const body = document.body?.getBoundingClientRect();
+      const workspace = document.querySelector('#settings-scroll')?.getBoundingClientRect();
+      return body && workspace ? [innerWidth, innerHeight, document.documentElement.clientWidth, document.documentElement.clientHeight, body.width, body.height, workspace.width, workspace.height] : null;
+    };
+    const before = measure();
+    if (document.visibilityState !== 'visible' || !before || before[0] < 1000 || before[1] < 600 || before.some(value => value <= 0)) return false;
+    await new Promise(resolve => requestAnimationFrame(resolve));
+    const after = measure();
+    return after && after.every((value, index) => value > 0 && Math.abs(value - before[index]) < 1);
+  }, undefined, { timeout: 10000 });
+  console.log(`NOTE native options window ready: ${bounds.width}×${bounds.height}, state=${bounds.state}`);
+}
+
 async function actualChromiumExtension() {
   const extensionDir = path.resolve(ROOT, process.env.PRISM_EXTENSION_DIR || 'dist/chrome');
   const manifest = JSON.parse(await fs.readFile(path.join(extensionDir, 'manifest.json'), 'utf8'));
@@ -75,6 +101,7 @@ async function actualChromiumExtension() {
       await ObsidianPrismSchema.saveConfig({ themeMode: 'dark', palette: 'warm', language: 'en-US' });
     });
     await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'dark');
+    await prepareNativeOptionsWindow(options);
     await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-dark.png'), fullPage: true });
     await options.locator('#tab-motion').click();
     await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-motion-dark.png'), fullPage: true });

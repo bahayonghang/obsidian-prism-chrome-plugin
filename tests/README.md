@@ -18,7 +18,7 @@ Conversation fixtures include opaque sticky footer ancestors, a native gradient 
 npm install --no-save playwright@1.62.1
 npx playwright install chromium firefox
 npm run build
-PRISM_BROWSER=chromium PRISM_ACTION_HEADED=1 xvfb-run -a npm run test:browser
+PRISM_BROWSER=chromium PRISM_ACTION_HEADED=1 xvfb-run -a bash tests/with-window-manager.sh npm run test:browser
 PRISM_BROWSER=firefox npm run test:browser
 ```
 
@@ -31,11 +31,13 @@ Firefox 153 [restricts ordinary WebDriver navigation to privileged pages, includ
 ```sh
 python3 -m pip install selenium==4.53.0
 # Install geckodriver 0.37.1 separately and provide its executable path.
-xvfb-run -a --server-args="-screen 0 1600x1200x24" python3 tests/native-firefox-popup.py \
+xvfb-run -a --server-args="-screen 0 1600x1200x24" bash tests/with-window-manager.sh python3 tests/native-firefox-popup.py \
   --firefox-binary "$(node -p "require('playwright').firefox.executablePath()")" \
   --geckodriver /path/to/geckodriver \
   --extension-dir dist/firefox --artifact-dir test-artifacts/native-firefox
 ```
+
+Headed Linux checks need `openbox` and `x11-utils` in addition to Xvfb; native Firefox desktop screenshots also use ImageMagick. `tests/with-window-manager.sh` starts Openbox on the fresh Xvfb display and waits for its window-manager property before launching the test. [Mozilla documents that Xvfb alone lacks normal focus and may immediately hide native popups](https://firefox-source-docs.mozilla.org/ai-agent-tools/skills/desktop-theme-probing/references/platform-linux.html#displays). Popup auto-hide is not disabled, and no popup viewport is assigned. The ordinary options tab waits for a real, visible, stable layout before its first screenshot.
 
 All HTTP requests in the Playwright fixture suite are intercepted: the two fixture URLs receive local HTML, and every other HTTP request is blocked. Translation responses are test doubles. The separate native Firefox harness communicates only synthetic test measurements to its loopback reporter. No real conversations, credentials, model calls, or signed-in websites are used.
 
