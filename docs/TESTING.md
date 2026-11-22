@@ -81,4 +81,22 @@ No authenticated ChatGPT/Gemini session, real translation API key, paid API requ
 
 ## v0.2.0 execution record
 
-The redesigned popup, motion controls, sidebar/composer adapters and pet removal are tracked in [Issue #3](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/issues/3). Current-run evidence will be recorded here after execution. Live authenticated website acceptance remains separate from synthetic fixtures.
+Completed on 2026-11-21 (America/New_York) for implementation commit `f3b233b9d568e9e2f2017429ff60397b132e07dd`. [PR #4](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/pull/4) merged as `01d42b6884e67bfa37550abfe0254c5d017c955b` and closed [Issue #3](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/issues/3).
+
+[GitHub Actions run 44987182553](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/actions/runs/44987182553) passed all three jobs:
+
+| Job | Actual outcome |
+|---|---|
+| `validate` | Syntax/manifest/resource checks and all 52 Node tests passed. Both v0.2.0 packages built twice with identical SHA-256 output. |
+| `browser-fixtures (chromium)` | A real unpacked Chrome extension loaded its service worker and settings. Configuration synchronization, legacy import without pets, popup bounds at 440px/420px and both offline website fixtures passed. |
+| `browser-fixtures (firefox)` | Both offline website fixtures passed the shared runtime using Promise-style browser API test doubles. Native Firefox extension installation, production prompts and signing are not covered. |
+
+New browser checks exercise complete composer shells, multiple sidebar surfaces, blank home screens, actual computed styles, Aurora/Spotlight and independent textures, intensity/speed/glow controls, hidden-tab and reduced-motion handling, original attribute restoration, and removal of all pet UI. Native editor identity and synthetic composition events are checked; this does not validate an operating-system Chinese input method.
+
+Selected history text and user-message bubbles in dark and light themes passed 4.5:1 contrast checks after finite CSS transitions settled. ChatGPT's explicit nested bubble is tested separately from its attachment background. Native palette and extension disable restore the original bubble colors. Existing folding, navigation, observer-idle, DOM-replacement, translation opt-in and teardown checks also passed.
+
+Representative popup, full-settings and home/conversation screenshots were inspected. Visual inspection resolved CSS specificity conflicts in composer glow and glass sidebar controls, popup density, status localization and a light-background/light-text ChatGPT bubble case. Continuous ambient animation was deliberately left running while finite surface transitions were settled for screenshots. Synthetic screenshots contain no user conversations or project names.
+
+Browser execution took place in GitHub Actions because the authoring workspace denied browser-process socket creation. No authenticated ChatGPT/Gemini session, real translation API request, store submission or Mozilla signing was used. The real-site checklist above remains unchecked, and the declared minimum browser versions were not run separately.
+
+This documentation-only completion record does not claim a further CI run. Final packages are rebuilt from `main`; their executable files match the tested PR head, while bundled documentation includes this record.
