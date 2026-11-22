@@ -71,7 +71,7 @@ html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palet
 
 /* Both the narrow app rail and the conversation history are real surfaces.
  * Glass is a painted sheen, not a permanent full-height backdrop blur. */
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]):not([data-op-sidebar-style="native"]) :is([data-op-sidebar-surface="true"],#stage-slideover-sidebar,#app-rail,[data-testid="app-rail"],[data-testid="sidebar"],bard-sidenav,mat-sidenav) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]):not([data-op-sidebar-style="native"]) :where([data-op-sidebar-surface="true"],#stage-slideover-sidebar,#app-rail,[data-testid="app-rail"],[data-testid="sidebar"],bard-sidenav,mat-sidenav) {
   --sidebar-surface-primary: var(--op-sidebar) !important;
   --sidebar-surface-secondary: var(--op-secondary) !important;
   --sidebar-surface-tertiary: var(--op-tonal-3) !important;
@@ -130,7 +130,7 @@ html[data-op-enabled="true"][data-op-sidebar-compact="true"]:not([data-op-sideba
 
 /* Restyle the whole visual composer, preserving the native editor and buttons.
  * No pseudo-element covers the input and no editor DOM is replaced. */
-html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) :is([data-op-composer-surface="true"],#composer-background) {
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) :where([data-op-composer-surface="true"],#composer-background) {
   --composer-surface-primary: var(--op-card) !important;
   --bg-elevated-primary: var(--op-card) !important;
   --gem-sys-color--surface-container: var(--op-card) !important;

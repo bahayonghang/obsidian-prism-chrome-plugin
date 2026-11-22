@@ -69,6 +69,14 @@ Windows若只有 `py` 命令，可将最后一步改为 `py -3 scripts/build.py`
 
 临时加载在重启Firefox后结束。普通Firefox的长期安装需要Mozilla签名；把ZIP改名为XPI不会完成签名。详见 [Mozilla安装文档](https://extensionworkshop.com/documentation/develop/temporary-installation-in-firefox/) 和 [签名说明](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/)。
 
+### 从 v0.1.0 更新
+
+Chrome：用新版包的内容覆盖原来加载的扩展目录，在 `chrome://extensions` 点击该扩展的“重新加载”，然后刷新所有已打开的 ChatGPT/Gemini 页面。保持原目录可以保留原有扩展身份与设置；不要同时启用新旧两份扩展。
+
+Firefox：在 `about:debugging` 重新载入新版 Firefox 包，并刷新目标网页。
+
+旧配色与浓度会保留，宠物设置自动失效。想直接查看新版完整环境效果，可先选择“流光”场景，再在“光影”中微调。正文中的光场会主动减弱，首页的光场更明显。完整设置页可通过弹窗右上角按钮打开。
+
 ## 使用设置
 
 先选择配色，再调整强调色、圆角和字体。三档场景预设用于快速切换完整光效、专注阅读或省电风格；仍可单独修改各项设置。ChatGPT和Gemini可分别启停，关闭后移除扩展添加的界面和样式。

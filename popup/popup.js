@@ -15,6 +15,8 @@
   let permissionRevision = 0;
   let keyStatusEndpoint = null;
   let keyStatusRevision = 0;
+  let statusKey = '';
+  let statusIsError = false;
   const $ = id => document.getElementById(id);
   const tr = key => Schema.t(current,key);
   const text = key => '<span data-i18n="'+key+'">'+Schema.t(Schema.DEFAULT_CONFIG,key)+'</span>';
@@ -51,8 +53,8 @@
   for(const option of $('cfg-contextWindowTokens').options) option.textContent=Number(option.value).toLocaleString();
   const atmosphereCards='<div class="atmosphere-cards">'+[['aurora','styleAurora'],['spotlight','styleSpotlight'],['none','styleNone']].map(([value,label])=>'<button type="button" class="atmosphere-card" data-choice="ambientStyle" data-value="'+value+'" aria-pressed="false"><i aria-hidden="true"></i>'+text(label)+'</button>').join('')+'</div>';
   $('panel-motion').innerHTML = intro('motionTitle','motionHint')+card('ambientStyle',atmosphereCards+
-    select('ambientTexture','ambientTexture',[['off','textureOff'],['grid','textureGrid'],['glyphs','textureGlyphs']],null,true)+
-    '<div class="field"><div class="range-label"><label class="field-label" for="cfg-ambientIntensity" data-i18n="ambientIntensity"></label><output for="cfg-ambientIntensity" id="val-ambientIntensity">65%</output></div><input type="range" id="cfg-ambientIntensity" min="0" max="100" step="1"><div class="range-track-labels"><span>0%</span><span>100%</span></div></div>',compactSelect('ambientStyle',[['aurora','styleAurora'],['spotlight','styleSpotlight'],['none','styleNone']]))+
+    '<div class="field"><div class="range-label"><label class="field-label" for="cfg-ambientIntensity" data-i18n="ambientIntensity"></label><output for="cfg-ambientIntensity" id="val-ambientIntensity">65%</output></div><input type="range" id="cfg-ambientIntensity" min="0" max="100" step="1"><div class="range-track-labels"><span>0%</span><span>100%</span></div></div>'+
+    select('ambientTexture','ambientTexture',[['off','textureOff'],['grid','textureGrid'],['glyphs','textureGlyphs']],null,true),compactSelect('ambientStyle',[['aurora','styleAurora'],['spotlight','styleSpotlight'],['none','styleNone']]))+
     card('motionLevel',select('motionLevel','motionLevel',[['ultra','motionUltra'],['subtle','motionSubtle'],['off','motionOff']],null,true)+select('motionSpeed','motionSpeed',[['slow','speedSlow'],['normal','speedNormal'],['fast','speedFast']],null,true)+'<div class="motion-status"><i aria-hidden="true"></i><span id="motion-status"></span></div>'+toggle('streamChoreography','streamHint')+toggle('semanticAura'));
   $('panel-translation').innerHTML = intro('translationTitle','translationHint')+card('tabThought',toggle('thoughtTranslate')+
     select('thoughtView','thoughtView',[['bilingual','viewBilingual'],['immersive','viewImmersive']],null,true)+
@@ -62,9 +64,11 @@
     '<div class="field"><label class="field-label" for="api-key" data-i18n="thoughtApiKey"></label><input type="password" id="api-key" autocomplete="new-password" spellcheck="false" maxlength="4096">'+hint('keyHint')+'<div id="key-status" class="key-status"></div><div class="button-row"><button type="button" id="save-key" data-i18n="saveKey"></button><button type="button" id="clear-key" data-i18n="clearKey"></button></div></div>');
   $('panel-about').innerHTML = card('creditsTitle','<div class="credits"><p data-i18n="creditsBody"></p><p data-i18n="independentNote"></p><div class="links"><a href="https://github.com/RMvdesi/obsidian-prism" target="_blank" rel="noreferrer" data-i18n="upstream"></a><a href="https://github.com/bahayonghang/obsidian-prism-chrome-plugin" target="_blank" rel="noreferrer" data-i18n="source"></a><a href="../LICENSE" target="_blank" data-i18n="license"></a><a href="../NOTICE" target="_blank" data-i18n="notices"></a><a href="../THIRD_PARTY_NOTICES.md" target="_blank" data-i18n="thirdParties"></a><a href="../PRIVACY.md" target="_blank" data-i18n="privacy"></a></div></div><div class="notice"><p data-i18n="privacyNote"></p></div>')+
     card('backupTitle','<p class="preview-note" data-i18n="backupHint"></p><div class="button-row"><button type="button" id="btn-export" data-i18n="btnExport"></button><button type="button" id="btn-import" data-i18n="btnImport"></button><button type="button" class="danger" id="btn-reset" data-i18n="btnReset"></button></div><input class="file-input" type="file" id="file-import" accept="application/json,.json">');
-  function status(key,error) { $('status-msg').textContent=tr(key); $('status-msg').dataset.error=String(Boolean(error)); }
+  function status(key,error) { statusKey=key;statusIsError=Boolean(error);$('status-msg').textContent=tr(key);$('status-msg').dataset.error=String(statusIsError); }
   function translateLabels() {
     document.documentElement.lang=current.language;
+    $('status-msg').textContent=statusKey?tr(statusKey):'';
+    $('status-msg').dataset.error=String(statusIsError);
     for (const node of document.querySelectorAll('[data-i18n]')) node.textContent=tr(node.dataset.i18n);
     for (const node of document.querySelectorAll('[data-title]')) {node.title=tr(node.dataset.title);node.setAttribute('aria-label',tr(node.dataset.title));}
     $('key-status').textContent=tr(keyConfigured?'keySaved':'keyEmpty');

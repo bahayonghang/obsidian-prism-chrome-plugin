@@ -1403,3 +1403,54 @@ html[data-op-motion=off] .chat-preview * {
     transform:translate3d(3%,-3%,0) scale(1.06)
   }
 }
+
+/* The compact effects tab prioritizes controls over illustrative conversation text. */
+body:not(.is-options-page)[data-active-tab="motion"] .workspace {
+  gap:8px;
+}
+body:not(.is-options-page)[data-active-tab="motion"] .chat-preview {
+  height:84px;
+}
+body:not(.is-options-page)[data-active-tab="motion"] .preview-top,
+body:not(.is-options-page)[data-active-tab="motion"] .preview-bubble,
+body:not(.is-options-page)[data-active-tab="motion"] .preview-reply,
+body:not(.is-options-page)[data-active-tab="motion"] .chat-preview pre,
+body:not(.is-options-page)[data-active-tab="motion"] .preview-side i:nth-of-type(n+3) {
+  display:none;
+}
+body:not(.is-options-page)[data-active-tab="motion"] .preview-thread {
+  padding:16px 12px 12px;
+}
+body:not(.is-options-page)[data-active-tab="motion"] .preview-heading {
+  margin-bottom:4px;
+}
+body:not(.is-options-page)[data-active-tab="motion"] .section-intro {
+  margin-bottom:8px;
+}
+body:not(.is-options-page)[data-active-tab="motion"] .section-intro p {
+  display:none;
+}
+body:not(.is-options-page)[data-active-tab="motion"] .atmosphere-card i {
+  height:24px;
+}
+body:not(.is-options-page)[data-active-tab="motion"] .atmosphere-cards {
+  margin:6px 0 8px;
+}
+/* Laptop-height settings keep the complete sample and key controls above the footer. */
+@media (max-height:800px) and (min-width:761px) {
+  .is-options-page { padding:14px; }
+  .is-options-page .brand { padding:13px 24px 8px; }
+  .is-options-page .site-row { padding:0 26px 9px; }
+  .is-options-page .tabs { padding-bottom:6px; }
+  .is-options-page .preset-row { padding:10px 24px; }
+  .is-options-page .scene { padding:7px 10px; }
+  .is-options-page .workspace { padding:0 24px 18px;gap:22px; }
+  .is-options-page .chat-preview { height:clamp(180px,calc(100vh - 360px),300px); }
+  .is-options-page .preview-top { margin-bottom:20px; }
+  .is-options-page .preview-reply { margin:12px 0 9px; }
+  .is-options-page .chat-preview pre { margin-bottom:10px;padding:8px; }
+  .is-options-page .preview-input { min-height:56px;gap:9px; }
+  .is-options-page .settings-card { padding:14px;margin-bottom:12px; }
+  .is-options-page .atmosphere-card i { height:36px; }
+  .is-options-page .row-field { padding:10px 0; }
+}

@@ -144,6 +144,27 @@ async function surfaceSnapshot(page) {
   });
 }
 
+async function settledSurfaceStyle(page, selector, property) {
+  return page.locator(selector).evaluate(async (node, property) => {
+    const deadline = performance.now() + 1500;
+    while (performance.now() < deadline) {
+      // Flush the new rule, then allow CSS transitions to enter the animation list.
+      getComputedStyle(node)[property];
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      const active = node.getAnimations().filter(animation => animation.playState !== 'finished' && animation.playState !== 'idle' && Number.isFinite(animation.effect?.getComputedTiming().endTime));
+      if (!active.length) return { value: getComputedStyle(node)[property], focused: node.contains(document.activeElement) };
+      let timer;
+      try {
+        await Promise.race([
+          Promise.all(active.map(animation => animation.finished.catch(() => undefined))),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Surface transitions did not settle within 1500 ms')), Math.max(1, deadline - performance.now())); })
+        ]);
+      } finally { clearTimeout(timer); }
+    }
+    throw new Error('Surface transitions did not settle within 1500 ms');
+  }, property);
+}
+
 async function decorationVisible(page, selector) {
   return page.evaluate(selector => {
     let element = document.querySelector(selector);
@@ -291,16 +312,24 @@ async function exerciseHomeEffects(browser, host) {
     assert.equal(geometry.behind, true, 'ambient art remains behind native text');
     assert.ok(geometry.left >= geometry.primaryLeft - 1 && geometry.width <= geometry.primaryWidth + 2, 'ambient field does not spill across the sidebar');
     assert.notDeepEqual((await surfaceSnapshot(page)).sidebar, nativeSurfaces.sidebar);
+    const glassImage = (await settledSurfaceStyle(page, '[data-fixture-sidebar]', 'backgroundImage')).value;
+    await page.evaluate(() => __prismFixture.patch({ sidebarStyle: 'solid' }));
+    const solidImage = (await settledSurfaceStyle(page, '[data-fixture-sidebar]', 'backgroundImage')).value;
+    assert.notEqual(glassImage, solidImage, 'sidebar glass and solid modes produce different settled painted surfaces');
+    assert.notEqual(glassImage, 'none');
+    assert.equal(solidImage, 'none');
+    await page.evaluate(() => __prismFixture.patch({ sidebarStyle: 'glass' }));
     await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-home-dark.png`) });
 
     const editor = page.locator('[data-fixture-composer] [contenteditable="true"]');
     await editor.click();
-    const focusedGlow = await page.locator('[data-fixture-composer]').evaluate(node => getComputedStyle(node).boxShadow);
+    const focusedGlow = await settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow');
+    assert.equal(focusedGlow.focused, true);
     await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-home-focused.png`) });
     await page.evaluate(() => __prismFixture.patch({ composerGlow: false }));
-    await page.waitForFunction(old => getComputedStyle(document.querySelector('[data-fixture-composer]')).boxShadow !== old, focusedGlow);
-    const focusedPlain = await page.locator('[data-fixture-composer]').evaluate(node => getComputedStyle(node).boxShadow);
-    assert.notEqual(focusedGlow, focusedPlain, 'composer glow switch changes the actual focused shell shadow');
+    const focusedPlain = await settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow');
+    assert.equal(focusedPlain.focused, true, 'changing glow preserves native editor focus');
+    assert.notEqual(focusedGlow.value, focusedPlain.value, 'composer glow switch changes the settled focused shell shadow');
     await page.evaluate(() => __prismFixture.patch({ composerGlow: true }));
     await exerciseNativeComposer(page);
 
