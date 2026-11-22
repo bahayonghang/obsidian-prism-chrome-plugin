@@ -3,7 +3,8 @@
 **Project:** Obsidian Prism Web — Community Edition  
 **Maintainer:** bahayonghang  
 **Date:** 2026-11-21  
-**Version:** 0.1.0  
+**Version:** 0.2.0
+
 **License:** GPL-3.0-only
 
 This independent community derivative is based on [Obsidian Prism](https://github.com/RMvdesi/obsidian-prism) by RMvdesi. The upstream baseline inspected for this release is **v1.0.7-beta.1**, commit **`5dac53bfa7cf917d40101dad2579f32dd1b1b587`**. It is not an official upstream release and is not endorsed by RMvdesi, OpenAI, or Google.
@@ -17,14 +18,18 @@ The user-provided implementation plan and two prototype browser-extension archiv
 | Distribution | Replaced CDP/Sidecar installation with Manifest V3 WebExtensions; separate Chrome service-worker and Firefox event-page manifests |
 | Site adaptation | Added explicit adapters for ChatGPT and Gemini, scoped styles and reversible extension-owned UI |
 | Themes | Adapted four upstream palette families, accent choices, corner styles, installed code fonts and ambient appearance |
-| Settings | Browser-local validated preferences, bilingual popup/options, scene presets and sanitized import/export |
+| Settings | Redesigned compact popup/full settings, persistent navigation, motion previews, browser-local validated preferences, scene presets and sanitized import/export |
 | Reading tools | Page-visible conversation outline, code folding/header enhancements and keyboard navigation |
-| Motion | Optional stream highlights and companion effects with feature detection and reduced-motion handling |
+| Motion | Aurora/Spotlight CSS layers, static decorative textures, speed/intensity controls, composer focus glow and stream highlights; hidden/reduced-motion handling; pets removed |
 | Context indicator | Replaced desktop telemetry with a labeled heuristic over currently loaded visible conversation text |
 | Translation | Explicit manual requests for already visible text, user-configured compatible endpoint, optional origin/data permissions and separate local credentials |
 | Build and quality | Dependency-free syntax/configuration checks, isolated automated tests, deterministic allowlisted browser archives and PR/manual CI |
 
 CDP bindings, localhost desktop daemons, local-file previews, IDE engineering controls, model effort selectors, hidden/accurate quota telemetry, desktop update machinery and artificial composer caret behavior are not included.
+
+## v0.2.0 visual iteration
+
+Issue #3 responds to installed-extension feedback: remove the pixel pets, restore a horizon-light visual language, identify and theme current sidebar/composer surfaces, and make motion controls easy to discover. The original reference appearance informed the palette and composition; the implementation uses lightweight browser-scoped CSS and does not copy the desktop telemetry dashboard or its WebGL/physics subsystem. Native editor and navigation ownership stays with the host websites.
 
 ## File attribution
 

@@ -23,6 +23,42 @@ test('configuration admits only known own fields with strict value types', () =>
   assert.deepEqual(plain(S.sanitizePatch({ enabled: false, ambientIntensity: NaN })), { enabled: false });
 });
 
+test('light-field controls accept supported choices and reject accidental string booleans', () => {
+  const { schema: S } = harness();
+  const configured = plain(S.sanitizeConfig({ ambientStyle: 'spotlight', ambientTexture: 'grid', motionSpeed: 'fast', composerGlow: false, sidebarStyle: 'solid' }));
+  assert.equal(configured.ambientStyle, 'spotlight');
+  assert.equal(configured.ambientTexture, 'grid');
+  assert.equal(configured.motionSpeed, 'fast');
+  assert.equal(configured.composerGlow, false);
+  assert.equal(configured.sidebarStyle, 'solid');
+  const invalid = plain(S.sanitizePatch({ ambientStyle: 'rainbow', ambientTexture: true, motionSpeed: 1, composerGlow: 'false', sidebarStyle: 'transparent' }));
+  assert.deepEqual(invalid, {});
+});
+
+test('ambient intensity reaches the root without the prototype low-opacity multiplier', () => {
+  const { schema: S } = harness();
+  const root = rootElement();
+  S.applyConfigToRoot({ ...S.DEFAULT_CONFIG, ambientIntensity: 65, ambientStyle: 'aurora', ambientTexture: 'glyphs', motionSpeed: 'slow', composerGlow: true, sidebarStyle: 'glass' }, root);
+  assert.equal(Number(root.style.getPropertyValue('--op-ambient-alpha')), 0.65);
+  assert.equal(root.getAttribute('data-op-ambient-style'), 'aurora');
+  assert.equal(root.getAttribute('data-op-texture'), 'glyphs');
+  assert.equal(root.getAttribute('data-op-motion-speed'), 'slow');
+  assert.equal(root.getAttribute('data-op-composer-glow'), 'true');
+  assert.equal(root.getAttribute('data-op-sidebar-style'), 'glass');
+});
+
+test('old stored pet settings cannot reappear through loading, presets or a later save', async () => {
+  const h = harness({ background: true });
+  h.state.storage[h.schema.STORAGE_KEY] = { mascot: 'cat', palette: 'warm', enabled: true };
+  const loaded = await h.schema.loadConfig();
+  assert.equal(Object.hasOwn(loaded, 'mascot'), false);
+  assert.equal(loaded.palette, 'warm');
+  for (const preset of Object.values(h.schema.SCENE_PRESETS)) assert.equal(Object.hasOwn(preset, 'mascot'), false);
+  await h.schema.saveConfig({ mascot: 'tower', ambientTexture: 'grid' });
+  assert.equal(Object.hasOwn(h.state.storage[h.schema.STORAGE_KEY], 'mascot'), false);
+  assert.equal(h.state.storage[h.schema.STORAGE_KEY].ambientTexture, 'grid');
+});
+
 test('host detection rejects lookalike domains and unrelated subdomains', () => {
   const { schema: S } = harness();
   for (const host of ['chatgpt.com', 'chat.openai.com']) assert.equal(S.detectHost(host), 'chatgpt');

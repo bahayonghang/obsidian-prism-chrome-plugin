@@ -30,6 +30,7 @@ const executable = process.env.PRISM_BROWSER_EXECUTABLE || (existsSync(type.exec
 const launchOptions = { headless: true, ...(executable ? { executablePath: executable } : {}) };
 const source = async relative => fs.readFile(path.join(ROOT, relative), 'utf8');
 const fixtures = { chatgpt: await source('tests/fixtures/chatgpt.html'), gemini: await source('tests/fixtures/gemini.html') };
+const homeFixtures = { chatgpt: await source('tests/fixtures/chatgpt-home.html'), gemini: await source('tests/fixtures/gemini-home.html') };
 const fixtureURLs = { chatgpt: 'https://chatgpt.com/prism-offline-fixture', gemini: 'https://gemini.google.com/prism-offline-fixture' };
 const scriptFiles = ['src/config-schema.js', 'src/early-boot.js', 'src/adapters.js', 'src/content.js'];
 const scripts = await Promise.all(scriptFiles.map(source));
@@ -40,6 +41,7 @@ async function interceptFixtures(context) {
     const url = new URL(route.request().url());
     const host = url.hostname === 'chatgpt.com' ? 'chatgpt' : url.hostname === 'gemini.google.com' ? 'gemini' : null;
     if (host && url.pathname === '/prism-offline-fixture') return route.fulfill({ status: 200, contentType: 'text/html', body: fixtures[host] });
+    if (host && url.pathname === '/prism-offline-home') return route.fulfill({ status: 200, contentType: 'text/html', body: homeFixtures[host] });
     // Every non-fixture HTTP request is blocked, including translation endpoints.
     return route.abort('blockedbyclient');
   });
@@ -49,7 +51,7 @@ async function actualChromiumExtension() {
   const extensionDir = path.resolve(ROOT, process.env.PRISM_EXTENSION_DIR || 'dist/chrome');
   const manifest = JSON.parse(await fs.readFile(path.join(extensionDir, 'manifest.json'), 'utf8'));
   const profile = await fs.mkdtemp(path.join(os.tmpdir(), 'prism-extension-test-'));
-  let context, options, chat;
+  let context, options, chat, popup;
   try {
     context = await playwright.chromium.launchPersistentContext(profile, {
       ...launchOptions, channel: executable ? undefined : 'chromium',
@@ -71,8 +73,12 @@ async function actualChromiumExtension() {
     });
     await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'dark');
     await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-dark.png'), fullPage: true });
+    await options.locator('#tab-motion').click();
+    await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-motion-dark.png'), fullPage: true });
     await options.evaluate(() => ObsidianPrismSchema.saveConfig({ themeMode: 'light', lightPreset: 'alabaster' }));
     await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
+    await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-motion-light.png'), fullPage: true });
+    await options.locator('#tab-appearance').click();
     await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-light.png'), fullPage: true });
     await options.evaluate(() => ObsidianPrismSchema.saveConfig({ themeMode: 'dark' }));
     chat = await context.newPage();
@@ -89,17 +95,148 @@ async function actualChromiumExtension() {
     assert.equal(await options.locator('[role="tab"]').count(), 5);
     await options.locator('#tab-appearance').focus();
     await options.keyboard.press('ArrowRight');
-    assert.equal(await options.locator('#tab-reading').getAttribute('aria-selected'), 'true');
+    assert.equal(await options.locator('#tab-motion').getAttribute('aria-selected'), 'true');
+    popup = await context.newPage();
+    await popup.setViewportSize({ width: 440, height: 600 });
+    popup.on('pageerror', error => errors.push(error.message));
+    await popup.goto(extensionOrigin + '/' + manifest.action.default_popup);
+    await popup.waitForFunction(() => Boolean(document.querySelector('#settings-fields') && !document.querySelector('#settings-fields').disabled));
+    assert.equal(await popup.locator('#cfg-mascot').count(), 0);
+    await popup.screenshot({ path: path.join(ARTIFACTS, 'chromium-popup-appearance.png') });
+    await popup.locator('#tab-motion').click();
+    for (const id of ['cfg-ambientStyle', 'cfg-ambientTexture', 'cfg-motionSpeed', 'cfg-ambientIntensity', 'cfg-composerGlow']) assert.equal(await popup.locator('#' + id).count(), 1, `motion control ${id} must be available`);
+    assert.equal(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'popup has no horizontal overflow');
+    assert.equal(await popup.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 2), true, 'popup scroll stays inside its workspace');
+    await popup.screenshot({ path: path.join(ARTIFACTS, 'chromium-popup-motion.png') });
+    await popup.locator('[data-choice="ambientStyle"][data-value="spotlight"]').click();
+    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientStyle === 'spotlight');
+    await popup.locator('#cfg-ambientTexture').selectOption('grid');
+    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientTexture === 'grid');
+    await popup.setViewportSize({ width: 420, height: 600 });
+    assert.equal(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'popup also fits a 420-pixel viewport');
+    await popup.screenshot({ path: path.join(ARTIFACTS, 'chromium-popup-420.png') });
+    await popup.locator('#file-import').setInputFiles({ name: 'legacy-prism-settings.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'obsidian-prism-web', settings: { mascot: 'cat', palette: 'warm', ambientIntensity: 35, thoughtTranslate: true } })) });
+    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientIntensity === 35);
+    const imported = await popup.evaluate(() => ObsidianPrismSchema.loadConfig());
+    assert.equal(Object.hasOwn(imported, 'mascot'), false, 'legacy backups cannot reintroduce pets');
+    assert.equal(imported.thoughtTranslate, false, 'import does not silently enable external translation');
     assert.deepEqual(errors, []);
     console.log('PASS Chromium unpacked extension: service worker, options, serialized settings, live content updates and keyboard tabs');
   } catch (error) {
-    const current = chat || options;
+    const current = popup || chat || options;
     if (current && !current.isClosed()) await current.screenshot({ path: path.join(ARTIFACTS, 'chromium-extension-failure.png'), fullPage: true }).catch(() => {});
     throw error;
   } finally {
     if (context) await context.close();
     await fs.rm(profile, { recursive: true, force: true });
   }
+}
+
+async function surfaceSnapshot(page) {
+  return page.evaluate(() => {
+    const read = selector => {
+      const node = document.querySelector(selector), style = getComputedStyle(node);
+      const borderWidth = style.borderWidth;
+      const hasBorder = borderWidth.split(' ').some(value => parseFloat(value) > 0);
+      return { background: style.backgroundColor, backgroundImage: style.backgroundImage, border: hasBorder ? style.borderColor : null, borderWidth, radius: style.borderRadius, shadow: style.boxShadow };
+    };
+    return { sidebar: read('[data-fixture-sidebar]'), composer: read('[data-fixture-composer]') };
+  });
+}
+
+async function settledSurfaceStyle(page, selector, property) {
+  return page.locator(selector).evaluate(async (node, property) => {
+    const deadline = performance.now() + 1500;
+    while (performance.now() < deadline) {
+      // Flush the new rule, then allow CSS transitions to enter the animation list.
+      getComputedStyle(node)[property];
+      await new Promise(resolve => requestAnimationFrame(resolve));
+      const active = node.getAnimations().filter(animation => animation.playState !== 'finished' && animation.playState !== 'idle' && Number.isFinite(animation.effect?.getComputedTiming().endTime));
+      if (!active.length) return { value: getComputedStyle(node)[property], focused: node.contains(document.activeElement) };
+      let timer;
+      try {
+        await Promise.race([
+          Promise.all(active.map(animation => animation.finished.catch(() => undefined))),
+          new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('Surface transitions did not settle within 1500 ms')), Math.max(1, deadline - performance.now())); })
+        ]);
+      } finally { clearTimeout(timer); }
+    }
+    throw new Error('Surface transitions did not settle within 1500 ms');
+  }, property);
+}
+
+async function surfaceColors(page, selector) {
+  return page.locator(selector).evaluate(node => ({ foreground: getComputedStyle(node).color, background: getComputedStyle(node).backgroundColor }));
+}
+
+async function assertReadableSurface(page, selector, label) {
+  await settledSurfaceStyle(page, selector, 'backgroundColor');
+  const colors = await surfaceColors(page, selector);
+  const parse = value => {
+    const srgb = value.startsWith('color(srgb ');
+    if (!srgb && !/^rgba?\(/.test(value)) return null;
+    const numbers = value.match(/-?\d*\.?\d+/g)?.map(Number);
+    if (!numbers || numbers.length < 3 || (numbers.length > 3 && numbers[3] !== 1)) return null;
+    return numbers.slice(0, 3).map(number => number / (srgb ? 1 : value.includes('%') ? 100 : 255));
+  };
+  const foreground = parse(colors.foreground), background = parse(colors.background);
+  assert.ok(foreground && background, `${label}: expected opaque sRGB fixture colors, received ${JSON.stringify(colors)}`);
+  const luminance = rgb => rgb.map(value => value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4).reduce((sum, value, index) => sum + value * [0.2126, 0.7152, 0.0722][index], 0);
+  const a = luminance(foreground), b = luminance(background);
+  const contrast = (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+  assert.ok(contrast >= 4.5, `${label}: settled text needs readable contrast; measured ${contrast.toFixed(2)}:1 (${colors.foreground} on ${colors.background})`);
+}
+
+async function settleFixtureScreenshot(page) {
+  // Only native surface transitions; the ambient drift intentionally remains live.
+  await Promise.all([
+    settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow'),
+    assertReadableSurface(page, '[data-fixture-sidebar] [aria-current="page"]', 'active history')
+  ]);
+}
+
+async function decorationVisible(page, selector) {
+  return page.evaluate(selector => {
+    let element = document.querySelector(selector);
+    if (!element) return false;
+    for (; element; element = element.parentElement) {
+      const style = getComputedStyle(element);
+      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+    }
+    return true;
+  }, selector);
+}
+
+async function assertDecorationsPaused(page) {
+  const moving = await page.evaluate(() => [...document.querySelectorAll('#op-ambient-stage *')].filter(node => {
+    const style = getComputedStyle(node);
+    return style.animationName !== 'none' && style.animationPlayState.split(',').some(value => value.trim() !== 'paused');
+  }).map(node => node.className));
+  assert.deepEqual(moving, [], 'ambient animation pauses when motion is disabled or the page is hidden');
+}
+
+async function exerciseNativeComposer(page) {
+  const editor = page.locator('[data-fixture-composer] [contenteditable="true"]');
+  await editor.click();
+  await editor.fill('A short composition test');
+  const result = await editor.evaluate(node => {
+    const seen = [];
+    const remember = event => seen.push(event.type);
+    node.addEventListener('compositionstart', remember);
+    node.addEventListener('compositionend', remember);
+    node.dispatchEvent(new CompositionEvent('compositionstart', { data: '运行', bubbles: true }));
+    const composingKey = new KeyboardEvent('keydown', { key: 'ArrowUp', altKey: true, isComposing: true, bubbles: true, cancelable: true });
+    node.dispatchEvent(composingKey);
+    node.dispatchEvent(new CompositionEvent('compositionend', { data: '运行指标', bubbles: true }));
+    node.removeEventListener('compositionstart', remember); node.removeEventListener('compositionend', remember);
+    return { text: node.textContent, focused: document.activeElement === node, prevented: composingKey.defaultPrevented, seen };
+  });
+  assert.equal(result.focused, true);
+  assert.equal(result.text, 'A short composition test', 'decorative effects never rewrite typed text');
+  assert.equal(result.prevented, false, 'composition keyboard events keep native behavior');
+  assert.deepEqual(result.seen, ['compositionstart', 'compositionend']);
+  await editor.fill('');
+  await editor.evaluate(node => node.blur());
 }
 
 function fixtureBridge(input) {
@@ -176,6 +313,118 @@ async function savedDisabledStartup(browser) {
   } finally { await context.close(); }
 }
 
+async function exerciseHomeEffects(browser, host) {
+  const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, reducedMotion: 'no-preference' });
+  await interceptFixtures(context);
+  await context.addInitScript(fixtureBridge, { kind: engine === 'firefox' ? 'firefox' : 'chrome', initial: { mascot: 'cat' } });
+  const page = await context.newPage();
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    await page.goto(fixtureURLs[host].replace('/prism-offline-fixture', '/prism-offline-home'));
+    const nativeSurfaces = await surfaceSnapshot(page);
+    for (const content of styles) await page.addStyleTag({ content });
+    for (const content of scripts) await page.addScriptTag({ content });
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-home') === 'true');
+    await page.waitForSelector('#op-ambient-stage', { state: 'attached' });
+    assert.equal(await page.locator('.op-ambient-wash .op-aurora').count(), 3);
+    assert.equal(await page.locator('[class*="mascot"],[id*="mascot"]').count(), 0, 'legacy pet settings never create a companion');
+    assert.equal(await page.evaluate(() => Object.hasOwn(ObsidianPrismSchema.sanitizeConfig(__prismFixture.config()), 'mascot')), false);
+    assert.equal(await decorationVisible(page, '.op-ambient-wash'), true);
+    assert.equal(await decorationVisible(page, '.op-ambient-glyphs'), true);
+    assert.equal(await page.locator('#op-ambient-stage').evaluate(node => getComputedStyle(node).pointerEvents), 'none');
+    const geometry = await page.evaluate(() => {
+      const stage = document.querySelector('#op-ambient-stage'), primary = document.querySelector('[data-op-main-surface="true"]');
+      const a = stage.getBoundingClientRect(), b = primary.getBoundingClientRect();
+      return { left: a.left, width: a.width, primaryLeft: b.left, primaryWidth: b.width, behind: Number(getComputedStyle(stage).zIndex) < 0, parent: stage.parentElement === primary };
+    });
+    assert.equal(geometry.parent, true, 'ambient stage stays inside the recognized chat surface');
+    assert.equal(geometry.behind, true, 'ambient art remains behind native text');
+    assert.ok(geometry.left >= geometry.primaryLeft - 1 && geometry.width <= geometry.primaryWidth + 2, 'ambient field does not spill across the sidebar');
+    assert.notDeepEqual((await surfaceSnapshot(page)).sidebar, nativeSurfaces.sidebar);
+    const glassImage = (await settledSurfaceStyle(page, '[data-fixture-sidebar]', 'backgroundImage')).value;
+    await page.evaluate(() => __prismFixture.patch({ sidebarStyle: 'solid' }));
+    const solidImage = (await settledSurfaceStyle(page, '[data-fixture-sidebar]', 'backgroundImage')).value;
+    assert.notEqual(glassImage, solidImage, 'sidebar glass and solid modes produce different settled painted surfaces');
+    assert.notEqual(glassImage, 'none');
+    assert.equal(solidImage, 'none');
+    await page.evaluate(() => __prismFixture.patch({ sidebarStyle: 'glass' }));
+    await settleFixtureScreenshot(page);
+    await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-home-dark.png`) });
+
+    const editor = page.locator('[data-fixture-composer] [contenteditable="true"]');
+    await editor.click();
+    const focusedGlow = await settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow');
+    assert.equal(focusedGlow.focused, true);
+    await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-home-focused.png`) });
+    await page.evaluate(() => __prismFixture.patch({ composerGlow: false }));
+    const focusedPlain = await settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow');
+    assert.equal(focusedPlain.focused, true, 'changing glow preserves native editor focus');
+    assert.notEqual(focusedGlow.value, focusedPlain.value, 'composer glow switch changes the settled focused shell shadow');
+    await page.evaluate(() => __prismFixture.patch({ composerGlow: true }));
+    await exerciseNativeComposer(page);
+
+    const slowDuration = await page.locator('.op-aurora').first().evaluate(node => parseFloat(getComputedStyle(node).animationDuration));
+    await page.evaluate(() => __prismFixture.patch({ motionSpeed: 'fast' }));
+    const fastDuration = await page.locator('.op-aurora').first().evaluate(node => parseFloat(getComputedStyle(node).animationDuration));
+    assert.ok(slowDuration > fastDuration && fastDuration > 0, 'movement speed changes real animation timing');
+    await page.evaluate(() => __prismFixture.patch({ ambientTexture: 'grid', motionSpeed: 'slow' }));
+    assert.equal(await decorationVisible(page, '.op-ambient-grid'), true);
+    assert.equal(await decorationVisible(page, '.op-ambient-glyphs'), false);
+    await page.evaluate(() => __prismFixture.patch({ ambientStyle: 'spotlight' }));
+    assert.equal(await decorationVisible(page, '.op-aurora-one'), true);
+    assert.equal(await decorationVisible(page, '.op-aurora-two'), false, 'spotlight switches to one focused light field');
+    await page.evaluate(() => __prismFixture.patch({ ambientStyle: 'aurora' }));
+    await page.evaluate(() => __prismFixture.patch({ ambientStyle: 'none', semanticAura: false }));
+    assert.equal(await decorationVisible(page, '.op-ambient-wash'), false);
+    assert.equal(await decorationVisible(page, '.op-ambient-grid'), true, 'texture stays independent when the light field is off');
+    await page.evaluate(() => __prismFixture.patch({ ambientTexture: 'off' }));
+    assert.equal(await page.locator('#op-ambient-stage').count(), 0, 'turning off the last active layer removes the ambient stage');
+    assert.equal(await decorationVisible(page, '.op-ambient-wash'), false);
+    assert.equal(await decorationVisible(page, '.op-ambient-grid'), false);
+    assert.equal(await decorationVisible(page, '.op-ambient-glyphs'), false);
+    await page.evaluate(() => __prismFixture.patch({ ambientStyle: 'aurora', ambientTexture: 'glyphs', ambientIntensity: 0 }));
+    assert.equal(await decorationVisible(page, '.op-ambient-wash'), false, 'zero intensity really removes the field');
+    await page.evaluate(() => __prismFixture.patch({ ambientIntensity: 65, semanticAura: true }));
+    assert.equal(await decorationVisible(page, '.op-ambient-wash'), true);
+
+    await page.evaluate(() => __prismFixture.patch({ motionLevel: 'off' }));
+    await assertDecorationsPaused(page);
+    await page.evaluate(() => __prismFixture.patch({ motionLevel: 'ultra' }));
+    await page.emulateMedia({ reducedMotion: 'reduce' });
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-motion') === 'off');
+    await assertDecorationsPaused(page);
+    await page.emulateMedia({ reducedMotion: 'no-preference' });
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => 'hidden' });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-visibility') === 'hidden');
+    await assertDecorationsPaused(page);
+    await page.evaluate(() => { delete document.hidden; delete document.visibilityState; document.dispatchEvent(new Event('visibilitychange')); });
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-visibility') === 'visible');
+
+    await page.evaluate(() => __prismFixture.patch({ sidebarStyle: 'native', composerRestyle: false }));
+    assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-composer-surface="true"]').count(), 0);
+    const restored = await surfaceSnapshot(page);
+    assert.deepEqual(restored.sidebar, nativeSurfaces.sidebar, 'Native sidebar mode preserves the host surface');
+    assert.deepEqual(restored.composer, nativeSurfaces.composer, 'composer styling off restores the complete native shell');
+    await page.evaluate(() => __prismFixture.patch({ sidebarStyle: 'solid', composerRestyle: true, themeMode: 'light', lightPreset: 'crystal', motionLevel: 'subtle' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
+    await settleFixtureScreenshot(page);
+    await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-home-light.png`) });
+    await page.evaluate(() => ObsidianPrismRuntime.stop());
+    assert.equal(await page.locator('[data-op-owned],[data-op-main-surface="true"],[data-op-sidebar-surface="true"],[data-op-composer-surface="true"]').count(), 0);
+    assert.deepEqual(await surfaceSnapshot(page), nativeSurfaces);
+    assert.deepEqual(errors, []);
+    console.log(`PASS ${engine} ${host} blank home: visible effects, true surface styling, controls, no pets, native input and reversible pauses`);
+  } catch (error) {
+    if (!page.isClosed()) await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-home-failure.png`) }).catch(() => {});
+    throw error;
+  } finally { await context.close(); }
+}
+
 async function exerciseFixture(browser, host) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, reducedMotion: 'no-preference' });
   await interceptFixtures(context);
@@ -187,17 +436,61 @@ async function exerciseFixture(browser, host) {
     await page.goto(fixtureURLs[host]);
     const originalText = await page.locator('pre code').textContent();
     const originalBackground = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
+    const originalSurfaces = await surfaceSnapshot(page);
+    // Read the element that paints the bubble, not its transparent turn wrapper.
+    const bubbleSelector = host === 'chatgpt'
+      ? '[data-testid="conversation-turn-0"] [data-message-author-role="user"] > div'
+      : '.thread > user-query:first-of-type user-query-content.user-query-bubble-with-background';
+    const originalBubbleColors = await surfaceColors(page, bubbleSelector);
     await page.evaluate(() => {
       window.__nativeCode = document.querySelector('pre code');
       window.__nativeCopy = document.querySelector('[data-native-copy]');
       window.__copyCount = 0;
       window.__nativeCopy.addEventListener('click', () => { window.__copyCount++; });
+      window.__nativeComposer = document.querySelector('[data-fixture-composer]');
+      window.__nativeEditor = __nativeComposer.querySelector('[contenteditable="true"]');
+      __nativeComposer.setAttribute('data-op-composer-surface', 'fixture-original');
     });
     for (const content of styles) await page.addStyleTag({ content });
     for (const content of scripts) await page.addScriptTag({ content });
     await page.waitForFunction(() => window.ObsidianPrismRuntime?.diagnostics().enabled);
     await page.waitForSelector('.op-code-fold-bar');
+    await page.waitForFunction(() => document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'true');
+    assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-op-home')), 'false');
+    assert.equal(await page.locator('[data-fixture-sidebar][data-op-sidebar-surface="true"]').count(), 1);
+    assert.ok(await page.locator('[data-op-main-surface="true"]').count());
+    const themedSurfaces = await surfaceSnapshot(page);
+    assert.notDeepEqual(themedSurfaces.sidebar, originalSurfaces.sidebar, 'a recognized sidebar must actually receive the theme');
+    assert.notDeepEqual(themedSurfaces.composer, originalSurfaces.composer, 'the complete composer shell must actually receive the theme');
+    assert.equal(await page.evaluate(() => document.querySelector('[data-fixture-composer] [contenteditable="true"]') === __nativeEditor), true);
+    assert.equal(await page.locator('[class*="mascot"],[id*="mascot"]').count(), 0, 'pet UI is removed completely');
+    await settleFixtureScreenshot(page);
+    await assertReadableSurface(page, bubbleSelector, `${host} dark user bubble`);
     await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-default.png`), fullPage: true });
+
+    await page.evaluate(() => __prismFixture.patch({ themeMode: 'light', lightPreset: 'crystal' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
+    await assertReadableSurface(page, bubbleSelector, `${host} light user bubble`);
+    await page.evaluate(() => __prismFixture.patch({ themeMode: 'dark', palette: 'host' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'host');
+    await settledSurfaceStyle(page, bubbleSelector, 'backgroundColor');
+    assert.deepEqual(await surfaceColors(page, bubbleSelector), originalBubbleColors, `${host}: host palette preserves native user bubble colors`);
+
+    // An explicit nested bubble must work too, without repainting an attachment.
+    if (host === 'chatgpt') await page.evaluate(() => {
+      const probe = document.createElement('section'); probe.id = 'prism-nested-bubble-regression';
+      probe.innerHTML = '<div data-message-author-role="user"><div><div id="prism-nested-bubble" class="bg-token-message-surface" style="background:#f1f2f4"><span>Nested synthetic question</span></div><div id="prism-bubble-attachment" style="background:#304860;color:#fff"><button type="button">Synthetic attachment</button></div></div></div>';
+      document.body.append(probe);
+    });
+    const attachmentBackground = host === 'chatgpt' ? (await surfaceColors(page, '#prism-bubble-attachment')).background : null;
+    await page.evaluate(() => __prismFixture.patch({ palette: 'obsidian' }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'dark' && document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
+    if (host === 'chatgpt') {
+      await assertReadableSurface(page, '#prism-nested-bubble', 'ChatGPT nested explicit user bubble');
+      assert.equal((await surfaceColors(page, '#prism-bubble-attachment')).background, attachmentBackground, 'the bubble theme leaves native attachment backgrounds intact');
+      await page.evaluate(() => document.getElementById('prism-nested-bubble-regression').remove());
+    }
+    await exerciseNativeComposer(page);
 
     assert.equal(await page.evaluate(host => ObsidianPrismAdapters.forHost(host).userTurns().length, host), 3, `${host}: no nested duplicate turns`);
     assert.equal(await page.evaluate(host => ObsidianPrismAdapters.forHost(host).assistantTurns().length, host), 3);
@@ -237,6 +530,7 @@ async function exerciseFixture(browser, host) {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await page.evaluate(() => __prismFixture.patch({ motionLevel: 'ultra' }));
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-motion') === 'off');
+    await assertDecorationsPaused(page);
     await page.emulateMedia({ reducedMotion: 'no-preference' });
     await page.evaluate(() => __prismFixture.patch({ motionLevel: 'subtle' }));
 
@@ -317,6 +611,11 @@ async function exerciseFixture(browser, host) {
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), originalBackground);
+    assert.deepEqual(await surfaceSnapshot(page), originalSurfaces, 'disable restores native sidebar and composer styles');
+    await settledSurfaceStyle(page, bubbleSelector, 'backgroundColor');
+    assert.deepEqual(await surfaceColors(page, bubbleSelector), originalBubbleColors, `${host}: disable restores native user bubble colors`);
+    assert.equal(await page.locator('[data-fixture-composer]').getAttribute('data-op-composer-surface'), 'fixture-original');
+    assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"]').count(), 0);
     assert.equal(await page.locator('pre code').textContent(), originalText);
     assert.equal(await page.evaluate(() => ObsidianPrismRuntime.diagnostics().observing), false);
     await page.evaluate(() => __prismFixture.patch({ enabled: true }));
@@ -336,6 +635,8 @@ async function exerciseFixture(browser, host) {
     await page.evaluate(html => {
       const parsed = new DOMParser().parseFromString(html, 'text/html');
       document.body.replaceWith(document.importNode(parsed.body, true));
+      history.pushState({}, '', location.pathname + '?conversation=next');
+      window.dispatchEvent(new PopStateEvent('popstate'));
     }, fixtures[host]);
     await page.waitForSelector('.op-code-fold-bar');
     await page.waitForSelector('#op-rail-root');
@@ -343,6 +644,8 @@ async function exerciseFixture(browser, host) {
     assert.equal(await page.locator('.op-code-fold-bar').count(), 1);
     assert.equal(await page.locator('#op-rail-root').count(), 1);
     assert.equal(await page.locator('pre code').textContent(), originalText);
+    await page.waitForFunction(() => document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'true');
+    assert.equal(await page.evaluate(() => __nativeComposer.getAttribute('data-op-composer-surface')), 'fixture-original', 'replaced native surfaces are restored before being forgotten');
     await page.waitForTimeout(250);
     await page.evaluate(() => {
       for (const id of ['op-rail-root', 'op-bottom-dock', 'op-ambient-stage']) document.getElementById(id)?.remove();
@@ -360,6 +663,7 @@ async function exerciseFixture(browser, host) {
     assert.equal(stopped.codeBlocks, 0);
     assert.equal(stopped.thoughtBlocks, 0);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
+    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-enabled')), false);
     await page.evaluate(() => { __prismFixture.patch({ enabled: true }); window.dispatchEvent(new Event('pageshow')); document.body.append(document.createElement('div')); });
@@ -379,7 +683,10 @@ else console.log(`NOTE ${engine}: this run covers injected offline DOM fixtures 
 const browser = await type.launch(launchOptions);
 try {
   await savedDisabledStartup(browser);
-  for (const host of ['chatgpt', 'gemini']) await exerciseFixture(browser, host);
+  for (const host of ['chatgpt', 'gemini']) {
+    await exerciseHomeEffects(browser, host);
+    await exerciseFixture(browser, host);
+  }
 }
 finally { await browser.close(); }
 console.log('Browser suite completed. These are synthetic DOM fixtures, not validation against signed-in production websites.');

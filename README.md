@@ -4,17 +4,17 @@
 
 > 基于 [Obsidian Prism](https://github.com/RMvdesi/obsidian-prism)，原作者 [RMvdesi](https://github.com/RMvdesi)，以 **GPL-3.0-only** 分发。这是独立社区移植版，并非上游官方发行版；与 RMvdesi、OpenAI、Google 均无隶属或背书关系。完整署名见 [NOTICE](NOTICE) 与 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
-[English](#english) · [实施规划](docs/IMPLEMENTATION_PLAN.md) · [隐私说明](PRIVACY.md) · [测试与限制](docs/TESTING.md) · [架构](docs/ARCHITECTURE.md)
+[English](#english) · [视觉改版规划](docs/UX_REFRESH_PLAN.md) · [首版规划](docs/IMPLEMENTATION_PLAN.md) · [隐私说明](PRIVACY.md) · [测试与限制](docs/TESTING.md) · [架构](docs/ARCHITECTURE.md)
 
 ## 功能与取舍
 
 | 能力 | 浏览器版实现 |
 |---|---|
 | 四套主题 | 深空黑曜 Obsidian、暖炭玄岩 Warm、白昼冷晶 Crystal、暖白画册 Alabaster；也可保留宿主配色 |
-| 外观微调 | 跟随系统亮暗、五档强调色、三档圆角、本地代码字体、连字、环境光、紧凑侧栏 |
-| 设置中心 | 工具栏弹窗与完整设置页、中英文、三档场景预设、JSON导入导出、跨标签页同步 |
+| 外观微调 | 跟随系统亮暗、五档强调色、三档圆角、本地代码字体、连字；玻璃/实色/原生侧栏与紧凑密度 |
+| 设置中心 | 紧凑弹窗、完整设置工作台、常驻导航与保存状态、中英文、场景预设、外观/动效预览、JSON导入导出、跨标签页同步 |
 | 阅读工具 | 代码块顶栏、长代码手动折叠、带搜索的会话大纲、`Alt+↑` / `Alt+↓` 跳转 |
-| 动效与伙伴 | 可关闭的流式文字高亮、环境光、本地SVG像素蟹/猫及双伙伴组合；支持拖动、键盘移动和点击互动 |
+| 环境与动效 | Aurora底部光晕、Spotlight聚光、字符/网格纹理、光效浓度、移动速度、输入框聚焦光效及回复活动余晖；全部可配置 |
 | 会话估算 | 按当前网页已加载文字粗略估算 token 数；可自选参考容量，只作阅读参考 |
 | 可选翻译 | 关闭为默认状态；手动翻译网页已经显示的思考文字，自行配置兼容接口并授权目标站点 |
 
@@ -46,8 +46,8 @@ Windows若只有 `py` 命令，可将最后一步改为 `py -3 scripts/build.py`
 |---|---|
 | `dist/chrome/` | Chrome解压扩展目录 |
 | `dist/firefox/` | Firefox临时加载目录，使用独立Firefox清单 |
-| `dist/obsidian-prism-web-0.1.0-chrome.zip` | Chrome开发/提交包 |
-| `dist/obsidian-prism-web-0.1.0-firefox.zip` | Firefox开发/提交包，未签名 |
+| `dist/obsidian-prism-web-0.2.0-chrome.zip` | Chrome开发/提交包 |
+| `dist/obsidian-prism-web-0.2.0-firefox.zip` | Firefox开发/提交包，未签名 |
 | `dist/SHA256SUMS` | 两个ZIP的SHA-256校验值 |
 
 构建采用明确文件白名单，不包含Git目录、测试数据、开发依赖或本地密钥。相同源码与Python/zlib环境可生成相同ZIP字节。
@@ -69,13 +69,29 @@ Windows若只有 `py` 命令，可将最后一步改为 `py -3 scripts/build.py`
 
 临时加载在重启Firefox后结束。普通Firefox的长期安装需要Mozilla签名；把ZIP改名为XPI不会完成签名。详见 [Mozilla安装文档](https://extensionworkshop.com/documentation/develop/temporary-installation-in-firefox/) 和 [签名说明](https://extensionworkshop.com/documentation/publish/signing-and-distribution-overview/)。
 
+### 从 v0.1.0 更新
+
+Chrome：用新版包的内容覆盖原来加载的扩展目录，在 `chrome://extensions` 点击该扩展的“重新加载”，然后刷新所有已打开的 ChatGPT/Gemini 页面。保持原目录可以保留原有扩展身份与设置；不要同时启用新旧两份扩展。
+
+Firefox：在 `about:debugging` 重新载入新版 Firefox 包，并刷新目标网页。
+
+旧配色与浓度会保留，宠物设置自动失效。想直接查看新版完整环境效果，可先选择“流光”场景，再在“光影”中微调。正文中的光场会主动减弱，首页的光场更明显。完整设置页可通过弹窗右上角按钮打开。
+
 ## 使用设置
 
 先选择配色，再调整强调色、圆角和字体。三档场景预设用于快速切换完整光效、专注阅读或省电风格；仍可单独修改各项设置。ChatGPT和Gemini可分别启停，关闭后移除扩展添加的界面和样式。
 
 会话大纲仅索引当前网页已加载的提问。快捷键在输入框、编辑区域和对话框内让位给网页原生操作。页面变窄或功能未能识别时，增强组件应安静退让。
 
-代码字体使用电脑已有字体，缺失时自动回退到等宽字体；扩展不从第三方字体服务下载文件。伙伴使用本地SVG像素图形，提供蟹、猫或双伙伴组合，保留拖动和点击互动；不包含桌面版的完整物理堆叠模拟。动效尊重系统“减少动态效果”设置。
+代码字体使用电脑已有字体，缺失时自动回退到等宽字体；扩展不从第三方字体服务下载文件。v0.2.0已完整移除像素宠物，旧版本配置中的宠物字段也不会使其恢复。
+
+### 环境光与侧栏
+
+在“光影”中选择Aurora底部光晕、Spotlight聚光或关闭；分别调整浓度、速度和静态字符/网格纹理。字符是固定装饰，不读取对话。输入框聚焦光效和回复活动余晖也可独立开关。关闭动效后保留静态外观；环境样式“关闭”只去掉光晕，纹理可另行关闭；浓度设为0会去掉环境光和纹理。
+
+“外观”中可选择透光、纯色或原生侧栏以及紧凑密度。扩展仅标记识别到的原生输入框/侧栏，不重建输入框，不接管发送和附件功能。
+
+环境光使用少量CSS图层，在当前可见标签页缓慢移动；后台标签页、动效关闭和系统“减少动态效果”时停止动画。扩展不使用永久JavaScript动画循环，但启用移动光效时仍有正常的渲染开销。
 
 ### 可选思考文字翻译
 
@@ -89,7 +105,7 @@ Windows若只有 `py` 命令，可将最后一步改为 `py -3 scripts/build.py`
 
 ChatGPT和Gemini都是持续更新的网页；扩展通过独立适配器识别界面，不能保证所有A/B测试布局或未来版本永久兼容。样式主要针对页面结构与语义属性，避免改写宿主消息和编辑器内容。
 
-流式高亮使用 `CSS.highlights` 能力检测，不支持时关闭该效果。配置从异步扩展存储读取，因此没有“绝对零闪白”“10毫秒内必达”等承诺。空闲时停止扩展动效不等于整个网页零CPU/GPU占用。
+流式高亮使用 `CSS.highlights` 能力检测，不支持时关闭该效果。配置从异步扩展存储读取，因此没有“绝对零闪白”“10毫秒内必达”等承诺。关闭扩展动效不等于整个网页零CPU/GPU占用；开启环境动画时仍有正常的渲染开销。
 
 自动检查覆盖配置、权限和后台消息边界；可选浏览器测试使用本地构造的ChatGPT/Gemini页面，不能替代登录后真实网站验收。具体已运行项目和待手动核验项目见 [TESTING.md](docs/TESTING.md)。
 
@@ -123,9 +139,10 @@ npm run test:browser
 ### Included
 
 - Four light/dark palettes plus host colors; five accents, system appearance, rounded corners, installed code fonts, ligatures and compact sidebars.
-- A bilingual popup and options page with scene presets, live settings and sanitized JSON import/export.
+- A compact bilingual popup and full settings workspace with persistent navigation, motion preview, scene presets, live settings and sanitized JSON import/export.
+- Glass/solid/native sidebar surfaces and themed composer framing, without replacing the original editor or navigation.
 - Manual long-code folding, sticky headers, a searchable conversation outline and `Alt+Up/Down` navigation.
-- Optional stream highlighting, ambient effects and draggable pixel companions.
+- Configurable Aurora/Spotlight environments, decorative glyph/grid textures, motion speed, focus glow and optional stream highlighting. Pixel companions have been removed, including legacy settings support.
 - A rough estimate of text loaded in the current page. It is **not** model quota, billing, or actual context-window usage.
 - Optional, manual translation of already visible thought text through a user-configured compatible endpoint. It is off by default, requires explicit origin/data permission, and never exposes credentials through host-page storage or config exports.
 

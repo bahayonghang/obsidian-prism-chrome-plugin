@@ -6,6 +6,10 @@
 
 The browser suite also covers saved-disabled startup, native theme changes, whole-body replacement, removed extension controls, permanent teardown, collapsed thought summaries, stale translation responses, and failed translations in immersive mode. It writes synthetic default-page screenshots, Chromium options screenshots in both color modes, and failure screenshots to the ignored `test-artifacts/` directory for visual review. Screenshots contain only fixture text and extension settings.
 
+The site fixtures include recognizable app rails, conversation history surfaces and complete native composer shells. Separate empty-home fixtures exercise the aurora, spotlight and texture controls without conversation content obscuring the visual result. Tests compare computed sidebar/composer styles against their native baseline, check that surface markers are restored, verify independent texture/light switches and actual animation timing/pausing, and ensure old pet settings never recreate companion UI. Composition-event checks verify that extension effects do not consume IME-related events; they are not a test of an operating-system IME installation.
+
+Chromium also captures the actual popup page at 440 × 600 and 420 × 600, checks bounded scrolling, exercises the motion controls, and imports an old settings file containing a pet selection. Full settings screenshots include the motion panel in light and dark modes. Home screenshots in both browser engines show each supported site in dark, focused-composer and light states.
+
 ```sh
 npm install --no-save playwright@1.62.1
 npx playwright install chromium firefox

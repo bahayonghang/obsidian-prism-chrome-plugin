@@ -31,7 +31,7 @@ Use a current Chrome and Firefox with a test conversation. These checks require 
 - [ ] Chrome加载 `dist/chrome`；Firefox临时加载 `dist/firefox/manifest.json`，分别刷新ChatGPT与Gemini，确认输入、发送和切换会话正常。
 - [ ] 切换四套主题及跟随系统模式，打开网站菜单和代码块；在另一个标签页确认设置同步，并检查中文输入法正常。
 - [ ] 搜索会话大纲、跳转提问、折叠/展开长代码；使用网站原有复制按钮，确认复制内容完整。
-- [ ] 拖动像素伙伴、关闭动效、关闭对应网站开关，确认原网页恢复且再次开启不出现重复控件。
+- [ ] 确认不再出现宠物；切换环境样式/纹理/速度，关闭动效、关闭对应网站开关，确认原网页恢复且再次开启不出现重复控件。
 - [ ] 不配置翻译服务时确认没有翻译请求；如需测试翻译，仅使用自己明确授权的接口，检查撤销权限和错误提示。Firefox长期安装另需Mozilla签名。
 
 ### Detailed acceptance matrix
@@ -45,7 +45,7 @@ Use a current Chrome and Firefox with a test conversation. These checks require 
 | Navigation | Open a long conversation, search outline, jump between turns, regenerate/edit responses, switch conversations |
 | Keyboard | Confirm Alt+Up/Down works during reading and yields inside editor/search/modal; test Chinese IME composition |
 | Code | Fold/unfold a completed long code block; stream a new block; verify copying returns unchanged complete code |
-| Motion | Enable/disable companions and highlights, drag companion, resize, hide tab, toggle system reduced-motion |
+| Motion | Change Aurora/Spotlight/None, texture, speed and focus glow; confirm no pets; resize, hide tab, toggle system reduced-motion and verify the animated layers pause |
 | Estimation | Verify the label says estimate and counts only recognized loaded turns; compare after streaming/navigation |
 | Translation opt-in | Without credentials, verify disabled state and no unsolicited requests; grant/revoke exact-origin and Firefox data permissions |
 | Translation request | With an explicitly authorized test endpoint, translate a visible thought block; test denial, timeout and disabled state without losing source text |
@@ -62,7 +62,7 @@ Use a current Chrome and Firefox with a test conversation. These checks require 
 - Firefox temporary installation does not test all production installation/data-consent prompts and ends on restart. Mozilla signing is separate.
 - CI runs on pull requests and manual dispatch only. A direct push does not imply CI has run.
 
-## Execution record
+## v0.1.0 execution record
 
 Completed on 2026-11-21 (America/New_York) for implementation commit `3ddda204b15f2f6bb07ef315995947eb22ea9006`.
 
@@ -77,3 +77,8 @@ Completed on 2026-11-21 (America/New_York) for implementation commit `3ddda204b1
 The authoring workspace denied browser-process socket creation, so it was not counted as a local browser pass. Browser execution was completed in GitHub Actions. Settings dark/light screenshots and representative host fixture screenshots were inspected. The fixtures are synthetic interaction samples, not visual replicas of production pages; their plain navigation sidebar does not establish live sidebar selector coverage.
 
 No authenticated ChatGPT/Gemini session, real translation API key, paid API request, store submission or Mozilla signing was used. The declared minimum versions (Chrome 111 / Firefox 140) were not executed as separate browser versions. The live-site acceptance boxes above remain intentionally unchecked. This documentation update records the completed run; it does not claim an additional CI run for the documentation-only change.
+
+
+## v0.2.0 execution record
+
+The redesigned popup, motion controls, sidebar/composer adapters and pet removal are tracked in [Issue #3](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/issues/3). Current-run evidence will be recorded here after execution. Live authenticated website acceptance remains separate from synthetic fixtures.
