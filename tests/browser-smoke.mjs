@@ -145,6 +145,11 @@ async function actualChromiumExtension() {
     await popup.locator('#cfg-ambientTexture').selectOption('grid');
     await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientTexture === 'grid');
     await popup.locator('#tab-reading').click();
+    assert.equal(await popup.locator('#cfg-contentWidth').inputValue(), 'standard');
+    await popup.locator('#cfg-contentWidth').selectOption('wide');
+    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contentWidth === 'wide');
+    await popup.locator('#cfg-contentWidth').selectOption('standard');
+    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contentWidth === 'standard');
     assert.equal(await popup.locator('#cfg-contextWindowTokens').inputValue(), 'auto');
     await popup.locator('#cfg-contextWindowTokens').selectOption('400000');
     await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contextWindowTokens === 400000);

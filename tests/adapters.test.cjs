@@ -480,3 +480,56 @@ test('resolveReferenceCapacity maps ChatGPT and Gemini models, falls back cleanl
     assert.equal(res.matched, false, label);
   }
 });
+
+test('ChatGPT adapter sorts mixed turns in DOM order, recognizes zh .sr-only fallbacks, filters pre-tail spacers, and prefers icon add trigger', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const thread = el('div', { class: 'thread' });
+
+  const t0 = el('article', { 'data-testid': 'conversation-turn-0' });
+  t0.append(el('h5', { class: 'sr-only' }, { textContent: '你说：' }), el('div', {}, { textContent: '第一问' }));
+
+  const t1Wrap = el('article', { 'data-testid': 'conversation-turn-1' });
+  const t1 = el('div', { 'data-message-author-role': 'user' }, { textContent: 'Second question' });
+  t1Wrap.append(t1);
+
+  const preSpacer = el('div', { 'data-testid': 'conversation-turn-spacer' }, { textContent: '' });
+
+  const t2 = el('article', { 'data-testid': 'conversation-turn-2' });
+  t2.append(el('h6', { class: 'sr-only' }, { textContent: 'ChatGPT 说：' }), el('div', {}, { textContent: '第一答' }));
+
+  const t3 = el('article', { 'data-testid': 'conversation-turn-3', 'data-turn': 'assistant' }, { textContent: 'Second answer' });
+  const tailSpacer = el('div', { 'data-testid': 'conversation-turn-spacer' }, { textContent: '' });
+
+  thread.append(t0, t1Wrap, preSpacer, t2, t3, tailSpacer);
+
+  const composer = el('div', { id: 'composer-background' });
+  const textAddBtn = el('button', { type: 'button', 'aria-label': '上传' }, { textContent: '上传文件' });
+  const iconAddBtn = el('button', { type: 'button', 'aria-label': '添加' }, { textContent: '+' });
+  composer.append(textAddBtn, iconAddBtn);
+
+  main.append(thread, composer);
+  body.append(main);
+
+  const preorder = [];
+  const walk = node => {
+    preorder.push(node);
+    for (const child of node.children || []) walk(child);
+  };
+  walk(body);
+  for (const node of preorder) {
+    node.compareDocumentPosition = other => {
+      const a = preorder.indexOf(node);
+      const b = preorder.indexOf(other);
+      if (a < 0 || b < 0 || a === b) return 0;
+      return a < b ? 4 : 2;
+    };
+  }
+
+  const adapter = A.forHost('chatgpt', doc);
+  assert.deepEqual([...adapter.userTurns()], [t0, t1]);
+  assert.deepEqual([...adapter.assistantTurns()], [t2, t3]);
+  assert.deepEqual([...adapter.threadTailSpacers()], [tailSpacer]);
+  assert.equal(adapter.composerAddTrigger(composer), iconAddBtn);
+});

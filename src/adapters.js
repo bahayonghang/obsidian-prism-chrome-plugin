@@ -44,7 +44,7 @@
       addTriggers: '[data-test-id="upload-file-button"], button[aria-label*="Add files" i], button[aria-label*="Upload" i], button[aria-label*="上传"], button[aria-label*="添加"]',
       composerChips: '.toolbox-drawer-item-button, [data-test-id="composer-chip"]',
       attachments: '[data-test-id="file-preview-chip"], [data-test-id="attachment-card"], file-preview-chip, .native-footer-attachment',
-      threadColumns: '.thread, .conversation-container, .response-container',
+      threadColumns: '.thread, .response-container',
       composerColumns: '.composer-container, input-area-v2',
       tailSpacers: '',
       sidebars: ['bard-sidenav', 'side-navigation-v2', 'side-navigation', 'mat-sidenav', '[data-test-id="side-nav"]', '[data-test-id="side-navigation"]', '[data-testid="sidebar"]'],
@@ -352,10 +352,20 @@
     const result = [...rows];
     return result.filter(node => !result.some(parent => parent !== node && parent.contains(node)));
   }
+  function sortByDocumentOrder(nodes) {
+    if (nodes.length <= 1 || typeof nodes[0]?.compareDocumentPosition !== 'function') return nodes;
+    return [...nodes].sort((a, b) => {
+      if (a === b) return 0;
+      const pos = a.compareDocumentPosition(b);
+      if (pos & 4) return -1;
+      if (pos & 2) return 1;
+      return 0;
+    });
+  }
   function findTurns(spec, role, root) {
     const selector = role === 'user' ? spec.users : spec.assistants;
     const explicit = topLevelMatches(selector, root).filter(isVisible);
-    if (!spec.turnContainers) return explicit;
+    if (!spec.turnContainers) return sortByDocumentOrder(explicit);
     const result = [...explicit];
     const seen = new Set(explicit);
     const containers = topLevelMatches(spec.turnContainers, root).filter(isVisible);
@@ -365,8 +375,8 @@
       const heading = container.querySelector('.sr-only');
       const srText = heading ? textOf(heading).trim().toLowerCase() : '';
       const turnAttr = container.getAttribute('data-turn');
-      const isUser = turnAttr === 'user' || Boolean(container.querySelector('.user-message-bubble-color')) || srText.startsWith('you said');
-      const isAssistant = turnAttr === 'assistant' || Boolean(container.querySelector('.agent-turn')) || srText.startsWith('chatgpt said');
+      const isUser = turnAttr === 'user' || Boolean(container.querySelector('.user-message-bubble-color')) || /^(you said|你说|您说)/i.test(srText);
+      const isAssistant = turnAttr === 'assistant' || Boolean(container.querySelector('.agent-turn')) || /^(chatgpt said|chatgpt\s*说)/i.test(srText);
       if (role === 'user' && isUser && !isAssistant) {
         seen.add(container);
         result.push(container);
@@ -375,38 +385,35 @@
         result.push(container);
       }
     }
-    return result;
+    return sortByDocumentOrder(result);
   }
   function normalizeModelText(raw) {
     return String(raw || '').replace(/[⌄▾▼›❯]/g, ' ').replace(/\s+/g, ' ').trim();
   }
-  function findModelTrigger(spec, root) {
-    if (!spec.modelTriggers) return null;
-    for (const selector of spec.modelTriggers.split(',').map(s => s.trim()).filter(Boolean)) {
-      const found = [...root.querySelectorAll(selector)].find(node =>
-        !isOwned(node) && isVisible(node) && !node.closest('dialog,[role="dialog"],[aria-modal="true"]') && !node.closest(MESSAGE_AREAS)
-      );
+  function firstMatchingSelector(selectorList, scope, predicate) {
+    if (!selectorList || !scope?.querySelectorAll) return null;
+    for (const selector of selectorList.split(',').map(s => s.trim()).filter(Boolean)) {
+      const found = [...scope.querySelectorAll(selector)].find(node => !isOwned(node) && isVisible(node) && predicate(node));
       if (found) return found;
     }
     return null;
   }
+  const isNonMessageTrigger = node => !node.closest('dialog,[role="dialog"],[aria-modal="true"]') && !node.closest(MESSAGE_AREAS);
+  function findModelTrigger(spec, root) {
+    return firstMatchingSelector(spec.modelTriggers, root, isNonMessageTrigger);
+  }
   function findActiveModelLabel(spec, root) {
-    const trigger = findModelTrigger(spec, root);
-    if (trigger) {
-      const label = normalizeModelText(textOf(trigger) || trigger.getAttribute('aria-label') || '');
-      if (label) return label;
-    }
-    if (!spec.modelLabels) return '';
-    for (const selector of spec.modelLabels.split(',').map(s => s.trim()).filter(Boolean)) {
-      const found = [...root.querySelectorAll(selector)].find(node =>
-        !isOwned(node) && isVisible(node) && !node.closest('dialog,[role="dialog"],[aria-modal="true"]') && !node.closest(MESSAGE_AREAS)
-      );
-      if (found) {
-        const label = normalizeModelText(textOf(found) || found.getAttribute('aria-label') || '');
-        if (label) return label;
-      }
-    }
-    return '';
+    const readLabel = node => node ? normalizeModelText(textOf(node) || node.getAttribute('aria-label') || '') : '';
+    const triggerLabel = readLabel(findModelTrigger(spec, root));
+    if (triggerLabel) return triggerLabel;
+    let resolved = '';
+    firstMatchingSelector(spec.modelLabels, root, node => {
+      if (!isNonMessageTrigger(node)) return false;
+      const label = readLabel(node);
+      if (label) { resolved = label; return true; }
+      return false;
+    });
+    return resolved;
   }
   function findCodeSurfaces(spec, messages, root) {
     const surfaces = [];
@@ -464,13 +471,10 @@
   function findComposerAddTrigger(spec, composer) {
     if (!composer || !spec.addTriggers) return null;
     const scope = composer.parentElement || composer;
-    for (const selector of spec.addTriggers.split(',').map(s => s.trim()).filter(Boolean)) {
-      const found = [...scope.querySelectorAll(selector)].find(node =>
-        !isOwned(node) && isVisible(node) && composer.contains(node) && !node.classList.contains('send-button')
-      );
-      if (found) return found;
-    }
-    return null;
+    const isCandidate = node => composer.contains(node) && !node.classList.contains('send-button');
+    // Prefer icon-only or '+' buttons so 32px circular styling never clips text labels.
+    return firstMatchingSelector(spec.addTriggers, scope, node => isCandidate(node) && textOf(node).trim().length <= 2) ||
+      firstMatchingSelector(spec.addTriggers, scope, isCandidate);
   }
   function findComposerChips(spec, composer, addTrigger, modelTrigger) {
     if (!composer || !spec.composerChips) return [];
@@ -503,6 +507,7 @@
       if (isOwned(node) || node.closest(MESSAGE_AREAS)) continue;
       if (textOf(node).trim() || node.querySelector('button,a[href],[role="button"],input,textarea')) continue;
       if (lastMessage.contains(node)) continue;
+      if (typeof lastMessage.compareDocumentPosition === 'function' && !(lastMessage.compareDocumentPosition(node) & 4)) continue;
       spacers.push(node);
     }
     return spacers;
@@ -528,7 +533,7 @@
     const collect = selectors => topLevelMatches(selectors, root).filter(isVisible);
     const userTurns = () => findTurns(spec, 'user', root);
     const assistantTurns = () => findTurns(spec, 'assistant', root);
-    const messages = () => [...userTurns(), ...assistantTurns()];
+    const messages = () => sortByDocumentOrder([...userTurns(), ...assistantTurns()]);
     return Object.freeze({
       host,
       userTurns,

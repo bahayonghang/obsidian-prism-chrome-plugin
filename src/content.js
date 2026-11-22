@@ -346,9 +346,7 @@
     if (popover) popover.hidden = !open;
     dock.querySelector('.op-vial-pill')?.setAttribute('aria-expanded',String(open));
   }
-  function syncDock() {
-    if (!dock) { dock=own(make('aside','op-dock')); dock.id='op-bottom-dock'; document.body.append(dock); }
-    if (!dock.isConnected) document.body.append(dock);
+  function syncWidthToggle() {
     let widthBtn = dock.querySelector('.op-width-toggle');
     if (!widthBtn) {
       widthBtn = make('button','op-width-toggle');
@@ -369,6 +367,8 @@
     widthBtn.setAttribute('data-width-preset', preset);
     widthBtn.title = widthTip;
     widthBtn.setAttribute('aria-label', widthTip);
+  }
+  function syncContextVial() {
     let vial = dock.querySelector('.op-vial-pill');
     if (!cfg.contextVial) { vial?.remove(); dock.querySelector('.op-vial-popover')?.remove(); return; }
     if (!vial) {
@@ -425,6 +425,12 @@
       for(const [label,value] of rows) fragment.append(make('dt','',t(label)),make('dd','',value));
       details.replaceChildren(fragment);
     }
+  }
+  function syncDock() {
+    if (!dock) { dock=own(make('aside','op-dock')); dock.id='op-bottom-dock'; document.body.append(dock); }
+    if (!dock.isConnected) document.body.append(dock);
+    syncWidthToggle();
+    syncContextVial();
   }
 
   function applyThoughtView(element,entry) {
@@ -532,8 +538,8 @@
     if (!isNativePalette) {
       for (const element of adapter.codeSurfaces?.() || []) add(element,'data-op-code-surface');
       for (const element of adapter.codeHeaders?.() || []) add(element,'data-op-code-header');
-      add(adapter.composerScrimSurface?.(composer),'data-op-composer-scrim');
       if (!isHome) {
+        add(adapter.composerScrimSurface?.(composer),'data-op-composer-scrim');
         for (const element of adapter.threadTailSpacers?.() || []) add(element,'data-op-thread-spacer');
       }
       if (cfg.composerRestyle) {

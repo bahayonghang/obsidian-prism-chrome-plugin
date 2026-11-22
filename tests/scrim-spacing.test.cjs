@@ -119,6 +119,7 @@ test('hosts.css paints feathered var(--op-canvas) linear-gradient on scrim host 
 
   const scrimBeforeRule = blocks.find(b => b.selectors.some(s => s === `${dualPrefix} [data-op-composer-scrim="true"]::before`));
   assert.ok(scrimBeforeRule, 'must define dual-host feathered ::before rule for [data-op-composer-scrim="true"]::before');
+  assert.match(scrimBeforeRule.body, /pointer-events:\s*none\s*!important/);
   assert.match(scrimBeforeRule.body, /background-color:\s*transparent\s*!important/);
   assert.match(scrimBeforeRule.body, /linear-gradient\(\s*to bottom,\s*transparent 0%,\s*color-mix\(in srgb,\s*var\(--op-canvas\) 78%,\s*transparent\) 100%\s*\)\s*!important/);
 });

@@ -147,11 +147,12 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
 
   let currentModel = options.modelLabel ?? (host === 'gemini' ? 'Gemini 2.5 Pro' : 'ChatGPT 5.2');
   let currentAttachments = options.attachments ?? [];
+  let homeMode = Boolean(options.isHome);
 
   const fakeAdapter = {
     host,
-    userTurns: () => [userTurn],
-    assistantTurns: () => [assistantTurn],
+    userTurns: () => (homeMode ? [] : [userTurn]),
+    assistantTurns: () => (homeMode ? [] : [assistantTurn]),
     primarySurface: () => primary,
     composerSurface: () => composer,
     composerBackdropSurfaces: () => [scrim],
@@ -218,6 +219,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     runtime: h.context.ObsidianPrismRuntime,
     setModel(label) { currentModel = label; },
     setAttachments(list) { currentAttachments = list; },
+    setHome(flag) { homeMode = Boolean(flag); },
     advanceTime(ms) { nowMs += ms; }
   };
 }
@@ -507,4 +509,36 @@ test('ADR-0002: runtime never reparents composer/model controls, never mutates n
     ctx.runtime.stop();
     assertAdrInvariants('stopped');
   }
+});
+
+test('runtime suppresses composer scrim and tail spacer in Home State and clears them when returning home', async () => {
+  const ctx = createRuntimeDom({ themeMode: 'dark', palette: 'obsidian', composerRestyle: true }, { isHome: true });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const e = Object.fromEntries(ctx.elements);
+
+  assert.equal(e.docEl.getAttribute('data-op-home'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-backdrop'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
+  assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), null);
+  assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'true');
+
+  ctx.setHome(false);
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', contentWidth: 'wide' }
+  });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(e.docEl.getAttribute('data-op-home'), 'false');
+  assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), 'true');
+  assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), 'true');
+
+  ctx.setHome(true);
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', contentWidth: 'standard' }
+  });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(e.docEl.getAttribute('data-op-home'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
+  assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), null);
+
+  ctx.runtime.stop();
 });
