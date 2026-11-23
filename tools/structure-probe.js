@@ -44,7 +44,9 @@
       composerLayout: '[data-composer-layout]',
       composerGrids: { selector: 'form[data-chatgpt-composer] *', where: 'grid' },
       composerButtons: 'form[data-chatgpt-composer] button',
-      composerAncestors: { ancestorsOf: 'form[data-chatgpt-composer]', depth: 6 }
+      composerAncestors: { ancestorsOf: 'form[data-chatgpt-composer]', depth: 6 },
+      composerSiblings: { siblingsAfter: 'form[data-chatgpt-composer]' },
+      cornerFloats: { cornerFloats: true }
     },
     gemini: {
       sidebar: 'bard-sidenav, side-navigation-v2, mat-sidenav',
@@ -64,16 +66,25 @@
       textInputField: '.text-input-field',
       composerGrids: { selector: 'input-area-v2 *', where: 'grid' },
       composerButtons: 'input-area-v2 button',
-      filePreviews: 'input-area-v2 [class*="file-preview"]'
+      filePreviews: 'input-area-v2 [class*="file-preview"]',
+      inputSiblings: { siblingsAfter: '.input-area-container' },
+      cornerFloats: { cornerFloats: true }
     }
   };
   const STYLE_KEYS = [
-    'display', 'position', 'boxSizing', 'width', 'minWidth', 'maxWidth', 'height', 'marginLeft', 'marginRight',
+    'display', 'position', 'boxSizing', 'width', 'minWidth', 'maxWidth', 'height', 'minHeight', 'marginLeft', 'marginRight',
     'paddingLeft', 'paddingRight', 'paddingTop', 'paddingBottom', 'top', 'bottom', 'zIndex', 'opacity',
     'color', 'backgroundColor', 'backgroundImage', 'maskImage', 'webkitMaskImage', 'backdropFilter',
     'fontFamily', 'fontSize', 'fontWeight', 'lineHeight',
     'gridTemplateColumns', 'gridTemplateRows', 'gridTemplateAreas', 'gridArea', 'flexDirection', 'alignItems', 'justifyContent'
   ];
+  const PSEUDO_STYLE_KEYS = [
+    'display', 'position', 'height', 'top', 'bottom', 'opacity',
+    'backgroundColor', 'backgroundImage', 'maskImage', 'webkitMaskImage', 'backdropFilter'
+  ];
+  const INTERACTIVE_SELECTOR = 'a[href],button,[role="button"],input,textarea,select';
+  const CORNER_EXCLUDED_SELF = 'main, [role="main"]';
+  const CORNER_EXCLUDED_ANCESTOR = 'dialog, [role="dialog"], [aria-modal="true"], [data-op-owned], form[data-chatgpt-composer], input-area-v2, input-container';
   const CUSTOM_PROPERTIES = ['--thread-content-max-width', '--user-chat-width', '--bard-chat-window-content-width-default'];
 
   // UUIDs, long hex runs and anything with a 5+ digit run are treated as identifiers.
@@ -128,12 +139,24 @@
     }
     return out;
   }
+  function pseudoStyles(element, pseudo) {
+    const computed = getComputedStyle(element, pseudo);
+    const content = computed.content;
+    const out = { hasContent: Boolean(content && content !== 'none') };
+    for (const key of PSEUDO_STYLE_KEYS) {
+      const value = computed[key];
+      if (value !== undefined && value !== '') out[key] = redactStyle(value);
+    }
+    return out;
+  }
   function describe(element) {
     const ancestors = [];
     for (let node = element.parentElement; node && node !== document.documentElement && ancestors.length < 4; node = node.parentElement) {
       ancestors.push(descriptor(node));
     }
-    return {
+    const before = pseudoStyles(element, '::before');
+    const after = pseudoStyles(element, '::after');
+    const out = {
       tag: element.localName,
       classes: [...element.classList].slice(0, 16).map(redactClass),
       data: data(element),
@@ -145,18 +168,53 @@
       ancestors,
       children: [...element.children].slice(0, 12).map(descriptor)
     };
+    if (before.hasContent || after.hasContent) out.pseudos = { before, after };
+    return out;
+  }
+  function collectCornerFloats() {
+    const root = document.body || document.documentElement;
+    if (!root) return [];
+    const candidates = [];
+    for (const node of root.querySelectorAll('*')) {
+      if (node.matches(CORNER_EXCLUDED_SELF) || node.closest(CORNER_EXCLUDED_ANCESTOR)) continue;
+      const style = getComputedStyle(node);
+      if (!/^(fixed|absolute|sticky)$/.test(style.position)) continue;
+      if (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || parseFloat(style.opacity) === 0) continue;
+      if (/^rect\(0px[, ]+0px[, ]+0px[, ]+0px\)$/.test(style.clip) || style.clipPath === 'inset(50%)' || style.pointerEvents === 'none') continue;
+      const box = node.getBoundingClientRect();
+      if (!(box.width > 0 && box.height > 0 && box.width <= 260 && box.height <= 160)) continue;
+      if (!(box.right >= innerWidth - 260 && box.bottom >= innerHeight - 200 && box.left >= innerWidth * 0.5 && box.top >= innerHeight * 0.5 && box.left < innerWidth && box.top < innerHeight)) continue;
+      candidates.push(node);
+    }
+    return candidates.filter(node => !candidates.some(other => other !== node && other.contains(node)));
   }
   function collect(spec) {
+    if (typeof spec !== 'string' && spec.siblingsAfter) {
+      const nodes = [];
+      for (let node = document.querySelector(spec.siblingsAfter)?.nextElementSibling; node; node = node.nextElementSibling) nodes.push(node);
+      return {
+        count: nodes.length,
+        samples: nodes.map(node => ({
+          ...describe(node),
+          childCount: node.children.length,
+          hasInteractive: node.matches(INTERACTIVE_SELECTOR) || Boolean(node.querySelector(INTERACTIVE_SELECTOR))
+        }))
+      };
+    }
     let nodes;
+    let limit = SAMPLE_LIMIT;
     if (typeof spec === 'string') nodes = [...document.querySelectorAll(spec)];
     else if (spec.ancestorsOf) {
+      limit = Math.max(1, Number(spec.depth) || 4);
       nodes = [];
-      for (let node = document.querySelector(spec.ancestorsOf)?.parentElement; node && nodes.length < (spec.depth || 4); node = node.parentElement) nodes.push(node);
+      for (let node = document.querySelector(spec.ancestorsOf)?.parentElement; node && nodes.length < limit; node = node.parentElement) nodes.push(node);
+    } else if (spec.cornerFloats) {
+      nodes = collectCornerFloats();
     } else {
       nodes = [...document.querySelectorAll(spec.selector)];
       if (spec.where === 'grid') nodes = nodes.filter(node => /grid/.test(getComputedStyle(node).display));
     }
-    return { count: nodes.length, samples: nodes.slice(0, SAMPLE_LIMIT).map(describe) };
+    return { count: nodes.length, samples: nodes.slice(0, limit).map(describe) };
   }
 
   const hostname = location.hostname;
