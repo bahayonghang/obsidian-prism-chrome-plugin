@@ -532,6 +532,7 @@
     };
     const isNativePalette = Schema.resolvePalette(cfg) === 'host';
     const isHome = !adapter.userTurns().length && !adapter.assistantTurns().length;
+    let nextScrim = null, nextScroller = null;
     const nextPrimary = adapter.primarySurface?.() || null;
     add(nextPrimary,'data-op-main-surface');
     for (const element of adapter.threadColumns?.() || []) add(element,'data-op-thread-column');
@@ -541,8 +542,11 @@
       for (const element of adapter.codeSurfaces?.() || []) add(element,'data-op-code-surface');
       for (const element of adapter.codeHeaders?.() || []) add(element,'data-op-code-header');
       if (!isHome) {
-        add(adapter.composerScrimSurface?.(composer),'data-op-composer-scrim');
+        nextScrim = adapter.composerScrimSurface?.(composer) || null;
+        add(nextScrim,'data-op-composer-scrim');
         for (const element of adapter.threadTailSpacers?.() || []) add(element,'data-op-thread-spacer');
+        nextScroller = overlaidScroller(nextScrim);
+        add(nextScroller,'data-op-thread-scroller');
       }
       if (cfg.composerRestyle) {
         add(composer,'data-op-composer-surface');
@@ -589,6 +593,7 @@
         surfaceObserver.observe(primarySurface);
       }
     }
+    dockScrim = nextScrim; dockScroller = nextScroller;
     const home = String(isHome);
     if (document.documentElement.getAttribute('data-op-home') !== home) document.documentElement.setAttribute('data-op-home',home);
     document.documentElement.setAttribute('data-op-visibility',document.hidden?'hidden':'visible');
@@ -648,6 +653,31 @@
       clearRootVar('--op-reading-shift');
     }
   }
+  /* Review fix P2: dock clearance. A composer dock that overlays the conversation scroller (Gemini's
+   * absolute input container) rather than following the thread in flow (ChatGPT's sticky footer) covers the
+   * last reply's action row once the two-row Composer Surface makes it taller. The overlaid scroller carries a
+   * reversible mark; hosts.css adds an empty ::after of --op-dock-clearance after the thread. The clearance is
+   * the measured overlap at the scroll end plus a small gap; the ::after changes neither the scroller box nor
+   * the dock, so the measurement never feeds back on itself. */
+  const DOCK_GAP=8;
+  let dockScrim=null, dockScroller=null;
+  function overlaidScroller(scrim) {
+    const turn=adapter.assistantTurns()[0]||adapter.userTurns()[0];
+    if (!scrim || !turn) return null;
+    const scroller=adapter.scrollContainer(turn);
+    if (!scroller || [document.scrollingElement,document.documentElement,document.body].includes(scroller) || scroller.contains(scrim) || scrim.contains(scroller)) return null;
+    return scroller;
+  }
+  function syncDockClearance() {
+    let clearance=0;
+    if (enabled && dockScroller?.isConnected && dockScrim?.isConnected) {
+      const box=dockScroller.getBoundingClientRect(), dock=dockScrim.getBoundingClientRect();
+      const padding=parseFloat(getComputedStyle(dockScroller).paddingBottom)||0;
+      // Only a dock docked over the scroller's bottom edge covers the end of the thread.
+      if (dock.top < box.bottom && dock.bottom >= box.bottom - 1) clearance=Math.max(0,Math.ceil(box.bottom - padding - dock.top + DOCK_GAP));
+    }
+    if (clearance) setRootVar('--op-dock-clearance',clearance+'px'); else clearRootVar('--op-dock-clearance');
+  }
   function primaryResized() { syncReadingWidth(); scheduleGeometry(); }
   function syncAmbient() {
     const needed=(cfg.ambientIntensity>0 && (cfg.ambientStyle!=='none' || cfg.ambientTexture!=='off')) || cfg.semanticAura;
@@ -676,7 +706,7 @@
     if(!enabled || stopped || document.hidden || !document.body) return;
     passes++;
     if(route!==location.href) {route=location.href;revision++;resetConversation();}
-    syncSurfaces(); syncReadingWidth(); syncAmbient(); syncCodes(); syncRail(); syncDock(); syncThoughts();
+    syncSurfaces(); syncReadingWidth(); syncDockClearance(); syncAmbient(); syncCodes(); syncRail(); syncDock(); syncThoughts();
   }
   function suspend() {
     enabled=false;
@@ -687,7 +717,8 @@
     if(scrollFrame) cancelAnimationFrame(scrollFrame);scrollFrame=null;
     if(geometryFrame) cancelAnimationFrame(geometryFrame);geometryFrame=null;
     clearSurfaceMarks();
-    syncReadingWidth();
+    dockScrim=dockScroller=null;
+    syncReadingWidth(); syncDockClearance();
     document.documentElement.removeAttribute('data-op-home');
     document.documentElement.removeAttribute('data-op-visibility');
     clearActivity();

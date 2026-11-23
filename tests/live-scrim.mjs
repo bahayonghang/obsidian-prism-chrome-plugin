@@ -159,10 +159,9 @@ function crispTargets(host) {
     ? { editor: s.editor, disclaimer: s.disclaimer, actions: '[data-turn-key]:last-of-type .turn-actions' }
     : { editor: s.editor, disclaimer: s.disclaimer, actions: 'model-response:last-of-type message-actions' };
 }
-async function assertCrispAndClickable(page, host, label, { actions = true } = {}) {
+async function assertCrispAndClickable(page, host, label) {
   const s = LIVE_SELECTORS[host];
   const targets = crispTargets(host);
-  if (!actions) delete targets.actions;
   for (const [name, selector] of Object.entries(targets)) {
     const rect = await page.locator(selector).first().evaluate(node => {
       const r = node.getBoundingClientRect();
@@ -179,11 +178,25 @@ async function assertCrispAndClickable(page, host, label, { actions = true } = {
     const r = node.getBoundingClientRect();
     const hit = document.elementFromPoint(r.left + Math.min(r.width / 2, 14), r.top + r.height / 2);
     return [name, Boolean(hit && (node === hit || node.contains(hit)))];
-  })), { editor: s.editor, add: s.add, model: s.model, disclaimer: s.disclaimer, ...(actions ? { action: `${crispTargets(host).actions} button` } : {}) });
+  })), { editor: s.editor, add: s.add, model: s.model, disclaimer: s.disclaimer, action: `${targets.actions} button` });
   for (const [name, ok] of Object.entries(hits)) assert.equal(ok, true, `${label}: ${name} is hit-testable on top of the scrim`);
+  // Scrolled to the end, the last reply's action row sits fully above the Composer Surface (two-row on by
+  // default), and every action button is what the user hits at its own centre.
+  const row = await page.evaluate(([actions, composer]) => {
+    const box = document.querySelector(actions).getBoundingClientRect();
+    const card = document.querySelector(composer).getBoundingClientRect();
+    const buttons = [...document.querySelectorAll(`${actions} button`)].map(button => {
+      const r = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { label: button.getAttribute('aria-label'), hit: Boolean(hit && (hit === button || button.contains(hit))) };
+    });
+    return { top: box.top, bottom: box.bottom, cardTop: card.top, buttons };
+  }, [targets.actions, s.composer]);
+  assert.ok(row.top >= 0 && row.bottom <= row.cardTop, `${label}: the last reply's action row (${row.top}-${row.bottom}) is visible above the Composer Surface (top ${row.cardTop})`);
+  for (const button of row.buttons) assert.equal(button.hit, true, `${label}: the "${button.label}" action is hit at its centre, not covered by the composer dock`);
   await page.locator(s.add).click({ trial: true });
   await page.locator(s.model).click({ trial: true });
-  if (actions) await page.locator(`${crispTargets(host).actions} button`).first().click({ trial: true });
+  await page.locator(`${targets.actions} button`).first().click({ trial: true });
 }
 
 /** Every attribute of every element in the conversation area (DOM restoration after disable). An emptied inline
@@ -261,17 +274,9 @@ async function checkHostScheme(suite, host, scheme) {
     if (blurs) {
       assert.ok(behind.sharpness < open.sharpness * 0.6, `${label}: text behind the scrim is blurred (edge ${behind.sharpness.toFixed(2)} vs ${open.sharpness.toFixed(2)})`);
     } else console.log(`NOTE ${label}: this engine paints no backdrop-filter blur in screenshots; blur sharpness not verified (variance ${behind.variance.toFixed(0)} vs ${open.variance.toFixed(0)})`);
-    if (host === 'gemini') {
-      // The two-row Composer Surface (#19) makes Gemini's absolute input-container taller than the fixture's fixed
-      // 150px scroller bottom padding, so the card itself overlaps the last reply's action row with or without any
-      // scrim paint. Check the editor/disclaimer as is, and isolate the action row from that layout interaction.
-      await assertCrispAndClickable(page, host, label, { actions: false });
-      await patchConfig(page, { composerRestyle: false }, () => document.documentElement.getAttribute('data-op-composer') !== 'true');
-      await scrollToEnd(page, host);
-      await assertCrispAndClickable(page, host, `${label} (single-row composer)`);
-      await patchConfig(page, { composerRestyle: true }, () => document.documentElement.getAttribute('data-op-composer') === 'true');
-      await scrollToEnd(page, host);
-    } else await assertCrispAndClickable(page, host, label);
+    // Default settings: the two-row Composer Surface (#19) is on, on both hosts.
+    assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-op-composer')), 'true', `${label}: composerRestyle is on by default`);
+    await assertCrispAndClickable(page, host, label);
     await patchConfig(page, { ambientStyle: 'aurora' }, () => document.documentElement.getAttribute('data-op-ambient-style') === 'aurora');
     await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-${scheme}-live-scrim.png`) });
 
@@ -331,7 +336,7 @@ async function checkFallback(suite, host) {
     assert.ok(occlusion.max <= 0.6, `${label}: fallback gradient stays at or below ~60% canvas (max alpha ${occlusion.max.toFixed(2)})`);
     assert.ok(occlusion.atCenter >= 0.2, `${label}: fallback still softens the area beside the composer (alpha ${occlusion.atCenter.toFixed(2)})`);
     assert.ok(occlusion.maxStep <= 0.12, `${label}: fallback has no hard edge (max step ${occlusion.maxStep.toFixed(2)})`);
-    await assertCrispAndClickable(page, host, label, { actions: host !== 'gemini' });
+    await assertCrispAndClickable(page, host, label);
     assert.deepEqual(errors, []);
     console.log(`PASS ${label}: fallback gradient peaks at ${(occlusion.max * 100).toFixed(0)}% canvas with no solid block`);
   });
