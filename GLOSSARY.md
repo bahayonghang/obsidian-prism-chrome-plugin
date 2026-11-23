@@ -63,7 +63,7 @@ The elevated input card housing the host's native prompt editor, circular add bu
 _Avoid_: Input box, prompt bar, chat form
 
 **Composer Scrim**:
-The top-feathered blur occlusion behind the Composer Surface in an active conversation: a translucent (about 45%) canvas tint with a backdrop blur and no solid base, so the horizon glow shows through continuously while scrolled conversation text blurs behind floating controls. Without backdrop-filter support it falls back to a low-opacity gradient. Where the dock overlays the conversation (Gemini), the thread gets trailing space so the last reply stays above it.
+The dual-mode composer dock backdrop in an active conversation. When the dock overlays the conversation scroller (such as Gemini or a sticky-in-scroller layout), it draws a top-feathered blur occlusion behind the Composer Surface (`~44%` canvas tint in dark mode, `~26%` in light mode) with a backdrop blur and no solid base—falling back to a low-opacity gradient without backdrop-filter support—and adds trailing clearance to the overlaid scroller so the last reply stays above it. When the dock sits in flow below the scroller as a separate flex sibling (such as ChatGPT's in-flow footer), it clears native paint, gradients, and masks with no canvas veil or blur so the Ambient Stage glow continues cleanly to the viewport bottom while empty spacers and disclaimers tighten.
 _Avoid_: Footer mask, white slab, solid fade, transparent overlay
 
 **Model Capsule**:
