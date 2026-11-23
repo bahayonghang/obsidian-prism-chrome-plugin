@@ -202,13 +202,15 @@
     if (!originals.has(root)) {
       const attrs = {};
       for (const attr of Array.from(root.attributes)) if (attr.name.startsWith('data-op-')) attrs[attr.name] = attr.value;
-      originals.set(root, {attrs, alpha: root.style.getPropertyValue('--op-ambient-alpha'), priority: root.style.getPropertyPriority('--op-ambient-alpha')});
+      originals.set(root, {attrs, alpha: root.style.getPropertyValue('--op-ambient-alpha'), priority: root.style.getPropertyPriority('--op-ambient-alpha'), hadStyle: root.getAttribute('style') !== null});
     }
     if (!enabled) {
       const original = originals.get(root);
       for (const attr of Array.from(root.attributes)) if (attr.name.startsWith('data-op-')) root.removeAttribute(attr.name);
       for (const [key,value] of Object.entries(original.attrs)) root.setAttribute(key,value);
       if (original.alpha) root.style.setProperty('--op-ambient-alpha', original.alpha, original.priority); else root.style.removeProperty('--op-ambient-alpha');
+      // Review fix S2: no empty style="" residue on a root that had no style attribute.
+      if (!original.hadStyle && root.getAttribute('style')?.trim() === '') root.removeAttribute('style');
       return false;
     }
     const scheme = resolveScheme(cfg);

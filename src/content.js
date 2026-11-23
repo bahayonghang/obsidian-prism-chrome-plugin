@@ -610,23 +610,42 @@
     if (!enabled || document.hidden || !ambient || geometryFrame) return;
     geometryFrame=requestAnimationFrame(updateAmbientGeometry);
   }
+  /* Root custom properties owned by the runtime (review fix S2), following the --op-ambient-alpha pattern in
+   * config-schema.js: the first write saves the original inline value and priority, clearing restores them,
+   * and an emptied style attribute that did not exist before is removed (no style="" residue). */
+  const rootVarOriginals=new Map();
+  let rootHadStyle=false;
+  function setRootVar(name,value) {
+    const root=document.documentElement;
+    if (!rootVarOriginals.has(name)) {
+      if (!rootVarOriginals.size) rootHadStyle=root.getAttribute('style')!==null;
+      rootVarOriginals.set(name,[root.style.getPropertyValue(name),root.style.getPropertyPriority(name)]);
+    }
+    if (root.style.getPropertyValue(name)!==value) root.style.setProperty(name,value);
+  }
+  function clearRootVar(name) {
+    const root=document.documentElement, original=rootVarOriginals.get(name);
+    if (!original) return;
+    rootVarOriginals.delete(name);
+    if (original[0]) root.style.setProperty(name,original[0],original[1]); else root.style.removeProperty(name);
+    if (!rootVarOriginals.size && !rootHadStyle && root.getAttribute('style')?.trim()==='') root.removeAttribute('style');
+  }
   /* v0.3.1 #21 Content Width Presets: one root reading width computed from the main area's width.
    * hosts.css applies it only to the adapter's declared width limiters (no per-node marks).
-   * `standard`, a disabled site and stop remove both variables, restoring the native width. */
+   * `standard`, a disabled site and stop restore both variables, restoring the native width. */
   let readingWidth='';
   function syncReadingWidth() {
-    const root=document.documentElement;
     const mainWidth=enabled && primarySurface?.isConnected ? primarySurface.getBoundingClientRect().width : 0;
     const target=mainWidth ? Adapters.contentWidthTarget(adapter.contentWidth?.native,cfg.contentWidth,mainWidth,global.innerWidth||0) : null;
     const next=target ? `${target.width}px ${target.shift}px` : '';
-    if (next===readingWidth || !root) return;
+    if (next===readingWidth || !document.documentElement) return;
     readingWidth=next;
     if (target) {
-      root.style.setProperty('--op-reading-width',target.width+'px');
-      root.style.setProperty('--op-reading-shift',target.shift+'px');
+      setRootVar('--op-reading-width',target.width+'px');
+      setRootVar('--op-reading-shift',target.shift+'px');
     } else {
-      root.style.removeProperty('--op-reading-width');
-      root.style.removeProperty('--op-reading-shift');
+      clearRootVar('--op-reading-width');
+      clearRootVar('--op-reading-shift');
     }
   }
   function primaryResized() { syncReadingWidth(); scheduleGeometry(); }

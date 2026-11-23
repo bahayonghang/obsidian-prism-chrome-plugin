@@ -614,3 +614,45 @@ test('runtime publishes the Content Width Preset as a root reading width and rem
   ctx.runtime.stop();
   assert.deepEqual(vars(), ['', ''], 'stop restores the native width');
 });
+
+/** Replaces an element's inline style with one that serializes into its `style` attribute like a browser:
+ * removing the last declaration leaves `style=""`, and removing an absent property changes nothing. */
+function reflectInlineStyle(element, declarations = []) {
+  const values = new Map(declarations.map(([name, value, priority = '']) => [name, [value, priority]]));
+  const write = () => element.setAttribute('style', [...values].map(([name, [value, priority]]) => `${name}: ${value}${priority ? ' !important' : ''};`).join(' '));
+  if (values.size) write();
+  element.style = {
+    getPropertyValue: name => values.get(name)?.[0] || '',
+    getPropertyPriority: name => values.get(name)?.[1] || '',
+    setProperty(name, value, priority = '') { values.set(name, [String(value), priority]); write(); },
+    removeProperty(name) { if (values.delete(name)) write(); }
+  };
+}
+
+// Review fix S2: root reading-width variables follow the --op-ambient-alpha pattern (save and restore the
+// original value and priority) and leave no empty style attribute behind when there was none.
+test('root reading width restores the original inline value and priority, and leaves no style="" residue', async () => {
+  const fresh = createRuntimeDom({ contentWidth: 'full' });
+  const freshRoot = fresh.elements.get('docEl');
+  reflectInlineStyle(freshRoot);
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(freshRoot.style.getPropertyValue('--op-reading-width'), '1124px');
+  fresh.runtime.stop();
+  assert.equal(freshRoot.getAttribute('style'), null, 'a root that had no style attribute gets none back');
+
+  const owned = createRuntimeDom({ contentWidth: 'full' });
+  const ownedRoot = owned.elements.get('docEl');
+  reflectInlineStyle(ownedRoot, [['--op-reading-width', '640px', 'important'], ['--host-gap', '4px']]);
+  const original = ownedRoot.getAttribute('style');
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(ownedRoot.style.getPropertyValue('--op-reading-width'), '1124px');
+  await owned.h.schema.callApi(owned.h.api.storage.local, 'set', { [owned.h.schema.STORAGE_KEY]: { ...owned.h.schema.DEFAULT_CONFIG, enabled: true, contentWidth: 'standard' } });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.deepEqual([ownedRoot.style.getPropertyValue('--op-reading-width'), ownedRoot.style.getPropertyPriority('--op-reading-width')], ['640px', 'important'], 'standard restores the original value and priority');
+  assert.equal(ownedRoot.style.getPropertyValue('--op-reading-shift'), '', 'a variable that was absent stays absent');
+  owned.runtime.stop();
+  assert.equal(ownedRoot.style.getPropertyValue('--host-gap'), '4px');
+  assert.deepEqual([ownedRoot.style.getPropertyValue('--op-reading-width'), ownedRoot.style.getPropertyPriority('--op-reading-width')], ['640px', 'important']);
+  assert.equal(ownedRoot.style.getPropertyValue('--op-ambient-alpha'), '', 'stop also removes the ambient alpha');
+  assert.ok(ownedRoot.getAttribute('style').includes('--host-gap: 4px'), `the host's own declarations survive (${ownedRoot.getAttribute('style')} vs ${original})`);
+});
