@@ -65,6 +65,46 @@ export async function openLiveFixture(browser, host, { interceptFixtures, mainWi
   return { context, page };
 }
 
+/** Waits two animation frames so style and layout changes are painted. */
+export const settle = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+
+/**
+ * Runs `body({ page, context, errors })` on a live fixture and always closes the context. `suite` is the shared
+ * live-fixture bundle from browser-smoke.mjs ({ browser, engine, interceptFixtures, fixtureBridge, styles,
+ * scripts, artifacts }); without a fixtureBridge the page runs bare (native baselines). Page errors collect
+ * in `errors`; a failure saves `<engine>-<failure>.png` before rethrowing.
+ */
+export async function onLiveFixture(suite, host, { failure, initial, colorScheme, mainWidth } = {}, body) {
+  const { browser, engine, interceptFixtures, fixtureBridge, artifacts } = suite;
+  const initScript = fixtureBridge ? [fixtureBridge, { kind: engine === 'firefox' ? 'firefox' : 'chrome', initial }] : undefined;
+  const { context, page } = await openLiveFixture(browser, host, { interceptFixtures, colorScheme, mainWidth, initScript });
+  const errors = [];
+  page.on('pageerror', error => errors.push(error.message));
+  try {
+    return await body({ page, context, errors });
+  } catch (error) {
+    if (!page.isClosed()) await page.screenshot({ path: path.join(artifacts, `${engine}-${failure}.png`) }).catch(() => {});
+    throw error;
+  } finally { await context.close(); }
+}
+
+/** Injects the extension styles and scripts (as the content script would) and waits for the runtime. */
+export async function injectExtension(page, { styles, scripts }, { waitFor } = {}) {
+  for (const content of styles) await page.addStyleTag({ content });
+  for (const content of scripts) await page.addScriptTag({ content });
+  await page.waitForFunction(() => window.ObsidianPrismRuntime?.diagnostics().enabled);
+  if (waitFor) await page.waitForSelector(waitFor);
+}
+
+/** Patches the stored config through the fixture bridge; with `ready`, waits for it and for a painted frame. */
+export async function patchConfig(page, values, ready) {
+  await page.evaluate(patch => __prismFixture.patch(patch), values);
+  if (ready) {
+    await page.waitForFunction(ready);
+    await settle(page);
+  }
+}
+
 const near = (actual, expected, tolerance, label) => assert.ok(Math.abs(actual - expected) <= tolerance, `${label}: expected ${expected}±${tolerance}, got ${actual}`);
 const normalize = value => String(value).replace(/\s+/g, ' ').trim();
 
@@ -196,12 +236,11 @@ async function assertProbePrivacy(page, host, probeSource) {
 }
 
 /** Native baselines on the probe-derived fixtures, measured without the extension, plus probe privacy. */
-export async function checkLiveFixtureBaselines({ browser, engine, interceptFixtures, probeSource, artifacts }) {
+export async function checkLiveFixtureBaselines(suite) {
+  const { engine, probeSource, artifacts } = suite;
   for (const host of ['chatgpt', 'gemini']) {
-    const { context, page } = await openLiveFixture(browser, host, { interceptFixtures });
-    const errors = [];
-    page.on('pageerror', error => errors.push(error.message));
-    try {
+    // Native baselines run without the fixture bridge.
+    await onLiveFixture({ ...suite, fixtureBridge: undefined }, host, { failure: `${host}-live-failure` }, async ({ page, errors }) => {
       const widths = [];
       for (const mainWidth of [1280, 1100]) {
         await setMainWidth(page, MAIN_SELECTORS[host], mainWidth);
@@ -216,9 +255,6 @@ export async function checkLiveFixtureBaselines({ browser, engine, interceptFixt
       await assertProbePrivacy(page, host, probeSource);
       assert.deepEqual(errors, []);
       console.log(`PASS ${engine} ${host} live fixture native baselines (main 1280/1100) and read-only probe privacy`);
-    } catch (error) {
-      if (!page.isClosed()) await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-live-failure.png`) }).catch(() => {});
-      throw error;
-    } finally { await context.close(); }
+    });
   }
 }

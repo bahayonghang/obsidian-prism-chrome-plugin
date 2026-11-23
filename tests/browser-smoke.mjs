@@ -1248,15 +1248,17 @@ else if (engine === 'chromium' && process.env.PRISM_SKIP_EXTENSION !== '1') awai
 else console.log(`NOTE ${engine}: this run covers injected offline DOM fixtures only, not native extension installation.`);
 const browser = await type.launch(launchOptions);
 try {
-  await checkLiveFixtureBaselines({ browser, engine, interceptFixtures, probeSource, artifacts: ARTIFACTS });
-  await checkTwoRowComposer({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
+  // One shared bundle for every probe-derived live-fixture check (see onLiveFixture in live-fixtures.mjs).
+  const liveSuite = { browser, engine, interceptFixtures, fixtureBridge, styles, scripts, probeSource, artifacts: ARTIFACTS };
+  await checkLiveFixtureBaselines(liveSuite);
+  await checkTwoRowComposer(liveSuite);
   // v0.3.1 #18 live turns and tier-aware Reference Capacity
-  await checkLiveTurnsAndCapacity({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
-  await checkHeadingTypography({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
+  await checkLiveTurnsAndCapacity(liveSuite);
+  await checkHeadingTypography(liveSuite);
   // v0.3.1 #21 Content Width Presets measured on the rendered paragraph and composer card
-  await checkLiveWidthPresets({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
+  await checkLiveWidthPresets(liveSuite);
   // v0.3.1 #22 blur Composer Scrim
-  await checkLiveComposerScrim({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
+  await checkLiveComposerScrim(liveSuite);
   if (!liveOnly) {
     await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
     await savedDisabledStartup(browser);

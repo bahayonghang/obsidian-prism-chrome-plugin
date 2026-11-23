@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { headingStyles } from './measure.mjs';
-import { LIVE_SELECTORS, openLiveFixture } from './live-fixtures.mjs';
+import { LIVE_SELECTORS, onLiveFixture, injectExtension } from './live-fixtures.mjs';
 
 const TAGS = ['h1', 'h2', 'h3', 'h4'];
 const MONOSPACE = 'ui-monospace, "Cascadia Mono", Consolas, "Courier New", monospace';
@@ -136,24 +136,16 @@ async function withMonospaceBody(page, host, measure) {
   finally { await page.evaluate(() => document.getElementById('prism-test-monospace-body')?.remove()); }
 }
 
-async function injectExtension(page, styles, scripts) {
-  for (const content of styles) await page.addStyleTag({ content });
-  for (const content of scripts) await page.addScriptTag({ content });
-  await page.waitForFunction(() => window.ObsidianPrismRuntime?.diagnostics().enabled);
-}
-
 async function setPalette(page, patch, expected) {
   await page.evaluate(values => __prismFixture.patch(values), patch);
   await page.waitForFunction(value => document.documentElement.getAttribute('data-op-effective-palette') === value, expected);
 }
 
-export async function checkHeadingTypography({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts }) {
+export async function checkHeadingTypography(suite) {
+  const { engine, artifacts } = suite;
   for (const host of ['chatgpt', 'gemini']) {
     const scope = LIVE_SELECTORS[host].assistant;
-    const { context, page } = await openLiveFixture(browser, host, { interceptFixtures, initScript: [fixtureBridge, engine === 'firefox' ? 'firefox' : 'chrome'] });
-    const errors = [];
-    page.on('pageerror', error => errors.push(error.message));
-    try {
+    await onLiveFixture(suite, host, { failure: `${host}-headings-failure` }, async ({ page, errors }) => {
       await addProbeHeadings(page, host);
       const native = await headingStyles(page, scope);
       const nativeProbes = await probeHeadingStyles(page);
@@ -168,7 +160,7 @@ export async function checkHeadingTypography({ browser, engine, interceptFixture
         assert.deepEqual(hierarchyViolations(native), [], 'chatgpt native: hierarchy is already correct');
       }
 
-      await injectExtension(page, styles, scripts);
+      await injectExtension(page, suite);
       await setPalette(page, { themeMode: 'dark', palette: 'obsidian' }, 'obsidian');
       const themed = await headingStyles(page, scope);
       assertFollowsBody(themed, `${host} obsidian`);
@@ -212,9 +204,6 @@ export async function checkHeadingTypography({ browser, engine, interceptFixture
 
       assert.deepEqual(errors, []);
       console.log(`PASS ${engine} ${host} live fixture heading typography: body font family, hierarchy, palette foreground, native restore`);
-    } catch (error) {
-      if (!page.isClosed()) await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-headings-failure.png`) }).catch(() => {});
-      throw error;
-    } finally { await context.close(); }
+    });
   }
 }

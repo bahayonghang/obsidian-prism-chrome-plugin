@@ -5,14 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { openLiveFixture, LIVE_SELECTORS } from './live-fixtures.mjs';
-
-async function injectExtension(page, styles, scripts) {
-  for (const content of styles) await page.addStyleTag({ content });
-  for (const content of scripts) await page.addScriptTag({ content });
-  await page.waitForFunction(() => window.ObsidianPrismRuntime?.diagnostics().enabled);
-  await page.waitForSelector('.op-vial-pill');
-}
+import { onLiveFixture, injectExtension, LIVE_SELECTORS } from './live-fixtures.mjs';
 
 const summaryText = page => page.locator('.op-vial-summary').textContent();
 async function waitForSummary(page, pattern, label) {
@@ -40,12 +33,10 @@ async function popoverRows(page) {
   return rows;
 }
 
-async function checkChatGPT({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts }) {
-  const { context, page } = await openLiveFixture(browser, 'chatgpt', { interceptFixtures, initScript: [fixtureBridge, engine === 'firefox' ? 'firefox' : 'chrome'] });
-  const errors = [];
-  page.on('pageerror', error => errors.push(error.message));
-  try {
-    await injectExtension(page, styles, scripts);
+async function checkChatGPT(suite) {
+  const { engine, artifacts } = suite;
+  await onLiveFixture(suite, 'chatgpt', { failure: 'chatgpt-live-turns-failure' }, async ({ page, errors }) => {
+    await injectExtension(page, suite, { waitFor: '.op-vial-pill' });
     assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-op-home')), 'false', 'chatgpt live: an active conversation is not the Home State');
 
     // Context Vial: a non-zero local estimate against the High tier (400K).
@@ -98,26 +89,18 @@ async function checkChatGPT({ browser, engine, interceptFixtures, fixtureBridge,
     await waitForSummary(page, /\/ 128\.0K\?$/, 'chatgpt live back to auto');
     assert.deepEqual(errors, []);
     console.log(`PASS ${engine} chatgpt live fixture: turns recognized, non-zero Context Vial, rail search/jump, not Home State, tier capacities with unrecognized '?' and manual override`);
-  } catch (error) {
-    if (!page.isClosed()) await page.screenshot({ path: path.join(artifacts, `${engine}-chatgpt-live-turns-failure.png`) }).catch(() => {});
-    throw error;
-  } finally { await context.close(); }
+  });
 }
 
-async function checkGemini({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts }) {
-  const { context, page } = await openLiveFixture(browser, 'gemini', { interceptFixtures, initScript: [fixtureBridge, engine === 'firefox' ? 'firefox' : 'chrome'] });
-  const errors = [];
-  page.on('pageerror', error => errors.push(error.message));
-  try {
-    await injectExtension(page, styles, scripts);
+async function checkGemini(suite) {
+  const { engine } = suite;
+  await onLiveFixture(suite, 'gemini', { failure: 'gemini-live-turns-failure' }, async ({ page, errors }) => {
+    await injectExtension(page, suite, { waitFor: '.op-vial-pill' });
     await waitForSummary(page, /^≈ [1-9][\d.]*K?\+? \/ 1\.0M$/, 'gemini live Neon High');
     assert.match((await popoverRows(page))['Reference capacity'] || '', /^1,000,000 \(Auto fallback · Neon High\)$/);
     assert.deepEqual(errors, []);
     console.log(`PASS ${engine} gemini live fixture: custom mode keeps the 1M auto fallback, labelled as such`);
-  } catch (error) {
-    if (!page.isClosed()) await page.screenshot({ path: path.join(artifacts, `${engine}-gemini-live-turns-failure.png`) }).catch(() => {});
-    throw error;
-  } finally { await context.close(); }
+  });
 }
 
 export async function checkLiveTurnsAndCapacity(options) {

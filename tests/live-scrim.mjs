@@ -6,30 +6,20 @@
  */
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { openLiveFixture, LIVE_SELECTORS } from './live-fixtures.mjs';
+import { onLiveFixture, injectExtension as injectRuntime, patchConfig, settle as frames, LIVE_SELECTORS } from './live-fixtures.mjs';
 import { capturePixels, regionStats, sampleBelow } from './measure.mjs';
 
 /** The @supports condition that switches the scrim from the fallback gradient to the blur. */
 export const SCRIM_BLUR_SUPPORTS = '@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))';
 
-const frames = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 const rgb = value => { const [r, g, b] = value.match(/[\d.]+/g).map(Number); return { r, g, b }; };
 const distance = (a, b) => Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
 // Every horizon tone (blue, violet, cyan) is bluer than its red/green mix; glow raises this on any canvas.
 const blueness = p => p.b - (p.r + p.g) / 2;
 const fmt = p => `rgb(${Math.round(p.r)},${Math.round(p.g)},${Math.round(p.b)})`;
 
-async function injectExtension(page, styles, scripts) {
-  for (const content of styles) await page.addStyleTag({ content });
-  for (const content of scripts) await page.addScriptTag({ content });
-  await page.waitForFunction(() => window.ObsidianPrismRuntime?.diagnostics().enabled);
-  await page.waitForSelector('.op-vial-pill');
-  await frames(page);
-}
-
-async function patchConfig(page, values, ready) {
-  await page.evaluate(patch => __prismFixture.patch(patch), values);
-  await page.waitForFunction(ready);
+async function injectExtension(page, suite) {
+  await injectRuntime(page, suite, { waitFor: '.op-vial-pill' });
   await frames(page);
 }
 
@@ -226,14 +216,11 @@ async function gemiInputLayout(page) {
 
 const near = (actual, expected, tolerance, label) => assert.ok(Math.abs(actual - expected) <= tolerance, `${label}: expected ${expected}±${tolerance}, got ${actual}`);
 
-async function checkHostScheme({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts }, host, scheme) {
+async function checkHostScheme(suite, host, scheme) {
+  const { engine, artifacts } = suite;
   const label = `${engine} ${host} ${scheme}`;
-  const kind = engine === 'firefox' ? 'firefox' : 'chrome';
   const initial = { themeMode: scheme, ambientStyle: 'aurora', ambientTexture: 'off', motionLevel: 'off' };
-  const { context, page } = await openLiveFixture(browser, host, { interceptFixtures, colorScheme: scheme, initScript: [fixtureBridge, { kind, initial }] });
-  const errors = [];
-  page.on('pageerror', error => errors.push(error.message));
-  try {
+  await onLiveFixture(suite, host, { failure: `${host}-${scheme}-live-scrim-failure`, colorScheme: scheme, initial }, async ({ page, errors }) => {
     await scrollToEnd(page, host);
     const native = { canvas: await canvasColor(page), attributes: await attributeSnapshot(page, host), paint: await dockPaint(page, host) };
     native.occlusion = await occlusionColumn(page, host, native.canvas);
@@ -244,7 +231,7 @@ async function checkHostScheme({ browser, engine, interceptFixtures, fixtureBrid
       assert.ok(native.occlusion.max <= 0.05, `${label}: native ChatGPT dock wrappers are transparent (alpha ${native.occlusion.max.toFixed(2)})`);
     }
 
-    await injectExtension(page, styles, scripts);
+    await injectExtension(page, suite);
     await scrollToEnd(page, host);
     assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-op-home')), 'false', `${label}: active conversation`);
     const canvas = await canvasColor(page);
@@ -323,23 +310,18 @@ async function checkHostScheme({ browser, engine, interceptFixtures, fixtureBrid
     }
     assert.deepEqual(errors, []);
     console.log(`PASS ${label} live fixture: blur Composer Scrim lets the glow through (alpha ${occlusion.atCenter.toFixed(2)}), cuts text variance to ${(behind.variance / open.variance * 100).toFixed(0)}%, keeps controls crisp${scheme === 'dark' ? ', and restores under Native Palette, disable and Home State' : ''}`);
-  } catch (error) {
-    if (!page.isClosed()) await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-${scheme}-live-scrim-failure.png`) }).catch(() => {});
-    throw error;
-  } finally { await context.close(); }
+  });
 }
 
 /** No backdrop-filter support: the @supports block is disabled and the fallback gradient must stay translucent. */
-async function checkFallback({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts }, host) {
+async function checkFallback(suite, host) {
+  const { engine, styles } = suite;
   const label = `${engine} ${host} no-backdrop-filter`;
   const patched = styles.map(css => css.split(SCRIM_BLUR_SUPPORTS).join('@supports (prism-unsupported-property: none)'));
   assert.notDeepEqual(patched, styles, 'the scrim blur is gated by the expected @supports condition');
-  const kind = engine === 'firefox' ? 'firefox' : 'chrome';
-  const { context, page } = await openLiveFixture(browser, host, { interceptFixtures, initScript: [fixtureBridge, { kind, initial: { themeMode: 'dark', ambientStyle: 'none', ambientTexture: 'off', motionLevel: 'off' } }] });
-  const errors = [];
-  page.on('pageerror', error => errors.push(error.message));
-  try {
-    await injectExtension(page, patched, scripts);
+  const initial = { themeMode: 'dark', ambientStyle: 'none', ambientTexture: 'off', motionLevel: 'off' };
+  await onLiveFixture(suite, host, { failure: `${host}-scrim-fallback-failure`, initial }, async ({ page, errors }) => {
+    await injectExtension(page, { ...suite, styles: patched });
     await scrollToEnd(page, host);
     assert.equal(await page.locator(LIVE_SELECTORS[host].composer).first().evaluate(node => {
       for (let el = node; el; el = el.parentElement) if ((getComputedStyle(el, '::before').backdropFilter || 'none') !== 'none' || (getComputedStyle(el).backdropFilter || 'none') !== 'none') return true;
@@ -352,10 +334,7 @@ async function checkFallback({ browser, engine, interceptFixtures, fixtureBridge
     await assertCrispAndClickable(page, host, label, { actions: host !== 'gemini' });
     assert.deepEqual(errors, []);
     console.log(`PASS ${label}: fallback gradient peaks at ${(occlusion.max * 100).toFixed(0)}% canvas with no solid block`);
-  } catch (error) {
-    if (!page.isClosed()) await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-scrim-fallback-failure.png`) }).catch(() => {});
-    throw error;
-  } finally { await context.close(); }
+  });
 }
 
 export async function checkLiveComposerScrim(options) {

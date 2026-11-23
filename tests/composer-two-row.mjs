@@ -7,7 +7,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { controlGeometry } from './measure.mjs';
-import { LIVE_SELECTORS, openLiveFixture } from './live-fixtures.mjs';
+import { LIVE_SELECTORS, onLiveFixture, injectExtension, patchConfig } from './live-fixtures.mjs';
 
 /** The element that visibly paints the Composer Surface card on each host. */
 const CARD = { chatgpt: '[data-composer-layout]', gemini: '.text-input-field' };
@@ -226,17 +226,10 @@ async function exerciseComposer(page, host, label) {
   return { draft: draft.text, sent, composition: composition.seen, menu: { dx: menu.dx, gap: menu.gap } };
 }
 
-async function patchConfig(page, values) {
-  await page.evaluate(values => __prismFixture.patch(values), values);
-}
-
-export async function checkTwoRowComposer({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts }) {
+export async function checkTwoRowComposer(suite) {
+  const { engine, artifacts } = suite;
   for (const host of ['chatgpt', 'gemini']) {
-    const kind = engine === 'firefox' ? 'firefox' : 'chrome';
-    const { context, page } = await openLiveFixture(browser, host, { interceptFixtures, initScript: [fixtureBridge, { kind, initial: { themeMode: 'dark' } }] });
-    const errors = [];
-    page.on('pageerror', error => errors.push(error.message));
-    try {
+    await onLiveFixture(suite, host, { failure: `${host}-two-row-failure`, initial: { themeMode: 'dark' } }, async ({ page, errors }) => {
       if (host === 'chatgpt') {
         // Host CSS for ChatGPT's own multi-line state (the editor takes a full row natively).
         await page.addStyleTag({ content: '[data-composer-layout="multi-line"] [class*="composerGrid"]{grid-template-areas:"header header header" "primary primary primary" "leading footer trailing"}' });
@@ -248,9 +241,7 @@ export async function checkTwoRowComposer({ browser, engine, interceptFixtures, 
       assert.deepEqual(await cardSnapshot(page, host, { geometry: true }), nativeSnapshot, `${host}: exercising the native composer leaves it as it was`);
       await rememberHostNodes(page);
 
-      for (const content of styles) await page.addStyleTag({ content });
-      for (const content of scripts) await page.addScriptTag({ content });
-      await page.waitForFunction(() => window.ObsidianPrismRuntime?.diagnostics().enabled);
+      await injectExtension(page, suite);
 
       for (const theme of ['dark', 'light']) {
         const label = `${engine} ${host} ${theme}`;
@@ -310,10 +301,7 @@ export async function checkTwoRowComposer({ browser, engine, interceptFixtures, 
       await assertHostNodesUnchanged(page, `${engine} ${host} stopped`);
       assert.deepEqual(errors, []);
       console.log(`PASS ${engine} ${host} two-row Composer Surface: geometry, host DOM order, native input/menu/upload, reversible in dark and light`);
-    } catch (error) {
-      if (!page.isClosed()) await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-two-row-failure.png`) }).catch(() => {});
-      throw error;
-    } finally { await context.close(); }
+    });
   }
 }
 

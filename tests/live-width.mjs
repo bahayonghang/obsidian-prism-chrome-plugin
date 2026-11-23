@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { openLiveFixture, LIVE_SELECTORS, NATIVE_BASELINES } from './live-fixtures.mjs';
+import { onLiveFixture, injectExtension, patchConfig, settle, LIVE_SELECTORS, NATIVE_BASELINES } from './live-fixtures.mjs';
 import { MAIN_SELECTORS, paragraphWidth, setMainWidth } from './measure.mjs';
 
 const MIN_STEP = 120; // spec: adjacent presets differ by at least 120px
@@ -13,15 +13,8 @@ const MIDPOINT_TOLERANCE = 1; // px: wide equals (standard + full) / 2 within su
 const WIDE_CAP = 1200;
 const SITE_FLAG = { chatgpt: 'enableChatGPT', gemini: 'enableGemini' };
 
-async function injectExtension(page, styles, scripts) {
-  for (const content of styles) await page.addStyleTag({ content });
-  for (const content of scripts) await page.addScriptTag({ content });
-  await page.waitForFunction(() => window.ObsidianPrismRuntime?.diagnostics().enabled);
-  await page.waitForSelector('.op-width-toggle');
-}
-const settle = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 async function setPreset(page, preset) {
-  await page.evaluate(value => __prismFixture.patch({ contentWidth: value }), preset);
+  await patchConfig(page, { contentWidth: preset });
   await page.waitForFunction(value => document.documentElement.getAttribute('data-op-content-width') === value, preset);
   await settle(page);
 }
@@ -63,14 +56,12 @@ async function assertBubbleCap(page, host, preset) {
   assert.ok(result.width <= cap + 1, `${host} ${preset}: User Turn bubble (${result.width}) stays within min(78%, 820px) = ${cap}`);
 }
 
-async function checkHost({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts }, host) {
-  const { context, page } = await openLiveFixture(browser, host, { interceptFixtures, initScript: [fixtureBridge, engine === 'firefox' ? 'firefox' : 'chrome'] });
-  const errors = [];
-  page.on('pageerror', error => errors.push(error.message));
-  try {
+async function checkHost(suite, host) {
+  const { engine, artifacts } = suite;
+  await onLiveFixture(suite, host, { failure: `${host}-live-width-failure` }, async ({ page, errors }) => {
     // Native widths before the extension exists.
     const native = await measure(page, host);
-    await injectExtension(page, styles, scripts);
+    await injectExtension(page, suite, { waitFor: '.op-width-toggle' });
     for (const mainWidth of [1280, 1100]) {
       await setMainWidth(page, MAIN_SELECTORS[host], mainWidth);
       await settle(page);
@@ -127,14 +118,14 @@ async function checkHost({ browser, engine, interceptFixtures, fixtureBridge, st
     // Disabling the site or the extension in full restores native widths within 1px.
     for (const off of [{ [SITE_FLAG[host]]: false }, { enabled: false }]) {
       await setPreset(page, 'full');
-      await page.evaluate(values => __prismFixture.patch(values), off);
+      await patchConfig(page, off);
       await page.waitForFunction(() => !document.documentElement.hasAttribute('data-op-enabled'));
       await settle(page);
       const restored = await measure(page, host);
       const what = Object.keys(off)[0] === 'enabled' ? 'disabling the extension' : 'disabling the site';
       assert.ok(Math.abs(restored.paragraph.box - native.paragraph.box) <= 1, `${engine} ${host}: ${what} restores the native paragraph width (${restored.paragraph.box})`);
       assert.ok(Math.abs(restored.composer.width - native.composer.width) <= 1, `${engine} ${host}: ${what} restores the native composer width (${restored.composer.width})`);
-      await page.evaluate(flag => __prismFixture.patch({ enabled: true, [flag]: true, contentWidth: 'standard' }), SITE_FLAG[host]);
+      await patchConfig(page, { enabled: true, [SITE_FLAG[host]]: true, contentWidth: 'standard' });
       await page.waitForFunction(() => document.documentElement.getAttribute('data-op-enabled') === 'true');
     }
 
@@ -152,10 +143,7 @@ async function checkHost({ browser, engine, interceptFixtures, fixtureBridge, st
     }
     assert.deepEqual(errors, []);
     console.log(`PASS ${engine} ${host} live fixture: Content Width Presets at main 1280/1100 (midpoint, >=${MIN_STEP}px steps, composer follows, rail clear, native restore, <900px fallback)`);
-  } catch (error) {
-    if (!page.isClosed()) await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-live-width-failure.png`) }).catch(() => {});
-    throw error;
-  } finally { await context.close(); }
+  });
 }
 
 export async function checkLiveWidthPresets(options) {
