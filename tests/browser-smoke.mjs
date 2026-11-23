@@ -1242,8 +1242,15 @@ async function exerciseFixture(browser, host) {
 }
 
 // PRISM_SUITE=live-fixtures runs only the probe-derived fixture checks (a fast local loop; never a full pass).
-const liveOnly = process.env.PRISM_SUITE === 'live-fixtures';
-if (liveOnly) console.log('NOTE PRISM_SUITE=live-fixtures: only the probe-derived fixture checks run.');
+// PRISM_SUITE=live-baselines runs only the bare native baselines and read-only probe privacy checks.
+const suiteMode = process.env.PRISM_SUITE || 'all';
+if (!['all', 'live-fixtures', 'live-baselines'].includes(suiteMode)) {
+  throw new Error(`Unsupported PRISM_SUITE=${suiteMode}; expected live-fixtures, live-baselines, or unset`);
+}
+const liveOnly = suiteMode === 'live-fixtures';
+const baselinesOnly = suiteMode === 'live-baselines';
+if (baselinesOnly) console.log('NOTE PRISM_SUITE=live-baselines: only the native live-fixture baselines and probe privacy checks run.');
+else if (liveOnly) console.log('NOTE PRISM_SUITE=live-fixtures: only the probe-derived fixture checks run.');
 else if (engine === 'chromium' && process.env.PRISM_SKIP_EXTENSION !== '1') await actualChromiumExtension();
 else console.log(`NOTE ${engine}: this run covers injected offline DOM fixtures only, not native extension installation.`);
 const browser = await type.launch(launchOptions);
@@ -1251,15 +1258,17 @@ try {
   // One shared bundle for every probe-derived live-fixture check (see onLiveFixture in live-fixtures.mjs).
   const liveSuite = { browser, engine, interceptFixtures, fixtureBridge, styles, scripts, probeSource, artifacts: ARTIFACTS };
   await checkLiveFixtureBaselines(liveSuite);
-  await checkTwoRowComposer(liveSuite);
-  // v0.3.1 #18 live turns and tier-aware Reference Capacity
-  await checkLiveTurnsAndCapacity(liveSuite);
-  await checkHeadingTypography(liveSuite);
-  // v0.3.1 #21 Content Width Presets measured on the rendered paragraph and composer card
-  await checkLiveWidthPresets(liveSuite);
-  // v0.3.1 #22 blur Composer Scrim
-  await checkLiveComposerScrim(liveSuite);
-  if (!liveOnly) {
+  if (!baselinesOnly) {
+    await checkTwoRowComposer(liveSuite);
+    // v0.3.1 #18 live turns and tier-aware Reference Capacity
+    await checkLiveTurnsAndCapacity(liveSuite);
+    await checkHeadingTypography(liveSuite);
+    // v0.3.1 #21 Content Width Presets measured on the rendered paragraph and composer card
+    await checkLiveWidthPresets(liveSuite);
+    // v0.3.1 #22 blur Composer Scrim
+    await checkLiveComposerScrim(liveSuite);
+  }
+  if (!liveOnly && !baselinesOnly) {
     await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
     await savedDisabledStartup(browser);
     for (const host of ['chatgpt', 'gemini']) {
@@ -1269,6 +1278,8 @@ try {
   }
 }
 finally { await browser.close(); }
-console.log(liveOnly
-  ? 'Live-fixture subset completed. This is not a full browser suite pass.'
-  : 'Browser suite completed. These are synthetic DOM fixtures, not validation against signed-in production websites.');
+console.log(baselinesOnly
+  ? 'Live-baselines subset completed. This is not a full browser suite pass.'
+  : liveOnly
+    ? 'Live-fixture subset completed. This is not a full browser suite pass.'
+    : 'Browser suite completed. These are synthetic DOM fixtures, not validation against signed-in production websites.');

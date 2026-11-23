@@ -19,12 +19,12 @@ a{color:inherit;text-decoration:none}
 #stage-slideover-sidebar a[aria-current]{background:#2a2a2a}
 .sidebar-heading{font-size:12px;color:var(--text-secondary);padding:14px 10px 6px}
 .main-column{position:relative;display:flex;flex:1 1 0;min-width:0;flex-direction:column;height:100vh}
-main{position:relative;flex:1 1 0;min-height:0;width:100%;display:flex;flex-direction:column}
+main{position:relative;flex:1 1 0;min-height:0;width:100%;display:flex;flex-direction:column;--thread-content-max-width:48rem}
 .page-header{height:52px;flex:none;display:flex;align-items:center;padding:0 12px;font-size:18px}
 .composer-parent{flex:1 1 0;min-height:0;display:flex;flex-direction:column}
 [data-prism-test-scroller]{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden}
 /* Probe: the transcript container limits the thread with --thread-content-max-width (48rem) + 20px side padding. */
-[class*="transcriptContent"]{--thread-content-max-width:48rem;width:100%;max-width:calc(var(--thread-content-max-width) + 40px);margin-inline:auto;padding:0 20px 32px;display:flex;flex-direction:column}
+[class*="transcriptContent"]{--thread-content-max-width:48rem;width:100%;max-width:calc(var(--thread-content-max-width) + 40px);margin-inline:auto;padding:0 20px 96px;display:flex;flex-direction:column}
 [data-turn-key]{display:block;width:100%}
 [data-virtualized-turn]{display:block}
 .turn-placeholder{height:120px}
@@ -46,11 +46,12 @@ main{position:relative;flex:1 1 0;min-height:0;width:100%;display:flex;flex-dire
 .code-shell pre{margin:0;padding:14px 16px;overflow:auto;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
 .turn-actions{display:flex;gap:4px;color:var(--text-secondary)}
 .turn-actions button{width:30px;height:30px;display:grid;place-items:center;border-radius:8px}
-/* Probe: wrappers around the composer are transparent; the sticky footer paints nothing. */
-#thread-bottom-container{position:sticky;bottom:0;z-index:2;background:transparent}
+/* In-flow flex footer paints var(--main-surface-primary) and a ::before gradient fade + mask. */
+#thread-bottom-container{position:relative;flex:none;z-index:2;background:var(--main-surface-primary)}
+#thread-bottom-container::before{content:"";position:absolute;left:0;right:0;top:-24px;height:28px;pointer-events:none;background:linear-gradient(transparent,var(--main-surface-primary));-webkit-mask-image:linear-gradient(to bottom,transparent,#000);mask-image:linear-gradient(to bottom,transparent,#000)}
 #thread-bottom{background:transparent}
-/* Inferred (not measured by the probe): the composer column is limited by the same --thread-content-max-width as the transcript. */
-.composer-column{--thread-content-max-width:48rem;width:100%;max-width:calc(var(--thread-content-max-width) + 40px);margin-inline:auto;padding:0 20px;background:transparent}
+/* The composer column inherits --thread-content-max-width from main without a literal variable class token. */
+.composer-column{width:100%;max-width:calc(var(--thread-content-max-width) + 40px);margin-inline:auto;padding:0 20px;background:transparent}
 form[data-chatgpt-composer]{width:100%;background:transparent}
 /* Probe: ComposerLayoutRoot paints the surface (data-composer-dark, alpha ~0.95) and carries data-composer-layout. */
 [class*="ComposerLayoutRoot"]{background:rgba(48,48,48,.95);border-radius:28px;padding:10px;box-shadow:0 0 0 1px rgba(255,255,255,.05)}
@@ -65,7 +66,9 @@ form[data-chatgpt-composer]{width:100%;background:transparent}
 #prompt-textarea{min-height:24px;max-height:208px;overflow-y:auto;outline:none;padding:6px 0;white-space:pre-wrap;overflow-wrap:anywhere}
 #prompt-textarea p{margin:0}
 #prompt-textarea p.placeholder:first-child::before{content:attr(data-placeholder);color:#9b9b9b;float:left;height:0;pointer-events:none}
-[class*="disclaimer"]{text-align:center;font-size:12px;line-height:16px;color:var(--text-secondary);padding:8px 0 10px}
+.composer-below-spacer{height:24px}
+[class*="disclaimer"]{text-align:center;font-size:12px;line-height:16px;color:var(--text-secondary);min-height:44px;padding:12px 0 18px}
+.host-corner-help{position:fixed;right:16px;bottom:16px;z-index:20;width:32px;height:32px;border-radius:999px;background:#2f2f2f;color:var(--text-secondary);border:1px solid rgba(255,255,255,.12);display:inline-flex;align-items:center;justify-content:center}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 </style></head><body><div class="page">
 <div id="stage-slideover-sidebar"><nav aria-label="Chat history"><a href="#new">New chat</a><a href="#search">Search chats</a><div class="sidebar-heading">Chats</div><a href="/c/68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13" aria-current="page">Synthetic layout review</a><a href="/c/1b7e9d40-8a2c-4f61-b3e5-7c0d2a9f8e64">Another placeholder thread</a><a href="/c/9a3c5e71-0f2d-4b8e-a6c4-3d1e7b9f2a05">Offline sample notes</a></nav></div>
@@ -92,12 +95,12 @@ console.log(sampleWidth + sampleGap * 2);</code></pre></div>
 </div><div class="turn-actions"><button type="button" aria-label="Copy"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button type="button" aria-label="Good response"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11v9M7 11l4-8a2 2 0 0 1 3 2l-1 5h6l-2 9H7"/></svg></button><button type="button" aria-label="More actions"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div></div></div></div>
 <div data-turn-key="5d2f8b6e-1a4c-4e97-b3d0-9c7a2e5f8b14" class="turn-container"><div data-virtualized-turn><div data-content-search-unit-key="68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13:4:user" class="user-turn"><h5 class="sr-only">You said:</h5><div data-user-message-bubble="true" class="user-message-bubble-color">And a short follow-up question?</div></div></div></div>
 <div data-turn-key="c8a1e3f7-5b9d-4a62-8f04-2d6b9e1c7a53" class="turn-container"><div data-virtualized-turn><div data-content-search-unit-key="68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13:5:assistant" class="assistant-turn"><h6 class="sr-only">ChatGPT said:</h6><div data-markdown-text-style="assistant-message" class="markdown prose dark:prose-invert w-full break-words"><p data-stream-fixture>A brief synthetic reply that closes the offline conversation.</p></div><div class="turn-actions"><button type="button" aria-label="Copy"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/></svg></button></div></div></div></div>
-</div>
-<div id="thread-bottom-container"><div id="thread-bottom"><div class="composer-column [--thread-content-max-width:48rem]"><form class="w-full" data-chatgpt-composer data-type="unified-composer"><div class="ComposerLayoutRoot_m3kp" data-composer-dark="true" data-composer-layout="single-line"><div class="composerGrid_h2vs">
+</div></div>
+<div id="thread-bottom-container" class="content-fade_b9xk"><div id="thread-bottom"><div class="composer-column"><form class="w-full" data-chatgpt-composer data-type="unified-composer"><div class="ComposerLayoutRoot_m3kp" data-composer-dark="true" data-composer-layout="single-line"><div class="composerGrid_h2vs">
 <div class="composer-header"><div class="file-tile_p4wt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/></svg><span>synthetic-outline.pdf</span><button type="button" aria-label="Remove file">×</button></div></div>
 <div class="composer-leading"><button type="button" aria-label="Add files and more"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
 <div class="composer-primary"><div id="prompt-textarea" contenteditable="true" role="textbox" translate="no" class="ProseMirror" data-placeholder="Ask anything"><p data-placeholder="Ask anything" class="placeholder"><br class="ProseMirror-trailingBreak"></p></div></div>
 <div class="composer-trailing"><button type="button" aria-label="Select ChatGPT model" aria-haspopup="menu" data-selected-reasoning-effort="high"><span>High</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><button type="button" aria-label="Dictate"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button><button type="button" aria-label="Start Voice"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10v4M8 7v10M12 4v16M16 7v10M20 10v4"/></svg></button></div>
-</div></div></form><div class="disclaimer_v7rk">Offline layout fixture. Replies here are synthetic placeholders.</div></div></div></div>
-</div></div></main></div>
-</div></body></html>
+</div></div></form><div class="composer-below-spacer"></div><div class="disclaimer_v7rk">Offline layout fixture. Replies here are synthetic placeholders.</div></div></div></div>
+</div></main></div>
+</div><button type="button" class="host-corner-help" aria-label="Help and shortcuts">?</button></body></html>

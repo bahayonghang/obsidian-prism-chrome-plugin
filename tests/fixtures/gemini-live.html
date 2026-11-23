@@ -68,6 +68,7 @@ input-area-v2{background:rgb(30,31,32);border-radius:32px;padding:8px 12px}
 .ql-editor p{margin:0}
 .ql-editor.ql-blank::before{content:attr(data-placeholder);color:#8e918f;position:absolute;pointer-events:none}
 hallucination-disclaimer{text-align:center;font-size:12px;line-height:16px;color:#c4c7c5;padding:10px 0 12px}
+.host-corner-help{position:fixed;right:16px;bottom:16px;z-index:20;width:32px;height:32px;border-radius:999px;background:#282a2c;color:#c4c7c5;border:1px solid rgba(255,255,255,.12);display:inline-flex;align-items:center;justify-content:center}
 .cdk-visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
 </style></head><body class="dark-theme"><chat-app id="app-root">
 <bard-sidenav><side-navigation-v2><a href="#new">New chat</a><div class="nav-heading">Recent</div><a href="/app/8f21d40973e5a6b1" aria-current="page">Synthetic layout review</a><a href="/app/3c7a90e1d2b45f68">Placeholder planning chat</a><a href="/app/6e14b8c2a09d7f35">Offline sample notes</a></side-navigation-v2></bard-sidenav>
@@ -100,4 +101,4 @@ console.log(sampleWidth - sampleInput);</code></pre></code-block>
 <div class="text-input-field_textarea-wrapper"><rich-textarea><div class="ql-editor ql-blank textarea" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Enter a prompt for Gemini" data-placeholder="Ask Gemini"><p><br></p></div></rich-textarea></div>
 <div class="trailing-actions-wrapper"><bard-mode-switcher><button type="button" aria-label="Open mode picker, currently Neon High" aria-haspopup="menu"><span>Neon High</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></bard-mode-switcher><button type="button" aria-label="Microphone"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button></div>
 </div></input-area-v2></div><hallucination-disclaimer>Offline layout fixture. Replies here are synthetic placeholders.</hallucination-disclaimer></input-container>
-</chat-window></chat-app></body></html>
+</chat-window></chat-app><button type="button" class="host-corner-help" aria-label="Help and shortcuts">?</button></body></html>
