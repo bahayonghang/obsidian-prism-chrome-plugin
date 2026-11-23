@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Obsidian Prism Web — Community Edition",
   "short_name": "Prism Web",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Community adaptation of Obsidian Prism themes and reading tools for ChatGPT and Gemini. Optional manual translation.",
   "author": "bahayonghang; upstream design by RMvdesi",
   "homepage_url": "https://github.com/bahayonghang/obsidian-prism-chrome-plugin",

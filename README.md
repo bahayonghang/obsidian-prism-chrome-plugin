@@ -46,8 +46,8 @@ Windows若只有 `py` 命令，可将最后一步改为 `py -3 scripts/build.py`
 |---|---|
 | `dist/chrome/` | Chrome解压扩展目录 |
 | `dist/firefox/` | Firefox临时加载目录，使用独立Firefox清单 |
-| `dist/obsidian-prism-web-0.3.0-chrome.zip` | Chrome开发/提交包 |
-| `dist/obsidian-prism-web-0.3.0-firefox.zip` | Firefox开发/提交包，未签名 |
+| `dist/obsidian-prism-web-0.4.0-chrome.zip` | Chrome开发/提交包 |
+| `dist/obsidian-prism-web-0.4.0-firefox.zip` | Firefox开发/提交包，未签名 |
 | `dist/SHA256SUMS` | 两个ZIP的SHA-256校验值 |
 
 构建采用明确文件白名单，不包含Git目录、测试数据、开发依赖或本地密钥。相同源码与Python/zlib环境可生成相同ZIP字节。
