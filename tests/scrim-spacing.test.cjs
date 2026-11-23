@@ -45,7 +45,7 @@ test('hosts.css includes Bottom Spacing & Composer Scrim section strictly gated 
   const nextIdx = hostsCss.indexOf('/* === ', idx + SECTION_MARKER.length);
   const section = nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx);
   const blocks = parseRuleBlocks(section);
-  assert.ok(blocks.length >= 6, 'scrim & spacing section must define all layout and scrim rules');
+  assert.ok(blocks.length >= 5, 'scrim & spacing section must define all layout and backdrop-clearing rules');
 
   for (const block of blocks) {
     for (const sel of block.selectors) {
@@ -90,7 +90,7 @@ test('hosts.css tightens ChatGPT active conversation bottom spacer, thread colum
   assert.match(hintRule.body, /margin-bottom:\s*0\s*!important/);
 });
 
-test('hosts.css paints feathered var(--op-canvas) linear-gradient on scrim host and ::before while keeping inner layers transparent', () => {
+test('hosts.css keeps non-scrim composer backdrop layers and native fades transparent', () => {
   const idx = hostsCss.indexOf(SECTION_MARKER);
   assert.notEqual(idx, -1);
   const nextIdx = hostsCss.indexOf('/* === ', idx + SECTION_MARKER.length);
@@ -112,14 +112,30 @@ test('hosts.css paints feathered var(--op-canvas) linear-gradient on scrim host 
   assert.match(fadeRule.body, /background-color:\s*transparent\s*!important/);
   assert.match(fadeRule.body, /background-image:\s*none\s*!important/);
 
-  const scrimRule = blocks.find(b => b.selectors.some(s => s === `${dualPrefix} [data-op-composer-scrim="true"]`));
-  assert.ok(scrimRule, 'must define dual-host feathered scrim rule for [data-op-composer-scrim="true"]');
-  assert.match(scrimRule.body, /background-color:\s*transparent\s*!important/);
-  assert.match(scrimRule.body, /linear-gradient\(\s*to bottom,\s*transparent 0%,\s*color-mix\(in srgb,\s*var\(--op-canvas\) 82%,\s*transparent\) 18%,\s*color-mix\(in srgb,\s*var\(--op-canvas\) 96%,\s*transparent\) 44%,\s*var\(--op-canvas\) 100%\s*\)\s*!important/);
+});
 
-  const scrimBeforeRule = blocks.find(b => b.selectors.some(s => s === `${dualPrefix} [data-op-composer-scrim="true"]::before`));
-  assert.ok(scrimBeforeRule, 'must define dual-host feathered ::before rule for [data-op-composer-scrim="true"]::before');
-  assert.match(scrimBeforeRule.body, /pointer-events:\s*none\s*!important/);
-  assert.match(scrimBeforeRule.body, /background-color:\s*transparent\s*!important/);
-  assert.match(scrimBeforeRule.body, /linear-gradient\(\s*to bottom,\s*transparent 0%,\s*color-mix\(in srgb,\s*var\(--op-canvas\) 78%,\s*transparent\) 100%\s*\)\s*!important/);
+const BLUR_MARKER = '/* === Blur Composer Scrim (v0.3.1 #22) === */';
+const BLUR_SUPPORTS = '@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))';
+
+test('blur Composer Scrim is gated to active conversations outside Native Palette and never paints solid canvas', () => {
+  const idx = hostsCss.indexOf(BLUR_MARKER);
+  assert.notEqual(idx, -1, 'hosts.css must include the Blur Composer Scrim (v0.3.1 #22) section');
+  const nextIdx = hostsCss.indexOf('/* === ', idx + BLUR_MARKER.length);
+  const section = nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx);
+  assert.ok(section.includes(BLUR_SUPPORTS), 'the blur is gated by the backdrop-filter @supports condition the browser fallback test overrides');
+  const flat = section.replace(BLUR_SUPPORTS, '').replace(/\/\*[\s\S]*?\*\//g, '');
+  const blocks = parseRuleBlocks(flat);
+  assert.ok(blocks.length >= 4);
+  for (const block of blocks) {
+    for (const sel of block.selectors) {
+      for (const gate of ['html[data-op-enabled="true"]', '[data-op-home="false"]', ':not([data-op-effective-palette="host"])', '[data-op-composer-scrim="true"]']) {
+        assert.ok(sel.includes(gate), `selector must include ${gate}: ${sel}`);
+      }
+    }
+    for (const [, percent] of block.body.matchAll(/color-mix\(in srgb,\s*var\(--op-canvas\)\s*(\d+)%/g)) {
+      assert.ok(Number(percent) <= 60, `scrim paint stays at or below ~60% canvas, got ${percent}% in ${block.selectors.join(', ')}`);
+    }
+    assert.equal(/background(?:-color)?:\s*var\(--op-canvas\)/.test(block.body), false, 'no solid canvas fill');
+    assert.equal(/overflow(?:-y)?\s*:\s*hidden/i.test(block.body), false, 'no overflow clipping');
+  }
 });

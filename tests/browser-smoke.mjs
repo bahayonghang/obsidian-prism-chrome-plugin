@@ -16,6 +16,8 @@ import { checkLiveFixtureBaselines } from './live-fixtures.mjs';
 import { checkTwoRowComposer } from './composer-two-row.mjs';
 import { checkLiveTurnsAndCapacity } from './live-turns.mjs';
 import { checkHeadingTypography } from './heading-typography.mjs';
+// v0.3.1 #22 blur Composer Scrim
+import { checkLiveComposerScrim } from './live-scrim.mjs';
 import { paragraphWidth } from './measure.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -273,8 +275,10 @@ async function assertComposerBackdrops(page, nativeSurfaces) {
     assert.ok(transparent(layer.background), `dock layer ${index} background-color must stay transparent`);
     assert.notEqual(layer.background, 'rgb(255, 255, 255)', `dock layer ${index} must not paint a solid white slab`);
     if (meta.isScrim) {
-      assert.ok(layer.backgroundImage.includes('linear-gradient'), `scrim host layer ${index} must paint a feathered linear-gradient toward --op-canvas`);
-      assert.ok(transparent(layer.before.background) && layer.before.backgroundImage.includes('linear-gradient'), `scrim host layer ${index} ::before must paint a feathered top linear-gradient`);
+      // v0.3.1 #22: the host paints nothing itself; its ::before is a translucent blur layer, never a solid canvas.
+      assert.equal(layer.backgroundImage, 'none', `scrim host layer ${index} paints no gradient slab of its own`);
+      const alpha = value => transparent(value) ? 0 : Number(value.match(/(?:\/\s*|,\s*)([\d.]+)\s*\)$/)?.[1] ?? 1);
+      assert.ok(alpha(layer.before.background) <= 0.6, `scrim host layer ${index} ::before stays translucent, got ${layer.before.background}`);
       assert.ok(transparent(layer.after.background) && layer.after.backgroundImage === 'none', `scrim host layer ${index} ::after must remain transparent`);
       for (const type of ['before', 'after']) {
         assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
@@ -1325,6 +1329,8 @@ try {
   // v0.3.1 #18 live turns and tier-aware Reference Capacity
   await checkLiveTurnsAndCapacity({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
   await checkHeadingTypography({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
+  // v0.3.1 #22 blur Composer Scrim
+  await checkLiveComposerScrim({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
   if (!liveOnly) {
     await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
     await savedDisabledStartup(browser);

@@ -532,14 +532,49 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) .native-com
   background-color: transparent !important;
   background-image: none !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"] {
-  background-color: transparent !important;
-  background-image: linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--op-canvas) 82%, transparent) 18%, color-mix(in srgb, var(--op-canvas) 96%, transparent) 44%, var(--op-canvas) 100%) !important;
+
+/* === Blur Composer Scrim (v0.3.1 #22) === */
+/* The scrim host keeps its layout and loses its own paint (this also clears
+ * Gemini's near-black input-container.input-gradient, which is the host there).
+ * Its ::before, stacked below the host's children, carries ~45% canvas plus a
+ * backdrop blur, top-feathered by a mask: the horizon glow (z-order and mask
+ * unchanged) shows through and scrolled text blurs, while the Composer Surface,
+ * disclaimer and controls paint above it unmasked. No solid canvas base. */
+:where(html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]) {
+  position: relative;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
+html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"] {
+  --op-scrim-feather: 28px;
+  isolation: isolate !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+/* Fallback without backdrop-filter: a low-opacity gradient, at most 58% canvas. */
+html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
+  content: "" !important;
+  display: block !important;
+  position: absolute !important;
+  inset: 0 !important;
+  width: auto !important;
+  height: auto !important;
+  margin: 0 !important;
+  border: 0 !important;
+  z-index: -1 !important;
+  opacity: 1 !important;
+  transform: none !important;
   pointer-events: none !important;
   background-color: transparent !important;
-  background-image: linear-gradient(to bottom, transparent 0%, color-mix(in srgb, var(--op-canvas) 78%, transparent) 100%) !important;
+  background-image: linear-gradient(to bottom, transparent 0, color-mix(in srgb, var(--op-canvas) 32%, transparent) var(--op-scrim-feather), color-mix(in srgb, var(--op-canvas) 58%, transparent) 100%) !important;
+}
+@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
+    background-image: none !important;
+    background-color: color-mix(in srgb, var(--op-canvas) 45%, transparent) !important;
+    -webkit-backdrop-filter: blur(14px) !important;
+    backdrop-filter: blur(14px) !important;
+    -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--op-scrim-feather)) !important;
+    mask-image: linear-gradient(to bottom, transparent 0, #000 var(--op-scrim-feather)) !important;
+  }
 }
 
 /* === Code Surface Readability (v0.3.0) === */
