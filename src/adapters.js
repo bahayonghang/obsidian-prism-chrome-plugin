@@ -24,6 +24,10 @@
       addTriggers: '[data-testid="composer-plus-btn"], button[aria-label*="Add files" i], button[aria-label*="Attach" i], button[aria-label*="上传"], button[aria-label*="添加"]',
       composerChips: '[data-testid="composer-mode-pill"], [data-testid="composer-chip"], [data-testid="composer-tool-chip"]',
       attachments: '[data-testid="attachment-card"], [data-testid="file-attachment"], [data-testid="uploaded-file"], [data-testid="image-attachment"], .native-footer-attachment',
+      /* v0.3.1 #21 Content Width Presets: the reading (text) width is 48rem natively (the 808px
+       * transcript = 48rem + 2 × 20px padding, probe 2026-11-22). The width rules in hosts.css set
+       * --thread-content-max-width on these limiters only; no geometry search, no per-node marks. */
+      contentWidth: { native: 768, targets: ['[class*="transcriptContent"]'], composerTargets: ['#thread-bottom [class*="--thread-content-max-width"]'] },
       threadColumns: '.thread, [data-testid="conversation-thread"], [class*="thread-content"]',
       composerColumns: '.composer-container, [data-testid="composer-container"]',
       // v0.3.1 #19: grid area names the two-row Composer Surface rearranges (probe 2026-11-22).
@@ -50,6 +54,9 @@
       addTriggers: '[data-test-id="upload-file-button"], button[aria-label*="Add files" i], button[aria-label*="Upload" i], button[aria-label*="上传"], button[aria-label*="添加"]',
       composerChips: '.toolbox-drawer-item-button, [data-test-id="composer-chip"]',
       attachments: '[data-test-id="file-preview-chip"], [data-test-id="attachment-card"], file-preview-chip, .native-footer-attachment',
+      /* v0.3.1 #21: Gemini caps every markdown block at 708px (not the outer panel), plus the
+       * User Turn, the response footer, the disclaimer and the 660px input area (probe 2026-11-22). */
+      contentWidth: { native: 708, targets: ['.md-content > *', 'user-query', '.response-footer', 'hallucination-disclaimer'], composerTargets: ['.input-area-container'] },
       threadColumns: '.thread, .response-container',
       composerColumns: '.composer-container, input-area-v2',
       // v0.3.1 #19: grid area names the two-row Composer Surface rearranges (probe 2026-11-22).
@@ -562,6 +569,23 @@
     }
     return out;
   }
+  /* v0.3.1 #21 Content Width Presets, computed from the main area's width (not fixed tiers).
+   * Returns the target reading (text) width and a leftward shift for the centred column, or null
+   * for `standard` (native width, no override). full = main − left edge − Conversation Rail
+   * reserve; wide = (native + full) / 2, at most 1200px. Below a 900px viewport both fall back to
+   * the main width minus 16px edges. The shift keeps a full column clear of the rail. */
+  const READING_LAYOUT = Object.freeze({ leftEdge: 20, railReserve: 56, wideCap: 1200, narrowViewport: 900, narrowEdge: 16 });
+  function contentWidthTarget(nativeWidth, preset, mainWidth, viewportWidth) {
+    if ((preset !== 'wide' && preset !== 'full') || !(mainWidth > 0) || !(nativeWidth > 0)) return null;
+    const L = READING_LAYOUT;
+    const round = value => Math.round(value * 100) / 100;
+    if (viewportWidth < L.narrowViewport) return { width: round(Math.max(0, mainWidth - 2 * L.narrowEdge)), shift: 0 };
+    const full = Math.max(mainWidth - L.leftEdge - L.railReserve, Math.min(nativeWidth, mainWidth - 2 * L.narrowEdge));
+    const width = preset === 'full' ? full : Math.min(L.wideCap, (nativeWidth + full) / 2, full);
+    const gap = (mainWidth - width) / 2;
+    const shift = Math.min(0, Math.max(L.leftEdge - gap, gap - L.railReserve));
+    return { width: round(width), shift: round(shift) || 0 };
+  }
   function forHost(host, root = document) {
     const spec = HOSTS[host];
     if (!spec) return null;
@@ -571,6 +595,7 @@
     const messages = () => sortByDocumentOrder([...userTurns(), ...assistantTurns()]);
     return Object.freeze({
       host,
+      contentWidth: Object.freeze({ native: spec.contentWidth.native, targets: [...spec.contentWidth.targets], composerTargets: [...spec.contentWidth.composerTargets] }),
       userTurns,
       assistantTurns,
       conversationRoot: () => root.querySelector(spec.conversation) || root.body || root,
@@ -605,6 +630,6 @@
     });
   }
   global.ObsidianPrismAdapters = Object.freeze({
-    forHost, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, scrollContainer
+    forHost, contentWidthTarget, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, scrollContainer
   });
 })(globalThis);

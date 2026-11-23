@@ -151,6 +151,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
 
   const fakeAdapter = {
     host,
+    contentWidth: { native: 768, targets: [], composerTargets: [] },
     userTurns: () => (homeMode ? [] : [userTurn]),
     assistantTurns: () => (homeMode ? [] : [assistantTurn]),
     primarySurface: () => primary,
@@ -588,4 +589,28 @@ test('runtime suppresses composer scrim and tail spacer in Home State and clears
   assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), null);
 
   ctx.runtime.stop();
+});
+
+// v0.3.1 #21: the runtime publishes one root reading width from the main area's width; no per-node marks.
+test('runtime publishes the Content Width Preset as a root reading width and removes it for standard, a disabled site and stop', async () => {
+  const ctx = createRuntimeDom({ contentWidth: 'full' });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const docEl = ctx.elements.get('docEl');
+  const write = patch => ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', ...patch } });
+  const settle = () => new Promise(resolve => setTimeout(resolve, 15));
+  const vars = () => [docEl.style.getPropertyValue('--op-reading-width'), docEl.style.getPropertyValue('--op-reading-shift')];
+  // The fake main area is 1200px wide at a 1280px viewport: full = 1200 - 20 - 56.
+  assert.deepEqual(vars(), ['1124px', '-18px']);
+  await write({ contentWidth: 'wide' }); await settle();
+  assert.deepEqual(vars(), ['946px', '0px'], 'wide is the midpoint of native 768 and full 1124');
+  await write({ contentWidth: 'standard' }); await settle();
+  assert.deepEqual(vars(), ['', ''], 'standard leaves the native width untouched');
+  await write({ contentWidth: 'full' }); await settle();
+  assert.deepEqual(vars(), ['1124px', '-18px']);
+  await write({ contentWidth: 'full', enableChatGPT: false }); await settle();
+  assert.deepEqual(vars(), ['', ''], 'a disabled site restores the native width');
+  await write({ contentWidth: 'full' }); await settle();
+  assert.deepEqual(vars(), ['1124px', '-18px']);
+  ctx.runtime.stop();
+  assert.deepEqual(vars(), ['', ''], 'stop restores the native width');
 });

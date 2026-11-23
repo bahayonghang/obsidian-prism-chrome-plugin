@@ -582,7 +582,7 @@
     if (nextPrimary !== primarySurface) {
       surfaceObserver?.disconnect();surfaceObserver=null;primarySurface=nextPrimary;
       if (primarySurface && global.ResizeObserver) {
-        surfaceObserver=new ResizeObserver(scheduleGeometry);
+        surfaceObserver=new ResizeObserver(primaryResized);
         surfaceObserver.observe(primarySurface);
       }
     }
@@ -607,6 +607,26 @@
     if (!enabled || document.hidden || !ambient || geometryFrame) return;
     geometryFrame=requestAnimationFrame(updateAmbientGeometry);
   }
+  /* v0.3.1 #21 Content Width Presets: one root reading width computed from the main area's width.
+   * hosts.css applies it only to the adapter's declared width limiters (no per-node marks).
+   * `standard`, a disabled site and stop remove both variables, restoring the native width. */
+  let readingWidth='';
+  function syncReadingWidth() {
+    const root=document.documentElement;
+    const mainWidth=enabled && primarySurface?.isConnected ? primarySurface.getBoundingClientRect().width : 0;
+    const target=mainWidth ? Adapters.contentWidthTarget(adapter.contentWidth?.native,cfg.contentWidth,mainWidth,global.innerWidth||0) : null;
+    const next=target ? `${target.width}px ${target.shift}px` : '';
+    if (next===readingWidth || !root) return;
+    readingWidth=next;
+    if (target) {
+      root.style.setProperty('--op-reading-width',target.width+'px');
+      root.style.setProperty('--op-reading-shift',target.shift+'px');
+    } else {
+      root.style.removeProperty('--op-reading-width');
+      root.style.removeProperty('--op-reading-shift');
+    }
+  }
+  function primaryResized() { syncReadingWidth(); scheduleGeometry(); }
   function syncAmbient() {
     const needed=(cfg.ambientIntensity>0 && (cfg.ambientStyle!=='none' || cfg.ambientTexture!=='off')) || cfg.semanticAura;
     if (!needed || !primarySurface) {ambient?.remove();ambient=null;return;}
@@ -634,7 +654,7 @@
     if(!enabled || stopped || document.hidden || !document.body) return;
     passes++;
     if(route!==location.href) {route=location.href;revision++;resetConversation();}
-    syncSurfaces(); syncAmbient(); syncCodes(); syncRail(); syncDock(); syncThoughts();
+    syncSurfaces(); syncReadingWidth(); syncAmbient(); syncCodes(); syncRail(); syncDock(); syncThoughts();
   }
   function suspend() {
     enabled=false;
@@ -645,6 +665,7 @@
     if(scrollFrame) cancelAnimationFrame(scrollFrame);scrollFrame=null;
     if(geometryFrame) cancelAnimationFrame(geometryFrame);geometryFrame=null;
     clearSurfaceMarks();
+    syncReadingWidth();
     document.documentElement.removeAttribute('data-op-home');
     document.documentElement.removeAttribute('data-op-visibility');
     clearActivity();

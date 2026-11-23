@@ -627,52 +627,33 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-m
   border-radius: 6px;
 }
 
-/* === Content Width Presets (v0.3.0) === */
-html[data-op-enabled="true"][data-op-content-width="wide"] :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2):not(:is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) *) {
-  --thread-content-max-width: min(1080px, calc(100% - 140px));
-  width: min(1080px, calc(100% - 140px)) !important;
-  max-width: 1080px !important;
-  margin-inline: auto !important;
+/* === Content Width Presets (v0.3.1 #21) === */
+/* content.js sets --op-reading-width (target text-column width) and --op-reading-shift on the root
+ * for wide/full from the main area's width (Adapters.contentWidthTarget); standard sets nothing and
+ * leaves the host's native width. The rules below touch only the per-site width limiters declared in
+ * src/adapters.js (contentWidth.targets / composerTargets): no geometry search and no per-node marks.
+ * The margin-left formula centres each limiter in its own container, then shifts it left by
+ * --op-reading-shift so a full column clears the Conversation Rail. Fallbacks are the native widths. */
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([class*="transcriptContent"],#thread-bottom [class*="--thread-content-max-width"]) {
+  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+  margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem) - 40px) / 2 + var(--op-reading-shift, 0px))) !important;
+  margin-right: auto !important;
 }
-html[data-op-enabled="true"][data-op-content-width="wide"] :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) {
-  --thread-content-max-width: 100%;
-  width: 100% !important;
-  max-width: none !important;
-  margin-inline: 0 !important;
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(.md-content > *,user-query,.response-footer,hallucination-disclaimer) {
+  max-width: var(--op-reading-width, 708px) !important;
+  margin-left: max(0px, calc((100% - var(--op-reading-width, 708px)) / 2 + var(--op-reading-shift, 0px))) !important;
+  margin-right: auto !important;
 }
-
-html[data-op-enabled="true"][data-op-content-width="full"] :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2):not(:is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) *) {
-  --thread-content-max-width: calc(100% - 76px);
-  width: calc(100% - 76px) !important;
-  max-width: none !important;
-  margin-left: 20px !important;
-  margin-right: 56px !important;
+/* The Gemini input area is natively 48px narrower than the reading column (660 vs 708) and keeps that inset. */
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) .input-area-container {
+  max-width: calc(var(--op-reading-width, 708px) - 48px) !important;
+  margin-left: max(0px, calc((100% - var(--op-reading-width, 708px) + 48px) / 2 + var(--op-reading-shift, 0px))) !important;
+  margin-right: auto !important;
 }
-html[data-op-enabled="true"][data-op-content-width="full"] :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) {
-  --thread-content-max-width: 100%;
-  width: 100% !important;
-  max-width: none !important;
-  margin-inline: 0 !important;
-}
-
-html[data-op-enabled="true"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-message-author-role="user"] > div,[data-message-author-role="user"] :where(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"]),[data-testid="user-message"],[data-turn="user"] .user-message-bubble-color,[data-turn="user"] > div > div,user-query .user-query-bubble-with-background,user-query-content.user-query-bubble-with-background) {
+html[data-op-enabled="true"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-user-message-bubble="true"],[data-message-author-role="user"] > div,[data-message-author-role="user"] :where(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"]),[data-testid="user-message"],[data-turn="user"] .user-message-bubble-color,[data-turn="user"] > div > div,user-query .user-query-bubble-with-background,user-query-content.user-query-bubble-with-background) {
   max-width: min(78%, 820px) !important;
 }
-
-@media (max-width: 900px) {
-  html[data-op-enabled="true"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2):not(:is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) *) {
-    --thread-content-max-width: calc(100% - 32px);
-    width: calc(100% - 32px) !important;
-    max-width: 100% !important;
-    margin-inline: auto !important;
-  }
-  html[data-op-enabled="true"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) :is([data-op-thread-column="true"],[data-op-composer-column="true"],.thread,.composer-container,.response-container,input-area-v2) {
-    --thread-content-max-width: 100%;
-    width: 100% !important;
-    max-width: 100% !important;
-    margin-inline: 0 !important;
-  }
-}
+/* === end Content Width Presets (v0.3.1 #21) === */
 
 .op-width-toggle {
   display: inline-flex;
