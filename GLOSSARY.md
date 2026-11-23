@@ -59,7 +59,7 @@ The complete code presentation inside a conversation turn, encompassing its oute
 _Avoid_: Code box, pre block, snippet
 
 **Composer Surface**:
-The elevated input card housing the host's native prompt editor, circular add button, Model Capsule, and action controls. When restyled it uses the prototype two-row layout: attachment previews, then the editor on a full-width row, then the add button on the left and the Model Capsule with voice/send controls on the right, arranged only by overriding the host's own grid areas (on a ChatGPT grid without area names, by naming the areas of its existing children).
+The elevated optical input card housing the host's native prompt editor, rounded-square attachment previews, circular add button, Model Capsule, and action controls, bounded by a single crisp 1px border (no duplicate outline). When restyled it uses the prototype two-row layout: attachment previews on the top row, the editor on a full-width row, then on the bottom toolbar the circular `+` add button on the left with the Model Capsule immediately to its right and secondary ghost icons plus the high-contrast circular primary send/voice action on the right—arranged purely by overriding the host's own grid into two columns (`auto minmax(0, 1fr)`) and aligning the Model Capsule slot inside the flex toolbar via CSS `order` and `margin-inline-end: auto` (on a ChatGPT grid without area names, by naming the areas of its existing children) with zero DOM reparenting.
 _Avoid_: Input box, prompt bar, chat form
 
 **Composer Scrim**:
@@ -67,5 +67,5 @@ The top-feathered blur occlusion behind the Composer Surface in an active conver
 _Avoid_: Footer mask, white slab, solid fade, transparent overlay
 
 **Model Capsule**:
-The host's native model-selector trigger restyled in place as a bordered pill featuring a subtle indicator icon, model name, accented tier label, and dropdown chevron.
+The host's native model-selector trigger restyled in place as a cool, low-saturation bordered pill featuring a four-pointed prism star indicator (`::before`), model name, accented tier label, and dropdown chevron, visually positioned immediately right of the circular `+` button without moving its host DOM node.
 _Avoid_: Model badge, dropdown button, model chip
