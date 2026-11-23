@@ -16,6 +16,7 @@ import { checkLiveFixtureBaselines } from './live-fixtures.mjs';
 import { checkTwoRowComposer } from './composer-two-row.mjs';
 import { checkLiveTurnsAndCapacity } from './live-turns.mjs';
 import { checkHeadingTypography } from './heading-typography.mjs';
+import { checkLiveWidthPresets } from './live-width.mjs';
 import { paragraphWidth } from './measure.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -1013,94 +1014,20 @@ async function exerciseFixture(browser, host) {
     await page.locator('[data-native-copy]').click();
     assert.equal(await page.evaluate(() => __copyCount), 1, 'native copy control and listeners are preserved');
 
-    // Content Width Presets (standard < wide < full), decoupled dock, rail clearance, bubble cap & <900px fallback
-    const measureColumns = () => page.evaluate(() => {
-      const thread = document.querySelector('.thread');
-      const composer = document.querySelector('.composer-container');
-      const inputArea = document.querySelector('input-area-v2');
-      const rail = document.getElementById('op-rail-root');
-      const dock = document.getElementById('op-bottom-dock');
-      const rect = node => node ? node.getBoundingClientRect() : null;
-      const tr = rect(thread), cr = rect(composer), ir = rect(inputArea), rr = rect(rail), dr = rect(dock);
-      return {
-        attr: document.documentElement.getAttribute('data-op-content-width'),
-        presetAttr: document.querySelector('.op-width-toggle')?.getAttribute('data-width-preset'),
-        threadWidth: tr.width, threadRight: tr.right,
-        composerWidth: cr.width, composerRight: cr.right,
-        inputAreaWidth: ir ? ir.width : cr.width,
-        railLeft: rr ? rr.left : Infinity,
-        dockLeft: dr ? dr.left : Infinity,
-        overflowX: document.documentElement.scrollWidth > window.innerWidth
-      };
-    });
-    const stdCols = await measureColumns();
-    // User-visible result: the rendered width of an actual answer paragraph, not only its wrapper.
-    const answerParagraph = '[data-stream-fixture]';
-    const stdParagraph = await paragraphWidth(page, answerParagraph);
-    assert.equal(stdCols.attr, 'standard');
-    assert.equal(stdCols.presetAttr, 'standard');
+    // Bottom Dock width toggle contract (v0.3.0). Rendered widths are measured on the live fixtures
+    // (tests/live-width.mjs, v0.3.1 #21), not on this fixture's invented wrappers.
+    const presetState = () => page.evaluate(() => ({ attr: document.documentElement.getAttribute('data-op-content-width'), presetAttr: document.querySelector('.op-width-toggle')?.getAttribute('data-width-preset') }));
+    assert.deepEqual(await presetState(), { attr: 'standard', presetAttr: 'standard' });
     assert.equal(await page.locator('.op-width-toggle').count(), 1);
     await page.evaluate(() => document.querySelector('.op-width-toggle').click());
     assert.equal(await page.evaluate(() => __prismFixture.config().contentWidth), 'standard', 'synthetic width click is ignored');
-
-    // Trusted click cycles standard -> wide
+    // Trusted clicks cycle standard -> wide -> full
     await page.locator('.op-width-toggle').click();
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'wide');
-    const wideCols = await measureColumns();
-    assert.equal(wideCols.presetAttr, 'wide');
-    assert.ok(wideCols.threadWidth > stdCols.threadWidth, `${host}: wide thread (${wideCols.threadWidth}) > standard (${stdCols.threadWidth})`);
-    const wideParagraph = await paragraphWidth(page, answerParagraph);
-    assert.ok(wideParagraph.box > stdParagraph.box, `${host}: wide answer paragraph (${wideParagraph.box}) renders wider than standard (${stdParagraph.box})`);
-    assert.ok(wideCols.composerWidth > stdCols.composerWidth, `${host}: wide composer (${wideCols.composerWidth}) > standard (${stdCols.composerWidth})`);
-    assert.ok(Math.abs(wideCols.inputAreaWidth - wideCols.composerWidth) <= 2, `${host}: nested input-area-v2 matches composer width in wide`);
-
-    // Trusted click cycles wide -> full
+    assert.equal((await presetState()).presetAttr, 'wide');
     await page.locator('.op-width-toggle').click();
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'full');
-    const fullCols = await measureColumns();
-    assert.equal(fullCols.presetAttr, 'full');
-    assert.ok(fullCols.threadWidth > wideCols.threadWidth, `${host}: full thread (${fullCols.threadWidth}) > wide (${wideCols.threadWidth})`);
-    const fullParagraph = await paragraphWidth(page, answerParagraph);
-    assert.ok(fullParagraph.box > wideParagraph.box, `${host}: full answer paragraph (${fullParagraph.box}) renders wider than wide (${wideParagraph.box})`);
-    assert.ok(fullCols.composerWidth > wideCols.composerWidth, `${host}: full composer (${fullCols.composerWidth}) > wide (${wideCols.composerWidth})`);
-    assert.ok(Math.abs(fullCols.inputAreaWidth - fullCols.composerWidth) <= 2, `${host}: nested input-area-v2 matches composer width in full`);
-    assert.ok(fullCols.threadRight <= fullCols.railLeft + 0.5, `${host}: full thread (${fullCols.threadRight}) does not overlap Conversation Rail (${fullCols.railLeft})`);
-    assert.ok(fullCols.composerRight <= fullCols.railLeft + 0.5, `${host}: full composer (${fullCols.composerRight}) does not overlap Conversation Rail (${fullCols.railLeft})`);
-
-    // User Turn bubble max-width cap in wide & full
-    await page.evaluate(selector => {
-      const bubble = document.querySelector(selector);
-      bubble.dataset.origText = bubble.textContent;
-      bubble.textContent = 'Long prompt '.repeat(45);
-    }, bubbleSelector);
-    const fullBubbleWidth = await page.locator(bubbleSelector).evaluate(node => node.getBoundingClientRect().width);
-    assert.ok(fullBubbleWidth <= Math.min(fullCols.threadWidth * 0.78, 820) + 2, `${host}: full user bubble (${fullBubbleWidth}) stays within min(78%, 820px)`);
-    await page.evaluate(() => __prismFixture.patch({ contentWidth: 'wide' }));
-    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'wide');
-    const wideBubbleWidth = await page.locator(bubbleSelector).evaluate(node => node.getBoundingClientRect().width);
-    assert.ok(wideBubbleWidth <= Math.min(wideCols.threadWidth * 0.78, 820) + 2, `${host}: wide user bubble (${wideBubbleWidth}) stays within min(78%, 820px)`);
-    await page.evaluate(selector => {
-      const bubble = document.querySelector(selector);
-      bubble.textContent = bubble.dataset.origText;
-      delete bubble.dataset.origText;
-    }, bubbleSelector);
-
-    // Narrow viewport (< 900px) smooth fallback with no horizontal overflow
-    await page.setViewportSize({ width: 860, height: 900 });
-    for (const preset of ['wide', 'full']) {
-      await page.evaluate(p => __prismFixture.patch({ contentWidth: p }), preset);
-      await page.waitForFunction(p => document.documentElement.getAttribute('data-op-content-width') === p, preset);
-      const narrow = await page.evaluate(() => {
-        const scroller = document.querySelector('[data-prism-test-scroller]');
-        return {
-          docOverflow: document.documentElement.scrollWidth > window.innerWidth,
-          scrollerOverflow: scroller ? scroller.scrollWidth > scroller.clientWidth + 1 : false
-        };
-      });
-      assert.equal(narrow.docOverflow, false, `${host} ${preset}: no document horizontal overflow below 900px`);
-      assert.equal(narrow.scrollerOverflow, false, `${host} ${preset}: no scroller horizontal overflow below 900px`);
-    }
-    await page.setViewportSize({ width: 1280, height: 900 });
+    assert.equal((await presetState()).presetAttr, 'full');
 
     // Decoupled Bottom Dock: contextVial false keeps .op-width-toggle while hiding vial & popover
     await page.evaluate(() => __prismFixture.patch({ contextVial: false, contentWidth: 'full' }));
@@ -1111,9 +1038,7 @@ async function exerciseFixture(browser, host) {
     // Trusted click cycles full -> standard
     await page.locator('.op-width-toggle').click();
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'standard');
-    const restoredStdCols = await measureColumns();
-    assert.ok(Math.abs(restoredStdCols.threadWidth - stdCols.threadWidth) <= 1, `${host}: switching back to standard restores native thread width`);
-    assert.ok(Math.abs((await paragraphWidth(page, answerParagraph)).box - stdParagraph.box) <= 1, `${host}: switching back to standard restores the native answer paragraph width`);
+    assert.equal((await presetState()).presetAttr, 'standard');
     await page.evaluate(() => __prismFixture.patch({ contextVial: true }));
     await page.waitForSelector('.op-vial-pill');
 
@@ -1234,7 +1159,6 @@ async function exerciseFixture(browser, host) {
     await page.evaluate(() => __prismFixture.patch({ enabled: false }));
     await page.waitForFunction(() => !document.documentElement.hasAttribute('data-op-enabled'));
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-content-width')), false);
-    assert.ok(Math.abs((await measureColumns()).threadWidth - stdCols.threadWidth) <= 1, `${host}: disable restores native thread width`);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), originalBackground);
@@ -1325,6 +1249,8 @@ try {
   // v0.3.1 #18 live turns and tier-aware Reference Capacity
   await checkLiveTurnsAndCapacity({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
   await checkHeadingTypography({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
+  // v0.3.1 #21 Content Width Presets measured on the rendered paragraph and composer card
+  await checkLiveWidthPresets({ browser, engine, interceptFixtures, fixtureBridge, styles, scripts, artifacts: ARTIFACTS });
   if (!liveOnly) {
     await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
     await savedDisabledStartup(browser);

@@ -49,7 +49,8 @@ main{position:relative;flex:1 1 0;min-height:0;width:100%;display:flex;flex-dire
 /* Probe: wrappers around the composer are transparent; the sticky footer paints nothing. */
 #thread-bottom-container{position:sticky;bottom:0;z-index:2;background:transparent}
 #thread-bottom{background:transparent}
-.composer-column{width:100%;max-width:calc(48rem + 40px);margin-inline:auto;padding:0 20px;background:transparent}
+/* Inferred (not measured by the probe): the composer column is limited by the same --thread-content-max-width as the transcript. */
+.composer-column{--thread-content-max-width:48rem;width:100%;max-width:calc(var(--thread-content-max-width) + 40px);margin-inline:auto;padding:0 20px;background:transparent}
 form[data-chatgpt-composer]{width:100%;background:transparent}
 /* Probe: ComposerLayoutRoot paints the surface (data-composer-dark, alpha ~0.95) and carries data-composer-layout. */
 [class*="ComposerLayoutRoot"]{background:rgba(48,48,48,.95);border-radius:28px;padding:10px;box-shadow:0 0 0 1px rgba(255,255,255,.05)}
@@ -92,7 +93,7 @@ console.log(sampleWidth + sampleGap * 2);</code></pre></div>
 <div data-turn-key="5d2f8b6e-1a4c-4e97-b3d0-9c7a2e5f8b14" class="turn-container"><div data-virtualized-turn><div data-content-search-unit-key="68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13:4:user" class="user-turn"><h5 class="sr-only">You said:</h5><div data-user-message-bubble="true" class="user-message-bubble-color">And a short follow-up question?</div></div></div></div>
 <div data-turn-key="c8a1e3f7-5b9d-4a62-8f04-2d6b9e1c7a53" class="turn-container"><div data-virtualized-turn><div data-content-search-unit-key="68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13:5:assistant" class="assistant-turn"><h6 class="sr-only">ChatGPT said:</h6><div data-markdown-text-style="assistant-message" class="markdown prose dark:prose-invert w-full break-words"><p data-stream-fixture>A brief synthetic reply that closes the offline conversation.</p></div><div class="turn-actions"><button type="button" aria-label="Copy"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/></svg></button></div></div></div></div>
 </div>
-<div id="thread-bottom-container"><div id="thread-bottom"><div class="composer-column"><form class="w-full" data-chatgpt-composer data-type="unified-composer"><div class="ComposerLayoutRoot_m3kp" data-composer-dark="true" data-composer-layout="single-line"><div class="composerGrid_h2vs">
+<div id="thread-bottom-container"><div id="thread-bottom"><div class="composer-column [--thread-content-max-width:48rem]"><form class="w-full" data-chatgpt-composer data-type="unified-composer"><div class="ComposerLayoutRoot_m3kp" data-composer-dark="true" data-composer-layout="single-line"><div class="composerGrid_h2vs">
 <div class="composer-header"><div class="file-tile_p4wt"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/></svg><span>synthetic-outline.pdf</span><button type="button" aria-label="Remove file">×</button></div></div>
 <div class="composer-leading"><button type="button" aria-label="Add files and more"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
 <div class="composer-primary"><div id="prompt-textarea" contenteditable="true" role="textbox" translate="no" class="ProseMirror" data-placeholder="Ask anything"><p data-placeholder="Ask anything" class="placeholder"><br class="ProseMirror-trailingBreak"></p></div></div>
