@@ -16,7 +16,7 @@
       primary: ['main', '[role="main"]', '[data-testid="conversation-pane"]', '[data-testid="chat-main"]', '#main-content'],
       editors: ['#prompt-textarea', '[data-testid="prompt-textarea"]', 'textarea[name="prompt-textarea"]', 'main [contenteditable="true"][role="textbox"]', 'main textarea'],
       composers: ['[data-composer-layout]', '#composer-background', '[data-testid="chat-composer"]', '[data-testid="composer"]', '[data-composer-surface]', '.composer-parent'],
-      composerBackdrops: '#thread-bottom,[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
+      composerBackdrops: '#thread-bottom-container,#thread-bottom,[class*="content-fade"],.content-fade,[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
       codeSurfaces: '[data-testid="code-block"], .code-block-wrapper',
       codeHeaders: '.code-header, [data-testid="code-block-header"]',
       modelTriggers: '[data-testid="model-switcher-dropdown-button"], [data-testid="composer-model-switcher"], button[aria-label*="model" i], button[aria-label*="模型"]',
@@ -31,8 +31,8 @@
        * No geometry search, no per-node marks. The first composer limiter is inferred (not probed); the
        * second (review fix P3) sizes the probed composer form only when that limiter is absent. */
       contentWidth: { native: 768, targets: ['[class*="transcriptContent"]'], composerTargets: ['#thread-bottom [class*="--thread-content-max-width"]', '#thread-bottom:not(:has([class*="--thread-content-max-width"])) form[data-chatgpt-composer]'] },
-      threadColumns: '.thread, [data-testid="conversation-thread"], [class*="thread-content"]',
-      composerColumns: '.composer-container, [data-testid="composer-container"]',
+      threadColumns: '[class*="transcriptContent"], .thread, [data-testid="conversation-thread"], [class*="thread-content"]',
+      composerColumns: '.composer-column, .composer-container, [data-testid="composer-container"]',
       // v0.3.1 #19: grid area names the two-row Composer Surface rearranges. Inferred: the probe
       // (2026-11-22) saw only the column tracks, so an unnamed grid falls back to structural slots.
       composerGridAreas: ['leading', 'primary', 'trailing'],
@@ -273,23 +273,28 @@
       path.push(node);
       const rect = node.getBoundingClientRect();
       const style = view.getComputedStyle(node);
-      const smallRegion = rect.height > 0 && rect.height <= Math.max(composerRect.height + 160, viewportHeight * .5) &&
+      const smallRegion = rect.height > 0 && rect.height <= Math.max(composerRect.height + 220, viewportHeight * 0.48) &&
         rect.width >= composerRect.width - 24 && rect.right > composerRect.left && rect.left < composerRect.right &&
-        rect.bottom >= composerRect.top - 80 && rect.top <= composerRect.bottom + 80;
+        rect.bottom >= composerRect.top - 80 && rect.top <= composerRect.bottom + 140;
       const bottomDock = ['sticky','fixed','absolute'].includes(style.position) &&
         rect.bottom >= Math.min(viewportHeight - 96, composerRect.bottom - 4);
-      if (smallRegion && (node.matches(spec.composerBackdrops) || bottomDock)) boundary = path.length - 1;
+      const nearBottomInFlowDock = rect.bottom >= Math.min(viewportHeight - 120, composerRect.bottom - 4) &&
+        Boolean(node.parentElement && (node.parentElement.querySelector(MESSAGE_AREAS) || node.parentElement.matches('.composer-parent,main,[role="main"]')));
+      if (smallRegion && (node.matches(spec.composerBackdrops) || bottomDock || nearBottomInFlowDock)) boundary = path.length - 1;
     }
     if (boundary < 0) return [];
     const surfaces = path.slice(0, boundary + 1);
+    const hasInteractiveDescendant = node => Boolean(node.querySelector('a[href],button,input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex],[role="button"],[role="link"]'));
+    const isEmptyFadeBox = node =>
+      !node.contains(composer) && !composer.contains(node) && !isOwned(node) &&
+      !node.matches('[role="button"],[role="link"],[tabindex],[contenteditable],a[href],button,input,textarea,select,img,picture,svg,video,audio,canvas,iframe') &&
+      !textOf(node).trim() && !hasInteractiveDescendant(node);
     // Native fade siblings may sit above the shell. Only empty, noninteractive,
-    // full-width absolute decorations qualify; buttons and attachments do not.
+    // full-width absolute decorations or content-fade layers qualify; buttons and attachments do not.
     for (const surface of [...surfaces]) {
       const bounds = surface.getBoundingClientRect();
       for (const child of surface.children) {
-        if (child.contains(composer) || isOwned(child) || !child.matches('div,span') ||
-            child.matches('[role="button"],[role="link"],[tabindex],[contenteditable]') || child.textContent.trim() ||
-            child.querySelector('a[href],button,input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex],[role="button"],[role="link"]')) continue;
+        if (!child.matches('div,span') || !isEmptyFadeBox(child)) continue;
         const style = view.getComputedStyle(child);
         if (!['absolute','fixed'].includes(style.position) ||
             (style.pointerEvents !== 'none' && child.getAttribute('aria-hidden') !== 'true')) continue;
@@ -298,6 +303,13 @@
             rect.right > bounds.left && rect.left < bounds.right && rect.bottom >= bounds.top - 80 && rect.top <= bounds.bottom + 1) {
           surfaces.push(child);
         }
+      }
+      for (const fade of surface.querySelectorAll('[class*="content-fade"], .content-fade')) {
+        if (!isEmptyFadeBox(fade)) continue;
+        const fStyle = view.getComputedStyle(fade);
+        if (fStyle.display === 'none') continue;
+        const fRect = fade.getBoundingClientRect();
+        if (fRect.height <= bounds.height + 140) surfaces.push(fade);
       }
     }
     return [...new Set(surfaces)];
@@ -571,6 +583,71 @@
     }
     return ancestors.length ? ancestors[ancestors.length - 1] : null;
   }
+  function isComposerDockOverlaid(dock, scroller, view = dock?.ownerDocument?.defaultView || global) {
+    if (!dock) return false;
+    const style = view?.getComputedStyle?.(dock);
+    if (!style) return true;
+    const pos = style.position || '';
+    const doc = dock.ownerDocument || scroller?.ownerDocument || global.document;
+    if (!scroller || scroller === doc?.scrollingElement || scroller === doc?.documentElement || scroller === doc?.body) {
+      return ['sticky', 'fixed', 'absolute'].includes(pos);
+    }
+    if (typeof scroller.contains === 'function' && scroller.contains(dock)) {
+      return ['sticky', 'fixed', 'absolute'].includes(pos);
+    }
+    if (typeof dock.contains === 'function' && dock.contains(scroller)) return false;
+    if (typeof dock.getBoundingClientRect !== 'function' || typeof scroller.getBoundingClientRect !== 'function') return false;
+    const dRect = dock.getBoundingClientRect();
+    const sRect = scroller.getBoundingClientRect();
+    return dRect.height > 0 && sRect.height > 0 && dRect.top < sRect.bottom - 1 && dRect.bottom > sRect.top + 1;
+  }
+  function followingSiblings(node) {
+    if (node.nextElementSibling !== undefined) {
+      const out = [];
+      for (let sib = node.nextElementSibling; sib; sib = sib.nextElementSibling) out.push(sib);
+      return out;
+    }
+    const children = node.parentElement?.children;
+    if (!children) return [];
+    const idx = [...children].indexOf(node);
+    return idx >= 0 ? [...children].slice(idx + 1) : [];
+  }
+  const INTERACTIVE_DESCENDANT = 'a[href],button,[role="button"],input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex]';
+  const FORM_FIELD = 'input,textarea,select,[contenteditable],[contenteditable="true"]';
+  function findComposerBelowSiblings(composer, dock) {
+    const empty = [];
+    const disclaimers = [];
+    if (!composer || !dock || isOwned(composer) || isOwned(dock) || !dock.contains?.(composer)) {
+      return { empty, disclaimers };
+    }
+    const view = composer.ownerDocument?.defaultView || global;
+    const form = composer.closest?.('form');
+    const anchor = form && dock.contains(form) && form !== dock ? form : composer;
+    const seen = new Set();
+    for (let current = anchor; current && current !== dock && dock.contains(current); current = current.parentElement) {
+      for (const sib of followingSiblings(current)) {
+        if (!sib || seen.has(sib) || isOwned(sib)) continue;
+        seen.add(sib);
+        if (sib.matches?.('script,style,template') || sib.matches?.(MESSAGE_AREAS) || sib.querySelector?.(MESSAGE_AREAS)) continue;
+        if (sib.hasAttribute?.('hidden')) continue;
+        const sibStyle = view?.getComputedStyle?.(sib);
+        if (sibStyle && (sibStyle.display === 'none' || ['absolute', 'fixed'].includes(sibStyle.position))) continue;
+        const txt = textOf(sib).trim();
+        if (!txt && !sib.matches?.(INTERACTIVE_DESCENDANT) && !sib.querySelector?.(INTERACTIVE_DESCENDANT)) {
+          empty.push(sib);
+          continue;
+        }
+        if (txt.length > 0 && txt.length <= 240 && isVisible(sib) &&
+            !sib.matches?.(FORM_FIELD) && !sib.querySelector?.(FORM_FIELD)) {
+          const rect = typeof sib.getBoundingClientRect === 'function' ? sib.getBoundingClientRect() : null;
+          if (sib.matches?.('[class*="disclaimer"], .composer-hint') || (rect && rect.height > 0 && rect.height <= 96)) {
+            disclaimers.push(sib);
+          }
+        }
+      }
+    }
+    return { empty, disclaimers };
+  }
   function findThreadTailSpacers(spec, primary, messages) {
     if (!primary || !spec.tailSpacers || !messages.length) return [];
     const lastMessage = messages[messages.length - 1];
@@ -633,6 +710,11 @@
       composerSurface: () => findComposer(spec, root),
       composerBackdropSurfaces: (composer) => findComposerBackdrops(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerScrimSurface: (composer) => findComposerScrim(spec, composer === undefined ? findComposer(spec, root) : composer),
+      composerBelowSiblings: (composer, dock) => {
+        const comp = composer === undefined ? findComposer(spec, root) : composer;
+        const resolvedDock = dock === undefined ? findComposerScrim(spec, comp) : dock;
+        return findComposerBelowSiblings(comp, resolvedDock);
+      },
       composerGrid: (composer) => findComposerGrid(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerAddTrigger: (composer) => findComposerAddTrigger(spec, composer === undefined ? findComposer(spec, root) : composer),
       modelSelectorTrigger: () => findModelTrigger(spec, root),
@@ -660,6 +742,6 @@
     });
   }
   global.ObsidianPrismAdapters = Object.freeze({
-    forHost, contentWidthTarget, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, scrollContainer
+    forHost, contentWidthTarget, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, isComposerDockOverlaid, scrollContainer
   });
 })(globalThis);

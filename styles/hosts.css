@@ -148,6 +148,8 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-co
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]::after {
   background-color: transparent !important;
   background-image: none !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
 }
 
 /* Restyle the whole visual composer, preserving the native editor and buttons.
@@ -516,13 +518,41 @@ html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([
 html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-column="true"] {
   padding-bottom: 24px !important;
 }
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"] :is(.composer-container,[data-op-composer-column="true"]) {
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-container {
   padding-top: 8px !important;
   padding-bottom: 14px !important;
 }
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"] .composer-hint {
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-hint {
   margin-top: 6px !important;
   margin-bottom: 0 !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"],
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] [data-op-composer-column="true"]:not(.composer-container) {
+  padding-top: 4px !important;
+  padding-bottom: 0 !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"]:not(:has([data-op-composer-disclaimer="true"])):not(:has(.composer-hint)) {
+  padding-bottom: 10px !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-empty-sibling="true"] {
+  height: 0 !important;
+  min-height: 0 !important;
+  max-height: 0 !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  border: 0 !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-disclaimer="true"]:not(.composer-hint) {
+  min-height: 0 !important;
+  padding-top: 4px !important;
+  padding-bottom: 6px !important;
+  margin-top: 2px !important;
+  margin-bottom: 0 !important;
+  font-size: 11px !important;
+  line-height: 1.35 !important;
+  text-align: center !important;
 }
 
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"]),
@@ -531,15 +561,18 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-co
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) .native-composer-fade:not([data-op-composer-scrim="true"]) {
   background-color: transparent !important;
   background-image: none !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
 }
 
 /* === Blur Composer Scrim (v0.3.1 #22) === */
 /* The scrim host keeps its layout and loses its own paint (this also clears
  * Gemini's near-black input-container.input-gradient, which is the host there).
- * Its ::before, stacked below the host's children, carries ~45% canvas plus a
- * backdrop blur, top-feathered by a mask: the horizon glow (z-order and mask
- * unchanged) shows through and scrolled text blurs, while the Composer Surface,
- * disclaimer and controls paint above it unmasked. No solid canvas base. */
+ * For overlaid docks, ::before stacks below the host's children, carrying ~44%
+ * canvas in dark mode (~26% in light mode) plus a backdrop blur, top-feathered
+ * by a mask: the horizon glow shows through and scrolled text blurs, while the
+ * Composer Surface, disclaimer and controls paint above it unmasked. In-flow
+ * docks skip this veil completely so the glow passes through without a band. */
 :where(html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]) {
   position: relative;
 }
@@ -549,7 +582,7 @@ html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palett
   background-color: transparent !important;
   background-image: none !important;
 }
-/* Fallback without backdrop-filter: a low-opacity gradient, at most 58% canvas. */
+/* Fallback without backdrop-filter: a low-opacity gradient, at most 56% canvas (36% light). */
 html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
   content: "" !important;
   display: block !important;
@@ -564,7 +597,10 @@ html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palett
   transform: none !important;
   pointer-events: none !important;
   background-color: transparent !important;
-  background-image: linear-gradient(to bottom, transparent 0, color-mix(in srgb, var(--op-canvas) 32%, transparent) var(--op-scrim-feather), color-mix(in srgb, var(--op-canvas) 58%, transparent) 100%) !important;
+  background-image: linear-gradient(to bottom, transparent 0, color-mix(in srgb, var(--op-canvas) 32%, transparent) var(--op-scrim-feather), color-mix(in srgb, var(--op-canvas) 56%, transparent) 100%) !important;
+}
+html[data-op-enabled="true"][data-op-home="false"][data-op-scheme="light"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
+  background-image: linear-gradient(to bottom, transparent 0, color-mix(in srgb, var(--op-canvas) 20%, transparent) var(--op-scrim-feather), color-mix(in srgb, var(--op-canvas) 36%, transparent) 100%) !important;
 }
 /* Review fix P2: dock clearance. A dock that overlays the conversation scroller (Gemini) grows with the
  * two-row Composer Surface; content.js marks that scroller and measures the overlap, and this empty box
@@ -578,11 +614,15 @@ html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palett
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
     background-image: none !important;
-    background-color: color-mix(in srgb, var(--op-canvas) 45%, transparent) !important;
+    background-color: color-mix(in srgb, var(--op-canvas) 44%, transparent) !important;
     -webkit-backdrop-filter: blur(14px) !important;
     backdrop-filter: blur(14px) !important;
     -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--op-scrim-feather)) !important;
     mask-image: linear-gradient(to bottom, transparent 0, #000 var(--op-scrim-feather)) !important;
+  }
+  html[data-op-enabled="true"][data-op-home="false"][data-op-scheme="light"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
+    background-image: none !important;
+    background-color: color-mix(in srgb, var(--op-canvas) 26%, transparent) !important;
   }
 }
 
