@@ -129,9 +129,14 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
   const threadCol = makeEl('div');
   const composerCol = makeEl('div');
   const composer = makeEl('div', { 'data-op-composer-surface': 'host-orig' });
+  const gridEl = makeEl('div');
+  const trailingEl = makeEl('div', { 'data-op-composer-toolbar': 'host-toolbar' });
   const scrim = makeEl('div');
   const addBtn = makeEl('button');
+  const modelSlotEl = makeEl('bard-mode-switcher');
   const modelBtn = makeEl('button');
+  const primaryActionBtn = makeEl('button');
+  const composerAttachment = makeEl('div');
   const chip = makeEl('button');
   const codeSurface = makeEl('div');
   const codeHeader = makeEl('div');
@@ -141,7 +146,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
   const assistantTurn = makeEl('article', { 'data-turn': 'assistant' });
   assistantTurn.textContent = 'Sample assistant answer';
 
-  for (const [k, v] of Object.entries({ docEl, body, primary, threadCol, composerCol, composer, scrim, addBtn, modelBtn, chip, codeSurface, codeHeader, spacer, userTurn, assistantTurn })) {
+  for (const [k, v] of Object.entries({ docEl, body, primary, threadCol, composerCol, composer, gridEl, trailingEl, scrim, addBtn, modelSlotEl, modelBtn, primaryActionBtn, composerAttachment, chip, codeSurface, codeHeader, spacer, userTurn, assistantTurn })) {
     elements.set(k, v);
   }
 
@@ -156,10 +161,14 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     assistantTurns: () => (homeMode ? [] : [assistantTurn]),
     primarySurface: () => primary,
     composerSurface: () => composer,
+    composerGrid: () => ({ element: gridEl, slots: null, trailing: trailingEl }),
     composerBackdropSurfaces: () => [scrim],
     composerScrimSurface: () => scrim,
     composerAddTrigger: () => addBtn,
     modelSelectorTrigger: () => modelBtn,
+    modelCapsuleSlot: () => modelSlotEl,
+    composerPrimaryAction: () => primaryActionBtn,
+    composerAttachments: () => [composerAttachment],
     composerChips: () => [chip],
     codeSurfaces: () => [codeSurface],
     codeHeaders: () => [codeHeader],
@@ -236,13 +245,19 @@ test('runtime marks all v0.3.0 surfaces reversibly, respects host palette and co
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), 'true');
   assert.equal(e.addBtn.getAttribute('data-op-composer-add'), 'true');
   assert.equal(e.modelBtn.getAttribute('data-op-model-capsule'), 'true');
+  assert.equal(e.gridEl.getAttribute('data-op-composer-grid'), 'true');
+  assert.equal(e.trailingEl.getAttribute('data-op-composer-toolbar'), 'true');
+  assert.equal(e.trailingEl.getAttribute('data-op-composer-trailing'), null);
+  assert.equal(e.modelSlotEl.getAttribute('data-op-model-capsule-item'), 'true');
+  assert.equal(e.primaryActionBtn.getAttribute('data-op-composer-primary-action'), 'true');
+  assert.equal(e.composerAttachment.getAttribute('data-op-composer-attachment'), 'true');
   assert.equal(e.chip.getAttribute('data-op-composer-chip'), 'true');
   assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), 'true');
   assert.equal(e.threadCol.getAttribute('data-op-thread-column'), 'true');
   assert.equal(e.composerCol.getAttribute('data-op-composer-column'), 'true');
   assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'true');
 
-  // Switch to Native Palette ('host'): visual marks clear while column marks remain, original composer attr restores.
+  // Switch to Native Palette ('host'): visual marks clear while column marks remain, original composer/toolbar attrs restore.
   await h.schema.callApi(h.api.storage.local, 'set', { [h.schema.STORAGE_KEY]: { ...h.schema.DEFAULT_CONFIG, enabled: true, palette: 'host', themeMode: 'dark' } });
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(e.codeSurface.getAttribute('data-op-code-surface'), null);
@@ -250,17 +265,27 @@ test('runtime marks all v0.3.0 surfaces reversibly, respects host palette and co
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(e.addBtn.getAttribute('data-op-composer-add'), null);
   assert.equal(e.modelBtn.getAttribute('data-op-model-capsule'), null);
+  assert.equal(e.gridEl.getAttribute('data-op-composer-grid'), null);
+  assert.equal(e.trailingEl.getAttribute('data-op-composer-toolbar'), 'host-toolbar');
+  assert.equal(e.modelSlotEl.getAttribute('data-op-model-capsule-item'), null);
+  assert.equal(e.primaryActionBtn.getAttribute('data-op-composer-primary-action'), null);
+  assert.equal(e.composerAttachment.getAttribute('data-op-composer-attachment'), null);
   assert.equal(e.chip.getAttribute('data-op-composer-chip'), null);
   assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), null);
   assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'host-orig');
 
-  // Restore prism palette and disable composerRestyle: composer/add/model/chip clear, code/scrim remain.
+  // Restore prism palette and disable composerRestyle: composer/add/model/toolbar/slot/primary/attachment/chip clear, code/scrim remain.
   await h.schema.callApi(h.api.storage.local, 'set', { [h.schema.STORAGE_KEY]: { ...h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', composerRestyle: false } });
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(e.codeSurface.getAttribute('data-op-code-surface'), 'true');
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), 'true');
   assert.equal(e.addBtn.getAttribute('data-op-composer-add'), null);
   assert.equal(e.modelBtn.getAttribute('data-op-model-capsule'), null);
+  assert.equal(e.gridEl.getAttribute('data-op-composer-grid'), null);
+  assert.equal(e.trailingEl.getAttribute('data-op-composer-toolbar'), 'host-toolbar');
+  assert.equal(e.modelSlotEl.getAttribute('data-op-model-capsule-item'), null);
+  assert.equal(e.primaryActionBtn.getAttribute('data-op-composer-primary-action'), null);
+  assert.equal(e.composerAttachment.getAttribute('data-op-composer-attachment'), null);
   assert.equal(e.chip.getAttribute('data-op-composer-chip'), null);
   assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'host-orig');
 
@@ -269,18 +294,24 @@ test('runtime marks all v0.3.0 surfaces reversibly, respects host palette and co
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(e.docEl.getAttribute('data-op-home'), null);
   assert.equal(e.codeSurface.getAttribute('data-op-code-surface'), null);
+  assert.equal(e.trailingEl.getAttribute('data-op-composer-toolbar'), 'host-toolbar');
   assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'host-orig');
 
   // Re-enable then stop runtime: every mark and root flag restores cleanly.
   await h.schema.callApi(h.api.storage.local, 'set', { [h.schema.STORAGE_KEY]: { ...h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', enableChatGPT: true } });
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(e.codeSurface.getAttribute('data-op-code-surface'), 'true');
+  assert.equal(e.trailingEl.getAttribute('data-op-composer-toolbar'), 'true');
   runtime.stop();
   assert.equal(e.docEl.getAttribute('data-op-home'), null);
   assert.equal(e.codeSurface.getAttribute('data-op-code-surface'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(e.threadCol.getAttribute('data-op-thread-column'), null);
   assert.equal(e.composerCol.getAttribute('data-op-composer-column'), null);
+  assert.equal(e.trailingEl.getAttribute('data-op-composer-toolbar'), 'host-toolbar');
+  assert.equal(e.modelSlotEl.getAttribute('data-op-model-capsule-item'), null);
+  assert.equal(e.primaryActionBtn.getAttribute('data-op-composer-primary-action'), null);
+  assert.equal(e.composerAttachment.getAttribute('data-op-composer-attachment'), null);
   assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'host-orig');
 });
 

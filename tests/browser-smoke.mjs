@@ -534,12 +534,14 @@ async function composerControlsSnapshot(page) {
     const addBtn = document.querySelector('button[data-testid="composer-plus-btn"], button[data-test-id="upload-file-button"]');
     const modelBtn = document.querySelector('button[data-testid="model-switcher-dropdown-button"], button[data-test-id="bard-mode-menu-button"]');
     const modelTier = modelBtn?.querySelector('.model-tier, .mode-tier');
+    const primaryBtn = composer?.querySelector('button[data-testid="send-button"], button[data-test-id="send-button"], .send-button');
     const chip = document.querySelector('button[data-testid="composer-mode-pill"], button.toolbox-drawer-item-button');
     const beforeStyle = modelBtn ? getComputedStyle(modelBtn, '::before') : null;
     const addRect = addBtn?.getBoundingClientRect();
+    const primaryRect = primaryBtn?.getBoundingClientRect();
     return {
       composer: composer ? {
-        style: readStyle(composer, ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderRadius', 'boxShadow', 'borderColor']),
+        style: readStyle(composer, ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderRadius', 'borderTopWidth', 'outlineStyle', 'boxShadow', 'borderColor']),
         parentTag: composer.parentElement?.tagName || null
       } : null,
       editor: editor ? {
@@ -556,17 +558,24 @@ async function composerControlsSnapshot(page) {
       modelBtn: modelBtn ? {
         attr: modelBtn.getAttribute('data-op-model-capsule'),
         parentTag: modelBtn.parentElement?.tagName || null,
-        style: readStyle(modelBtn, ['borderRadius', 'borderTopWidth', 'borderTopColor', 'backgroundColor', 'color', 'paddingTop', 'paddingLeft', 'gap', 'display', 'alignItems']),
+        style: readStyle(modelBtn, ['borderRadius', 'borderTopWidth', 'borderTopColor', 'backgroundColor', 'color', 'paddingTop', 'paddingLeft', 'minHeight', 'height', 'gap', 'display', 'alignItems']),
         before: beforeStyle ? {
           content: beforeStyle.content,
           width: beforeStyle.width,
           height: beforeStyle.height,
           borderRadius: beforeStyle.borderRadius,
+          clipPath: beforeStyle.clipPath,
           backgroundColor: beforeStyle.backgroundColor
         } : null,
         tier: readStyle(modelTier, ['color', 'fontWeight']),
         text: modelBtn.textContent,
         childCount: modelBtn.children.length
+      } : null,
+      primaryAction: primaryBtn ? {
+        attr: primaryBtn.getAttribute('data-op-composer-primary-action'),
+        parentTag: primaryBtn.parentElement?.tagName || null,
+        style: readStyle(primaryBtn, ['width', 'height', 'minWidth', 'borderRadius', 'backgroundColor', 'color', 'display', 'alignItems', 'justifyContent']),
+        rect: { width: Math.round(primaryRect.width), height: Math.round(primaryRect.height) }
       } : null,
       chip: chip ? {
         attr: chip.getAttribute('data-op-composer-chip'),
@@ -586,6 +595,10 @@ function composerSurfaceAndGeometry(snapshot) {
     delete copy.modelBtn.style.borderTopColor;
   }
   if (copy.modelBtn?.tier) delete copy.modelBtn.tier.color;
+  if (copy.primaryAction?.style) {
+    delete copy.primaryAction.style.backgroundColor;
+    delete copy.primaryAction.style.color;
+  }
   if (copy.chip?.style) {
     delete copy.chip.style.color;
     delete copy.chip.style.borderTopColor;
@@ -598,6 +611,7 @@ async function settleComposerControls(page) {
     settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow'),
     settledSurfaceStyle(page, 'button[data-testid="composer-plus-btn"], button[data-test-id="upload-file-button"]', 'backgroundColor'),
     settledSurfaceStyle(page, 'button[data-testid="model-switcher-dropdown-button"], button[data-test-id="bard-mode-menu-button"]', 'backgroundColor'),
+    settledSurfaceStyle(page, 'button[data-testid="send-button"], button[data-test-id="send-button"], .send-button', 'backgroundColor'),
     settledSurfaceStyle(page, 'button[data-testid="composer-mode-pill"], button.toolbox-drawer-item-button', 'backgroundColor')
   ]);
 }
@@ -607,22 +621,25 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
     document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'true' &&
     document.querySelector('[data-op-composer-add="true"]') &&
     document.querySelector('[data-op-model-capsule="true"]') &&
+    document.querySelector('[data-op-composer-primary-action="true"]') &&
     document.querySelector('[data-op-composer-chip="true"]')
   );
   await settleComposerControls(page);
   const snap = await composerControlsSnapshot(page);
-  assert.ok(snap.composer && snap.editor && snap.tools && snap.addBtn && snap.modelBtn && snap.chip, `${host} ${palette}: all composer & capsule nodes must exist`);
+  assert.ok(snap.composer && snap.editor && snap.tools && snap.addBtn && snap.modelBtn && snap.primaryAction && snap.chip, `${host} ${palette}: all composer & capsule nodes must exist`);
 
-  assert.equal(snap.composer.style.paddingTop, '14px');
-  assert.equal(snap.composer.style.paddingRight, '16px');
-  assert.equal(snap.composer.style.paddingBottom, '12px');
-  assert.equal(snap.composer.style.paddingLeft, '16px');
-  assert.equal(snap.composer.style.borderRadius, '22px');
+  assert.equal(snap.composer.style.paddingTop, '12px');
+  assert.equal(snap.composer.style.paddingRight, '14px');
+  assert.equal(snap.composer.style.paddingBottom, '10px');
+  assert.equal(snap.composer.style.paddingLeft, '14px');
+  assert.equal(snap.composer.style.borderRadius, '16px');
+  assert.equal(snap.composer.style.borderTopWidth, '1px');
+  assert.equal(snap.composer.style.outlineStyle, 'none');
   assert.match(snap.composer.style.boxShadow, /inset/);
   assert.equal(snap.composer.parentTag, nativeControls.composer.parentTag);
 
-  assert.ok(parseFloat(snap.editor.style.minHeight) >= 44, `${host} ${palette}: editor min-height >= 44px`);
-  assert.ok(parseFloat(snap.editor.style.paddingBottom) >= 6, `${host} ${palette}: editor padding-bottom >= 6px`);
+  assert.ok(parseFloat(snap.editor.style.minHeight) >= 40, `${host} ${palette}: editor min-height >= 40px`);
+  assert.ok(parseFloat(snap.editor.style.paddingBottom) >= 4, `${host} ${palette}: editor padding-bottom >= 4px`);
   assert.notEqual(snap.editor.style.caretColor, nativeControls.editor.style.caretColor);
   assert.equal(snap.tools.style.marginTop, '10px');
 
@@ -643,19 +660,33 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
   assert.ok(parseFloat(snap.modelBtn.style.borderTopWidth) >= 1);
   assert.ok(['inline-flex', 'flex'].includes(snap.modelBtn.style.display), `${host} ${palette}: model capsule uses flex layout, got ${snap.modelBtn.style.display}`);
   assert.equal(snap.modelBtn.style.alignItems, 'center');
-  assert.equal(snap.modelBtn.style.paddingTop, '5px');
-  assert.equal(snap.modelBtn.style.paddingLeft, '11px');
+  assert.equal(snap.modelBtn.style.paddingTop, '4px');
+  assert.equal(snap.modelBtn.style.paddingLeft, '10px');
+  assert.equal(snap.modelBtn.style.minHeight, '30px');
+  assert.equal(snap.modelBtn.style.height, '30px');
   assert.equal(snap.modelBtn.style.gap, '6px');
   assert.notEqual(snap.modelBtn.style.backgroundColor, nativeControls.modelBtn.style.backgroundColor);
   assert.equal(snap.modelBtn.before.content, '""');
-  assert.equal(snap.modelBtn.before.width, '6px');
-  assert.equal(snap.modelBtn.before.height, '6px');
-  assert.equal(snap.modelBtn.before.borderRadius, '50%');
-  assert.equal(snap.modelBtn.before.backgroundColor, snap.modelBtn.tier.color, `${host} ${palette}: ::before dot and tier tag share --op-accent`);
+  assert.equal(snap.modelBtn.before.width, '11px');
+  assert.equal(snap.modelBtn.before.height, '11px');
+  assert.notEqual(snap.modelBtn.before.borderRadius, '50%');
+  assert.match(snap.modelBtn.before.clipPath, /^polygon\(/);
+  assert.equal(snap.modelBtn.before.backgroundColor, snap.modelBtn.tier.color, `${host} ${palette}: ::before star and tier tag share --op-accent`);
   assert.notEqual(snap.modelBtn.tier.color, snap.modelBtn.style.color);
   assert.ok(Number(snap.modelBtn.tier.fontWeight) >= 600);
-  assert.equal(snap.modelBtn.childCount, nativeControls.modelBtn.childCount, `${host} ${palette}: ::before dot adds zero DOM elements`);
+  assert.equal(snap.modelBtn.childCount, nativeControls.modelBtn.childCount, `${host} ${palette}: ::before star adds zero DOM elements`);
   assert.equal(snap.modelBtn.text, nativeControls.modelBtn.text, `${host} ${palette}: native model text preserved`);
+
+  assert.equal(snap.primaryAction.attr, 'true');
+  assert.equal(snap.primaryAction.parentTag, nativeControls.primaryAction.parentTag);
+  assert.equal(snap.primaryAction.rect.width, 34, `${host} ${palette}: primary action width is 34px`);
+  assert.equal(snap.primaryAction.rect.height, 34, `${host} ${palette}: primary action height is 34px`);
+  assert.ok(parseFloat(snap.primaryAction.style.borderRadius) >= 999);
+  assert.ok(['inline-flex', 'flex'].includes(snap.primaryAction.style.display));
+  assert.equal(snap.primaryAction.style.alignItems, 'center');
+  assert.equal(snap.primaryAction.style.justifyContent, 'center');
+  assert.notEqual(snap.primaryAction.style.backgroundColor, nativeControls.primaryAction.style.backgroundColor);
+  assertContrastRatio(snap.primaryAction.style.color, snap.primaryAction.style.backgroundColor, `${host} ${palette} primary action`);
 
   assert.equal(snap.chip.attr, 'true');
   assert.equal(snap.chip.parentTag, nativeControls.chip.parentTag);
@@ -985,7 +1016,7 @@ async function exerciseFixture(browser, host) {
     await exerciseSidebarSelection(page, originalSidebarSelection);
     await page.evaluate(() => __prismFixture.patch({ composerRestyle: false }));
     await assertComposerBackdrops(page, originalSurfaces);
-    await page.waitForFunction(() => !document.querySelector('[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-chip="true"]') && document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'fixture-original');
+    await page.waitForFunction(() => !document.querySelector('[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-primary-action="true"],[data-op-composer-chip="true"],[data-op-composer-attachment="true"],[data-op-composer-toolbar="true"],[data-op-model-capsule-item="true"]') && document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'fixture-original');
     await settleComposerControls(page);
     assert.deepEqual(composerSurfaceAndGeometry(await composerControlsSnapshot(page)), composerSurfaceAndGeometry(originalComposerControls), `${host}: composerRestyle=false restores native composer, add button, model capsule, and chips`);
     await page.evaluate(() => __prismFixture.patch({ composerRestyle: true }));
@@ -1226,7 +1257,7 @@ async function exerciseFixture(browser, host) {
     assert.equal(stopped.codeBlocks, 0);
     assert.equal(stopped.thoughtBlocks, 0);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
-    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-composer-scrim="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-composer-scrim="true"],[data-op-composer-grid="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-enabled')), false);
     await page.evaluate(() => { __prismFixture.patch({ enabled: true }); window.dispatchEvent(new Event('pageshow')); document.body.append(document.createElement('div')); });

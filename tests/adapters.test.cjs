@@ -195,13 +195,18 @@ function matchCompound(node, compound) {
       if (!m || !node.classList.contains(m[1])) return false;
       rest = rest.slice(m[0].length);
     } else if (rest.startsWith('[')) {
-      const m = rest.match(/^\[([a-zA-Z0-9_:-]+)(?:(\^=|\*=|\$=|=)"([^"]*)")?\]/);
+      const m = rest.match(/^\[([a-zA-Z0-9_:-]+)(?:(\^=|\*=|\$=|=)"([^"]*)")?(?:\s+([iIsS]))?\]/);
       if (!m) return false;
-      const val = node.getAttribute(m[1]);
-      if (m[2] === '=' && val !== m[3]) return false;
-      if (m[2] === '^=' && (!val || !val.startsWith(m[3]))) return false;
-      if (m[2] === '$=' && (!val || !val.endsWith(m[3]))) return false;
-      if (m[2] === '*=' && (!val || !val.includes(m[3]))) return false;
+      let val = node.getAttribute(m[1]);
+      let target = m[3];
+      if (m[4] && m[4].toLowerCase() === 'i') {
+        if (val !== null) val = val.toLowerCase();
+        if (target !== undefined) target = target.toLowerCase();
+      }
+      if (m[2] === '=' && val !== target) return false;
+      if (m[2] === '^=' && (!val || !val.startsWith(target))) return false;
+      if (m[2] === '$=' && (!val || !val.endsWith(target))) return false;
+      if (m[2] === '*=' && (!val || !val.includes(target))) return false;
       if (!m[2] && val === null) return false;
       rest = rest.slice(m[0].length);
     } else {
@@ -211,9 +216,31 @@ function matchCompound(node, compound) {
   return true;
 }
 
+function splitCombinators(sel) {
+  const tokens = [];
+  let current = '', depth = 0, quote = '';
+  for (const ch of String(sel || '').trim()) {
+    if (quote) {
+      current += ch;
+      if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; current += ch; continue; }
+    if (ch === '(' || ch === '[') depth++;
+    else if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1);
+    if (/\s/.test(ch) && depth === 0) {
+      if (current) { tokens.push(current); current = ''; }
+      continue;
+    }
+    current += ch;
+  }
+  if (current) tokens.push(current);
+  return tokens;
+}
+
 function matchesAny(node, selectorList) {
   for (const sel of splitSelectors(selectorList)) {
-    const tokens = sel.trim().split(/\s+/);
+    const tokens = splitCombinators(sel);
     if (tokens.length === 1) {
       if (matchCompound(node, tokens[0])) return true;
     } else if (tokens.length === 2 && tokens[1] && matchCompound(node, tokens[1])) {
@@ -646,4 +673,120 @@ test('ChatGPT adapter sorts mixed turns in DOM order, recognizes zh .sr-only fal
   assert.deepEqual([...adapter.assistantTurns()], [t2, t3]);
   assert.deepEqual([...adapter.threadTailSpacers()], [tailSpacer]);
   assert.equal(adapter.composerAddTrigger(composer), iconAddBtn);
+});
+
+test('v0.4.0 #26: ChatGPT adapter resolves composerGrid.trailing, modelCapsuleSlot, composerPrimaryAction, and composerAttachments across named and positional grids', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const composer = el('div', { 'data-composer-layout': 'single-line' });
+  const grid = el('div', { class: 'composerGrid_h2vs' }, { style: { display: 'grid', visibility: 'visible', opacity: '1', contentVisibility: 'visible' } });
+  const header = el('div', { class: 'composer-header' }, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridRowStart: 'header', gridColumnStart: 'header' } });
+  const tile = el('div', { class: 'file-tile_p4wt' }, { textContent: 'notes.pdf', rect: { left: 20, right: 160, top: 10, bottom: 44, width: 140, height: 34 } });
+  const removeBtn = el('button', { type: 'button', 'aria-label': 'Remove file' }, { textContent: '×' });
+  tile.append(removeBtn);
+  header.append(tile);
+
+  const leading = el('div', { class: 'composer-leading' }, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridRowStart: 'leading', gridColumnStart: 'leading' } });
+  const addBtn = el('button', { type: 'button', 'aria-label': 'Add files and more' }, { textContent: '+' });
+  leading.append(addBtn);
+
+  const primary = el('div', { class: 'composer-primary' }, { style: { display: 'block', visibility: 'visible', opacity: '1', gridRowStart: 'primary', gridColumnStart: 'primary' } });
+  const editor = el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' });
+  primary.append(editor);
+
+  const trailing = el('div', { class: 'composer-trailing' }, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridRowStart: 'trailing', gridColumnStart: 'trailing' } });
+  const modelBtn = el('button', { type: 'button', 'aria-label': 'Select ChatGPT model', 'data-selected-reasoning-effort': 'high' }, { textContent: 'High' });
+  const dictateBtn = el('button', { type: 'button', 'aria-label': 'Dictate' });
+  const voiceBtn = el('button', { type: 'button', 'aria-label': 'Start Voice' });
+  trailing.append(modelBtn, dictateBtn, voiceBtn);
+
+  grid.append(header, leading, primary, trailing);
+  composer.append(grid);
+  const turnAttachment = el('div', { class: 'file-tile_p4wt' }, { textContent: 'turn-only.pdf', rect: { left: 20, right: 160, top: 10, bottom: 44, width: 140, height: 34 } });
+  main.append(turnAttachment, composer);
+  body.append(main);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const resolvedGrid = adapter.composerGrid(composer);
+  assert.equal(resolvedGrid.element, grid);
+  assert.equal(resolvedGrid.slots, null);
+  assert.equal(resolvedGrid.trailing, trailing);
+  assert.equal(adapter.modelCapsuleSlot(resolvedGrid.trailing, modelBtn), modelBtn);
+  assert.deepEqual([...adapter.composerAttachments(composer)], [tile]);
+  assert.equal(adapter.composerPrimaryAction(composer), voiceBtn);
+
+  // Exclude dictate (English & Chinese) and prefer send button over voice button when both exist.
+  const sendBtn = el('button', { type: 'button', 'data-testid': 'send-button', 'aria-label': 'Send prompt' });
+  trailing.append(sendBtn);
+  assert.equal(adapter.composerPrimaryAction(composer), sendBtn);
+
+  sendBtn.style.display = 'none';
+  voiceBtn.style.display = 'none';
+  const zhDictate = el('button', { type: 'button', 'aria-label': '听写' });
+  trailing.append(zhDictate);
+  assert.equal(adapter.composerPrimaryAction(composer), null, 'never falls back to dictate, model, add, or attachment remove buttons');
+
+  // Positional grid (unnamed children) returns trailing === slots.trailing.
+  for (const child of [header, leading, primary, trailing]) {
+    child.style.gridRowStart = 'auto';
+    child.style.gridColumnStart = 'auto';
+  }
+  const positional = adapter.composerGrid(composer);
+  assert.equal(positional.element, grid);
+  assert.equal(positional.slots.trailing, trailing);
+  assert.equal(positional.trailing, trailing);
+
+  // Outside modelTrigger returns null slot.
+  const externalModel = el('button', { type: 'button', 'aria-label': 'Select ChatGPT model' });
+  main.append(externalModel);
+  assert.equal(adapter.modelCapsuleSlot(trailing, externalModel), null);
+});
+
+test('v0.4.0 #26: Gemini adapter resolves bard-mode-switcher capsule slot, trailing microphone fallback, and uploader-file-preview attachments', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('gemini');
+  const chatWindow = el('chat-window');
+  const inputArea = el('input-area-v2');
+  const grid = el('div', { class: 'text-input-field' }, { style: { display: 'grid', visibility: 'visible', opacity: '1', contentVisibility: 'visible' } });
+
+  const fileRow = el('div', { class: 'file-preview-container' }, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridRowStart: 'file-preview', gridColumnStart: 'file-preview' } });
+  const preview = el('uploader-file-preview', { class: 'file-preview-chip' }, { textContent: 'brief.pdf', rect: { left: 20, right: 160, top: 10, bottom: 44, width: 140, height: 34 } });
+  preview.append(el('button', { type: 'button', 'aria-label': 'Remove file' }, { textContent: '×' }));
+  fileRow.append(preview);
+
+  const leading = el('div', { class: 'leading-actions-wrapper' }, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridRowStart: 'leading-actions', gridColumnStart: 'leading-actions' } });
+  const addBtn = el('button', { type: 'button', 'data-test-id': 'upload-file-button', 'aria-label': 'Open upload file menu' });
+  leading.append(addBtn);
+
+  const textWrap = el('div', { class: 'text-input-field_textarea-wrapper' }, { style: { display: 'block', visibility: 'visible', opacity: '1', gridRowStart: 'text-input', gridColumnStart: 'text-input' } });
+  const editor = el('div', { class: 'ql-editor', contenteditable: 'true', role: 'textbox' });
+  textWrap.append(editor);
+
+  const trailing = el('div', { class: 'trailing-actions-wrapper' }, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridRowStart: 'trailing-actions', gridColumnStart: 'trailing-actions' } });
+  const switcher = el('bard-mode-switcher');
+  const modelBtn = el('button', { type: 'button', 'aria-label': 'Open mode picker, currently Neon High' }, { textContent: 'Neon High' });
+  switcher.append(modelBtn);
+  const chip = el('button', { type: 'button', class: 'toolbox-drawer-item-button' }, { textContent: 'Deep Research' });
+  // Unlabeled / localized fallback button inside trailing still resolves as primary action when not model/chip/dictate.
+  const idleMicFallback = el('button', { type: 'button', 'aria-label': 'Use audio input' });
+  trailing.append(switcher, chip, idleMicFallback);
+
+  grid.append(fileRow, leading, textWrap, trailing);
+  inputArea.append(grid);
+  chatWindow.append(inputArea);
+  body.append(chatWindow);
+
+  const adapter = A.forHost('gemini', doc);
+  const resolvedGrid = adapter.composerGrid(inputArea);
+  assert.equal(resolvedGrid.element, grid);
+  assert.equal(resolvedGrid.slots, null);
+  assert.equal(resolvedGrid.trailing, trailing);
+  assert.equal(adapter.modelCapsuleSlot(resolvedGrid.trailing, modelBtn), switcher);
+  assert.deepEqual([...adapter.composerAttachments(inputArea)], [preview]);
+  assert.equal(adapter.composerPrimaryAction(inputArea), idleMicFallback);
+
+  const sendBtn = el('button', { type: 'button', 'data-test-id': 'send-button', 'aria-label': 'Send message' });
+  trailing.append(sendBtn);
+  assert.equal(adapter.composerPrimaryAction(inputArea), sendBtn);
 });
