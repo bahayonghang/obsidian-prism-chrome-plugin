@@ -44,8 +44,11 @@ v0.3.0 的夹具是按推测的结构手写的，浏览器测试量的是扩展�
 
 - 两行输入框：只改宿主 grid 的列和 areas，不移动、不包装节点（ADR-0002）。适配器只在宿主 grid 的直接子节点用到全部约定的 area 名时才重排（ChatGPT `leading`/`primary`/`trailing`，Gemini `leading-actions`/`text-input`/`trailing-actions`），否则保留原生单行；ChatGPT 的卡片是带底色的 `[data-composer-layout]`。规则在 `styles/hosts.css` 的 `v0.3.1 #19` 块，浏览器测试 `tests/composer-two-row.mjs`。
 
+## 已实现（#21）
+
+- 宽度：standard 不覆盖，保持宿主原生宽度；full = 主区宽度 − 左侧安全边 20px − 给 Conversation Rail 留的右侧 56px；wide = (原生 + full) / 2，最多 1200px；视口不足 900px 时 wide 和 full 都回退为主区宽度减两侧各 16px。宽度指正文（段落）宽度；中点用每站点声明的原生正文宽度（ChatGPT 768px = 48rem，即 808px transcript 减去两侧 20px；Gemini 708px），不在运行时测量。`content.js` 只量主区宽度（Primary Surface），把结果写成根节点的 `--op-reading-width` 和 `--op-reading-shift`（列在容器内居中后向左平移，使全栏正文和输入框避开 Conversation Rail）。限宽选择器在 `src/adapters.js` 的 `contentWidth` 里按站点声明：ChatGPT 是 transcript 容器上的 `--thread-content-max-width`，以及 `#thread-bottom` 内带该变量的输入列；Gemini 是 `.md-content > *`、`user-query`、`.response-footer`、`hallucination-disclaimer`，输入区 `.input-area-container` 保持比正文窄 48px。运行时不做几何查找、不逐节点打标记。规则在 `styles/hosts.css` 的 `v0.3.1 #21` 块；User Turn 气泡在加宽和全栏下不超过 min(78%, 820px)。测试：`tests/content-width.test.cjs`、`tests/surfaces.test.cjs`、浏览器 `tests/live-width.mjs`。ChatGPT 夹具的输入列用同一个变量限宽是推断值（探针未测），线上输入列结构需人工验收。
+
 ## 已约定、尚未实现（来自 2026-11-22 的 grill，用户已确认）
 
-- 测试断言用户能看到的结果：#21、#22 各自把断言迁到新夹具上（#18、#19、#20 已完成）。
-- 宽度：standard 用宿主原生宽度；full 等于可用宽度减去安全边；wide 等于两者的中点，最多 1200px。限宽通过每个站点声明的选择器实现，**运行时不做几何查找、不逐节点打标记**（Gemini 是逐块限宽，逐节点打标记在流式输出时开销太大）。
+- 测试断言用户能看到的结果：#22 把断言迁到新夹具上（#18、#19、#20、#21 已完成）。
 - Composer Scrim：改成半透明画布色加背景模糊，不画实色底。已否决的方案：给滚动容器加 mask（会把 ChatGPT 的 sticky 输入框一起淡化）；在 scrim 里再复制一份光晕（会和背景错位）。

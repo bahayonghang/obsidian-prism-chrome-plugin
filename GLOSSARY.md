@@ -27,7 +27,7 @@ A single top-level response rendered by the AI model in the active conversation.
 _Avoid_: Bot reply, model node, response block
 
 **Content Width Preset**:
-One of three reading-column width modes (`standard`, `wide`, `full`) applied across Host Surfaces and synchronized with the Composer Surface.
+One of three reading-column width modes applied across Host Surfaces and synchronized with the Composer Surface: `standard` keeps the host's native width, `full` spans the main area minus a left edge and a right reserve for the Conversation Rail, and `wide` is the midpoint of the two, at most 1200px.
 _Avoid_: Page width, layout mode, zoom level
 
 **Native Palette**:
