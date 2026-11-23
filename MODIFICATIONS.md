@@ -2,7 +2,7 @@
 
 **Project:** Obsidian Prism Web — Community Edition  
 **Maintainer:** bahayonghang  
-**Date:** 2026-11-22\
+**Date:** 2026-11-23\
 **Version:** 0.4.0
 
 **License:** GPL-3.0-only
@@ -38,6 +38,10 @@ Issues #5 and #6 address installed-browser regressions: give the toolbar popup a
 ## v0.3.0 workbench refresh
 
 Spec #8 (#9–#14) updates the ChatGPT and Gemini DOM adapters, adds three Content Width Presets (`standard`, `wide`, `full`) synced with a decoupled Bottom Dock quick toggle via a scoped `OP_CONTENT_WIDTH_SET` channel, enforces >= 4.5:1 WCAG AA Code Surface and syntax token contrast across all four optical palettes without altering Native Palette (`host`), calibrates local DOM Context Vial heuristics with `auto` model-matched Reference Capacity and uncounted-attachment indicators (ADR-0001), tightens active ChatGPT bottom whitespace while adding a canvas-matched feathered Composer Scrim across both hosts, and introduces an elevated reference Composer Surface with in-place circular add trigger, Model Capsule, and unified chips without DOM reparenting or text mutation (ADR-0002). No new permissions, host access, or remote network dependencies are added.
+
+## v0.4.0 dual-mode scrim, composer capsule & bottom dock hardening
+
+Spec #23 (#24–#27, 2026-11-23) extends the read-only structure probe (`pseudos`, full `ancestorsOf`, `siblingsAfter`, `cornerFloats`) and probe-derived offline fixtures (`live-baselines`), introduces dual-mode `Composer Scrim` distinguishing in-flow flex docks (zero canvas veil/blur, collapsed empty spacers, compacted bottom whitespace) from overlaid docks (`44%`/`26%` dark/light blur scrim, `56%`/`36%` fallback, `--op-dock-clearance`), bridges ChatGPT `contentWidth` presets onto `main` and `#thread-bottom` dock containers/wrappers/direct forms, reshapes the in-place two-row `Composer Surface` (`auto minmax(0, 1fr)` grid, left-aligned four-pointed star `Model Capsule` right of `+`, single 1px optical border, high-contrast primary action button with prioritized Send > Voice > Microphone selection), and adds `Bottom Dock` singleton `data-op-instance` handover (fully reversible across same-realm and isolated-world reloads), orphan root pruning, 11px anti-squish styling, and zero-polling dynamic collision avoidance against corner floats, the composer, and the Conversation Rail. No new permissions, host access, or remote network dependencies are added.
 
 ## File attribution
 

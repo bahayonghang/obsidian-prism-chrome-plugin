@@ -60,7 +60,14 @@ v0.3.0 的夹具是按推测的结构手写的，浏览器测试量的是扩展�
 
 - 测试断言用户能看到的结果：#18–#22 均已把断言迁到新夹具上。评审修复删除了与渲染检查重复的 `hosts.css` 源码正则断言，只保留声明与 CSS 的静态同步守卫（S1，`5215f60`）。
 
+## 已实现（v0.4.0，#23–#27）
+
+- **探针与基线夹具（#23，`f308560` / `274f1d3`）**：`tools/structure-probe.js` 新增 `::before`/`::after` 伪元素绘制与遮罩样式（`pseudos`）、无截断 `ancestorsOf` 链、`siblingsAfter` 及右下角浮件 `cornerFloats` 采集；`chatgpt-live.html` 与 `gemini-live.html` 同步流内底栏与 `.host-corner-help`，并新增 `PRISM_SUITE=live-baselines` 只运行原生基线与探针隐私断言。
+- **双态 Composer Scrim 与底部留白治理（#25，`1f507b5` / `02d82fc` / `7226189` / `908930a`）**：`Adapters.isComposerDockOverlaid` 区分流内弹性底栏与叠层停靠区；流内底栏清除原生遮罩与背景且不绘制画布遮罩与模糊，折叠空占位兄弟节点并收紧声明与底栏间距；叠层底栏（Gemini 或粘性滚动区底栏）启用 `data-op-composer-scrim`，暗色 44% / 浅色 26% 模糊遮罩（无 `backdrop-filter` 回退 56% / 36% 渐变）并同步 `--op-dock-clearance`。`tests/live-scrim.mjs` 覆盖四套主题与两站点变体，并按浅色 26% 光学衰减公式校准无模糊截图方差上限。
+- **双端输入框重塑、宽度桥接与左侧四芒星胶囊（#26，`37758e6` / `2a26620` / `7558a6d` / `1cd55fe`）**：`contentWidth` 声明与 `hosts.css` 桥接 ChatGPT `main`、`#thread-bottom-container`、`#thread-bottom` 及包装/直属表单，使其三档宽度与正文严格对齐；`Composer Surface` 收敛为单层 1px 描边与紧凑圆角，将两行网格设成 `auto minmax(0, 1fr)` 并以 `order: -10; margin-inline-end: auto` 把带四芒星的 `Model Capsule` 原位排到 `+` 右侧（ADR-0002 零节点重排），右侧渲染高对比墨曜主圆钮与幽灵次级按钮。`tests/live-width.mjs` 与 `tests/composer-two-row.mjs` 覆盖 1707/1280 视口、四套主题对比度及直属表单/位置式网格变体。
+- **Bottom Dock 单例接管与零轮询避让（#27，`9834ae5` / `0a66954`）**：`src/content.js` 引入 `data-op-instance` 唯一所有权标记、`pruneOrphanRoots()` 孤儿清理与静默 `yieldOwnership()`（并确保重载接管后停用/原生配色/`stop()` 完全可逆、无残余标记与根变量）；`styles/hosts.css` 锁定 `#op-bottom-dock` 11px 胶囊字体与 `flex-shrink: 0`；`Adapters.findCornerFloatingObstacles`、`computeDockAvoidance` 与 `syncDockPopoverPosition` 在 scan/resize/scroll 时通过 `--op-dock-offset-x`/`-y` 与 `--op-vial-popover-shift-x` / `data-op-popover-side="below"` 自动避让角落浮件、输入框和 Conversation Rail。`tests/bottom-dock.mjs` 与单测覆盖跨实例接管、防挤压、3×3 零重叠与命中矩阵及完全卸载清理。
+
 ## 仍是推断值或未在线上验证
 
-- 推断选择器与数值：ChatGPT 两行输入框的 area 名 `leading`/`primary`/`trailing`（有结构槽位兜底）、输入列限宽元素 `#thread-bottom [class*="--thread-content-max-width"]`（有 form 兜底）、输入框附件头行、h1/h4；Gemini 网格列宽、`.response-footer` 宽度、h1/h4、滚动区 150px 底部留白。
-- 未在线上验证：仓库内的 `tools/structure-probe.js` 尚未在真实登录页面上运行，需所有者授权后人工执行；本页事实来自更早一次只读探针。线上 ChatGPT 输入列结构、两行输入框在真实网格上的效果、Gemini 是否动态调整底部留白，都需要人工验收。
+- 推断选择器与数值：ChatGPT `#thread-bottom [class*="--thread-content-max-width"]` 与中间包装层/直属 `form[data-chatgpt-composer]` 结构、ChatGPT 两行输入框的 area 名 `leading`/`primary`/`trailing`（有结构槽位兜底）、输入框附件头行、h1/h4、线上真实角落浮件形态（`cornerFloatingObstacles`）；Gemini 网格列宽、`.response-footer` 宽度、h1/h4、滚动区 150px 底部留白及是否动态调白。
+- 未在线上验证：仓库内含 v0.4.0 扩展的 `tools/structure-probe.js` 尚未在真实登录页面上运行，需所有者授权后人工执行；本页实测事实仍来自 2026-11-22 更早一次只读探针，所有 v0.4.0 浏览器验证均运行于离线探针夹具（`未在真实登录会话验证`），线上 ChatGPT 输入列结构、A/B 底栏模式、两行输入框真实网格及角落浮件避让仍需登录实测验收。

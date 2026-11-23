@@ -13,8 +13,8 @@
 | 四套主题 | 深空黑曜 Obsidian、暖炭玄岩 Warm、白昼冷晶 Crystal、暖白画册 Alabaster；也可保留宿主配色 |
 | 外观微调 | 跟随系统亮暗、五档强调色、三档圆角、本地代码字体、连字；玻璃/实色/原生侧栏与紧凑密度 |
 | 设置中心 | 紧凑弹窗、完整设置工作台、常驻导航与保存状态、中英文、场景预设、外观/动效预览、JSON导入导出、跨标签页同步 |
-| 阅读工具 | 代码块顶栏与全主题高亮对比度统一、长代码手动折叠、带搜索的会话大纲、`Alt+↑` / `Alt+↓` 跳转、三档内容宽度（标准 / 加宽 / 全栏）及右下角单键循环按钮 |
-| 环境与动效 | Aurora/Spotlight底部光晕、Spotlight聚光、字符/网格纹理、光效浓度、移动速度、模糊式 Composer Scrim（无实色底，光晕连续透出）、原位圆角悬浮输入框卡片与 Model Capsule、聚焦光效及回复活动余晖；全部可配置且支持原生配色零干预 |
+| 阅读工具 | 代码块顶栏与全主题高亮对比度统一、长代码手动折叠、带搜索的会话大纲、`Alt+↑` / `Alt+↓` 跳转、三档内容宽度（标准 / 加宽 / 全栏，ChatGPT 主区与底栏同步伸缩）及右下角防挤压单键循环按钮 |
+| 环境与动效 | Aurora/Spotlight底部光晕、Spotlight聚光、字符/网格纹理、光效浓度、移动速度、双态 Composer Scrim（流内底栏透光收紧留白，叠层底栏 44%/26% 羽化模糊遮罩）、原位单层 1px 圆角悬浮输入框卡片与左侧四芒星 Model Capsule、高对比墨曜主圆钮、聚焦光效及回复活动余晖；全部可配置且支持原生配色零干预；右下角 Bottom Dock 支持跨重载单例接管与零轮询碰撞避让 |
 | 会话估算 | 按当前网页已加载文字校准估算 token 数；支持 `auto` 按可见模型标签自动匹配参考容量（ChatGPT 按档位：Pro / Thinking / High / xHigh 为 400K，Instant 为 128K，未识别的标签按 128K 兜底并显示 `?`；Gemini 未知模式按 1M 自动兜底）或手动覆盖，并在检测到可见附件时附加 `+` 标记与未计入附件提示 |
 | 可选翻译 | 关闭为默认状态；手动翻译网页已经显示的思考文字，自行配置兼容接口并授权目标站点 |
 
@@ -75,7 +75,7 @@ Chrome：用新版包的内容覆盖原来加载的扩展目录，在 `chrome://
 
 Firefox：在 `about:debugging` 重新载入新版 Firefox 包，并刷新目标网页。
 
-v0.3.0 升级了 2026 双端页面 DOM 适配器，新增「标准 / 加宽 / 全栏」三档内容宽度与右下角快捷切换、全主题高对比度代码块及语法高亮、默认 `auto` 模型感知与附件提示的上下文估算、ChatGPT 底部空白收紧与双端羽化 Composer Scrim，以及原位可逆的输入框卡片与 Model Capsule（详见 [ADR-0001](docs/adr/0001-local-dom-context-estimation.md) 与 [ADR-0002](docs/adr/0002-in-place-reversible-composer-styling.md)）。
+v0.4.0 在 v0.3.0 与 2026 探针适配基础上新增双态 `Composer Scrim` 与 ChatGPT 底部冗余留白收紧、三档内容宽度同步底栏容器与中间包装层、Prism 原型两行输入框布局（左侧四芒星 `Model Capsule` 紧随 `+`、单层 1px 描边、高对比主圆钮），以及 `Bottom Dock` 跨实例单例接管、防挤压 11px 按钮、零轮询角落浮件/输入框/大纲避让与视口内自适应弹层（详见 [ADR-0001](docs/adr/0001-local-dom-context-estimation.md) 与 [ADR-0002](docs/adr/0002-in-place-reversible-composer-styling.md)）。
 
 旧配色与浓度会保留，宠物设置自动失效。想直接查看新版完整环境效果，可先选择“流光”场景，再在“光影”中微调。正文中的光场会主动减弱，首页的光场更明显。完整设置页可通过弹窗右上角按钮打开。
 
@@ -124,7 +124,7 @@ npm run build
 npm run test:browser
 ```
 
-设置 `PRISM_BROWSER=firefox` 可运行Firefox DOM夹具测试；这不等于Firefox签名扩展的完整生命周期测试。CI在两个引擎运行相同的本地夹具。所有测试均不需要真实账号或API密钥，不向ChatGPT、Gemini或付费翻译接口发送测试对话。
+也可用 `python scripts/build.py`（Windows 仅安装 `py` 时用 `py -3 scripts/build.py`）打包，并用 `PRISM_SUITE=live-fixtures npm run test:browser` 快速运行离线探针夹具闭环（尚未在真实登录网站逐项验收）。设置 `PRISM_BROWSER=firefox` 可运行Firefox DOM夹具测试；这不等于Firefox签名扩展的完整生命周期测试。CI在两个引擎运行相同的本地夹具。所有测试均不需要真实账号或API密钥，不向ChatGPT、Gemini或付费翻译接口发送测试对话。
 
 ## 来源与许可证
 
@@ -143,8 +143,8 @@ npm run test:browser
 - Four light/dark palettes plus host colors; five accents, system appearance, rounded corners, installed code fonts, ligatures and compact sidebars.
 - Outside the host palette, conversation headings (h1–h4) follow the message body font, use the palette's primary foreground and keep a clear h1 > h2 > h3 > h4 weight hierarchy. There is no reading-font option; the body font stays the host's or yours.
 - A compact bilingual popup and full settings workspace with persistent navigation, motion preview, scene presets, live settings and sanitized JSON import/export.
-- Glass/solid/native sidebar surfaces and an elevated, in-place reversible two-row Composer Surface (editor on its own row; circular add trigger on the left, Model Capsule and voice/send on the right, rearranged only through the host's grid areas) with unified chips, and a translucent blur Composer Scrim (no solid base; the horizon glow shows through) without DOM reparenting or text rewriting (ADR-0002).
-- Three Content Width Presets (`standard`, `wide`, `full`) synced between Reading settings and an independent Bottom Dock quick toggle, >= 4.5:1 WCAG AA Code Surface contrast across all four optical palettes, manual long-code folding, sticky headers, a searchable conversation outline and `Alt+Up/Down` navigation.
+- Glass/solid/native sidebar surfaces and an elevated, in-place reversible two-row Composer Surface (single 1px optical border; attachments on top, full-width editor, circular `+` and left-aligned four-pointed star Model Capsule via flex `order` + `margin-inline-end: auto`, ghost secondary actions, and high-contrast circular primary action on the right, without DOM reparenting or text rewriting per ADR-0002) plus a dual-mode Composer Scrim (clear glow and compacted bottom whitespace for in-flow docks; 44%/26% feathered blur occlusion and scroller clearance for overlaid docks).
+- Three Content Width Presets (`standard`, `wide`, `full`) synced across conversation turns and composer containers/wrappers with a Bottom Dock quick toggle featuring singleton handover, anti-squish 11px pills, zero-polling collision avoidance, and viewport-contained Context Vial popovers; >= 4.5:1 WCAG AA Code Surface contrast across all four optical palettes; manual long-code folding, sticky headers, a searchable conversation outline, and `Alt+Up/Down` navigation.
 - Configurable Aurora/Spotlight environments, decorative glyph/grid textures, motion speed, focus glow and optional stream highlighting. Pixel companions have been removed, including legacy settings support.
 - A calibrated local-only DOM estimate of currently loaded text (ADR-0001) with `auto` model-matched Reference Capacity (ChatGPT tiers: Pro / Thinking / High / xHigh map to 400K and Instant to 128K; an unrecognized ChatGPT label falls back to 128K and is flagged with `?`; Gemini custom modes use the 1M auto fallback; a manual override always wins) and an explicit `+` indicator for uncounted visible attachments. It is **not** model quota, billing, or actual server-side context usage.
 - Optional, manual translation of already visible thought text through a user-configured compatible endpoint. It is off by default, requires explicit origin/data permission, and never exposes credentials through host-page storage or config exports.
