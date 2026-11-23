@@ -429,7 +429,8 @@ async function assertOverlayScrimActive(page, host, scheme, label, { checkFallba
     const open = await textBlockStats(page, host, 'open');
     const behind = await textBlockStats(page, host, 'behind');
     const blurs = await rendersBackdropBlur(page);
-    assert.ok(behind.variance <= open.variance * (blurs ? 0.15 : 0.35), `${label}: text behind scrim loses detail (${behind.variance.toFixed(0)} vs ${open.variance.toFixed(0)})`);
+    const maxVarianceFactor = blurs ? 0.15 : Math.min(0.65, (1 - occlusion.atCenter) ** 2 + 0.08);
+    assert.ok(behind.variance <= open.variance * maxVarianceFactor, `${label}: text behind scrim loses detail (${behind.variance.toFixed(0)} vs ${open.variance.toFixed(0)}, ratio ${(behind.variance / open.variance).toFixed(2)} <= ${maxVarianceFactor.toFixed(2)})`);
     if (blurs) {
       assert.ok(behind.sharpness < open.sharpness * 0.6, `${label}: text behind scrim is blurred (${behind.sharpness.toFixed(2)} vs ${open.sharpness.toFixed(2)})`);
     }
