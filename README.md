@@ -14,7 +14,7 @@
 | 外观微调 | 跟随系统亮暗、五档强调色、三档圆角、本地代码字体、连字；玻璃/实色/原生侧栏与紧凑密度 |
 | 设置中心 | 紧凑弹窗、完整设置工作台、常驻导航与保存状态、中英文、场景预设、外观/动效预览、JSON导入导出、跨标签页同步 |
 | 阅读工具 | 代码块顶栏与全主题高亮对比度统一、长代码手动折叠、带搜索的会话大纲、`Alt+↑` / `Alt+↓` 跳转、三档内容宽度（标准 / 加宽 / 全栏）及右下角单键循环按钮 |
-| 环境与动效 | Aurora/Spotlight底部光晕、Spotlight聚光、字符/网格纹理、光效浓度、移动速度、羽化 Composer Scrim、原位圆角悬浮输入框卡片与 Model Capsule、聚焦光效及回复活动余晖；全部可配置且支持原生配色零干预 |
+| 环境与动效 | Aurora/Spotlight底部光晕、Spotlight聚光、字符/网格纹理、光效浓度、移动速度、模糊式 Composer Scrim（无实色底，光晕连续透出）、原位圆角悬浮输入框卡片与 Model Capsule、聚焦光效及回复活动余晖；全部可配置且支持原生配色零干预 |
 | 会话估算 | 按当前网页已加载文字校准估算 token 数；支持 `auto` 按可见模型标签自动匹配参考容量（ChatGPT 按档位：Pro / Thinking / High / xHigh 为 400K，Instant 为 128K，未识别的标签按 128K 兜底并显示 `?`；Gemini 未知模式按 1M 自动兜底）或手动覆盖，并在检测到可见附件时附加 `+` 标记与未计入附件提示 |
 | 可选翻译 | 关闭为默认状态；手动翻译网页已经显示的思考文字，自行配置兼容接口并授权目标站点 |
 
@@ -143,7 +143,7 @@ npm run test:browser
 - Four light/dark palettes plus host colors; five accents, system appearance, rounded corners, installed code fonts, ligatures and compact sidebars.
 - Outside the host palette, conversation headings (h1–h4) follow the message body font, use the palette's primary foreground and keep a clear h1 > h2 > h3 > h4 weight hierarchy. There is no reading-font option; the body font stays the host's or yours.
 - A compact bilingual popup and full settings workspace with persistent navigation, motion preview, scene presets, live settings and sanitized JSON import/export.
-- Glass/solid/native sidebar surfaces and an elevated, in-place reversible two-row Composer Surface (editor on its own row; circular add trigger on the left, Model Capsule and voice/send on the right, rearranged only through the host's grid areas) with unified chips, and feathered Composer Scrim without DOM reparenting or text rewriting (ADR-0002).
+- Glass/solid/native sidebar surfaces and an elevated, in-place reversible two-row Composer Surface (editor on its own row; circular add trigger on the left, Model Capsule and voice/send on the right, rearranged only through the host's grid areas) with unified chips, and a translucent blur Composer Scrim (no solid base; the horizon glow shows through) without DOM reparenting or text rewriting (ADR-0002).
 - Three Content Width Presets (`standard`, `wide`, `full`) synced between Reading settings and an independent Bottom Dock quick toggle, >= 4.5:1 WCAG AA Code Surface contrast across all four optical palettes, manual long-code folding, sticky headers, a searchable conversation outline and `Alt+Up/Down` navigation.
 - Configurable Aurora/Spotlight environments, decorative glyph/grid textures, motion speed, focus glow and optional stream highlighting. Pixel companions have been removed, including legacy settings support.
 - A calibrated local-only DOM estimate of currently loaded text (ADR-0001) with `auto` model-matched Reference Capacity (ChatGPT tiers: Pro / Thinking / High / xHigh map to 400K and Instant to 128K; an unrecognized ChatGPT label falls back to 128K and is flagged with `?`; Gemini custom modes use the 1M auto fallback; a manual override always wins) and an explicit `+` indicator for uncounted visible attachments. It is **not** model quota, billing, or actual server-side context usage.

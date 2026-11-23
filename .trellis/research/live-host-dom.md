@@ -48,7 +48,12 @@ v0.3.0 的夹具是按推测的结构手写的，浏览器测试量的是扩展�
 
 - 宽度：standard 不覆盖，保持宿主原生宽度；full = 主区宽度 − 左侧安全边 20px − 给 Conversation Rail 留的右侧 56px；wide = (原生 + full) / 2，最多 1200px；视口不足 900px 时 wide 和 full 都回退为主区宽度减两侧各 16px。宽度指正文（段落）宽度；中点用每站点声明的原生正文宽度（ChatGPT 768px = 48rem，即 808px transcript 减去两侧 20px；Gemini 708px），不在运行时测量。`content.js` 只量主区宽度（Primary Surface），把结果写成根节点的 `--op-reading-width` 和 `--op-reading-shift`（列在容器内居中后向左平移，使全栏正文和输入框避开 Conversation Rail）。限宽选择器在 `src/adapters.js` 的 `contentWidth` 里按站点声明：ChatGPT 是 transcript 容器上的 `--thread-content-max-width`，以及 `#thread-bottom` 内带该变量的输入列；Gemini 是 `.md-content > *`、`user-query`、`.response-footer`、`hallucination-disclaimer`，输入区 `.input-area-container` 保持比正文窄 48px。运行时不做几何查找、不逐节点打标记。规则在 `styles/hosts.css` 的 `v0.3.1 #21` 块；User Turn 气泡在加宽和全栏下不超过 min(78%, 820px)。测试：`tests/content-width.test.cjs`、`tests/surfaces.test.cjs`、浏览器 `tests/live-width.mjs`。ChatGPT 夹具的输入列用同一个变量限宽是推断值（探针未测），线上输入列结构需人工验收。
 
+## 已实现（#22）
+
+- Composer Scrim：在对话状态（非 Home State、非 Native Palette）下，scrim 宿主清除自身绘制并只获得层叠上下文；其 `::before` 在子节点之下绘制约 45% 画布色加 `backdrop-filter: blur(14px)`，顶部用 28px mask 羽化，不画实色底。光晕层的层级和遮罩不变，能从下方连续透出。不支持背景模糊时回退为最高 58% 画布色的渐变。Gemini 的 scrim 宿主就是 `input-container.input-gradient`，近黑色带被清除，布局不变。规则在 `styles/hosts.css` 的 `Blur Composer Scrim (v0.3.1 #22)` 段，浏览器测试 `tests/live-scrim.mjs`。已否决的方案：给滚动容器加 mask（会把 ChatGPT 的 sticky 输入框一起淡化）；在 scrim 里再复制一份光晕（会和背景错位）。
+- 已知交互（未在本票修复）：Gemini 夹具的滚动区底部留白固定为 150px，#19 的两行输入框让 `input-container` 从约 170px 增高到约 238px，最后一条回复的操作栏会被输入框卡片压住。这与 scrim 是否绘制无关。线上 Gemini 是否动态调整留白尚未取证。
+- Playwright 的 Firefox 报告支持 backdrop-filter，但截图里没有模糊；离线只能在 Chromium 中验证模糊效果。
+
 ## 已约定、尚未实现（来自 2026-11-22 的 grill，用户已确认）
 
-- 测试断言用户能看到的结果：#22 把断言迁到新夹具上（#18、#19、#20、#21 已完成）。
-- Composer Scrim：改成半透明画布色加背景模糊，不画实色底。已否决的方案：给滚动容器加 mask（会把 ChatGPT 的 sticky 输入框一起淡化）；在 scrim 里再复制一份光晕（会和背景错位）。
+- 测试断言用户能看到的结果：#18–#22 均已把断言迁到新夹具上；本节已无待实现项。
