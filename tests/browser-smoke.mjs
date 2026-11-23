@@ -292,11 +292,12 @@ async function assertComposerBackdrops(page, nativeSurfaces) {
   assert.equal(await page.locator('[data-fixture-footer-attachment][data-op-composer-backdrop]').count(), 0);
   assert.equal(await page.locator('[data-fixture-composer][data-op-composer-backdrop]').count(), 0, 'the input card is not part of the page backdrop');
 
-  const isActiveChatGPT = await page.evaluate(() =>
+  const isActiveChatGPTRestyle = await page.evaluate(() =>
     document.documentElement.getAttribute('data-op-host') === 'chatgpt' &&
-    document.documentElement.getAttribute('data-op-home') === 'false'
+    document.documentElement.getAttribute('data-op-home') === 'false' &&
+    document.documentElement.getAttribute('data-op-composer') === 'true'
   );
-  if (isActiveChatGPT) {
+  if (isActiveChatGPTRestyle) {
     const layout = await chatgptLayoutSnapshot(page);
     assert.ok(layout.spacerHeight !== null && layout.spacerHeight > 0 && layout.spacerHeight <= 32, `ChatGPT active spacer must converge cleanly (<= 32px), got ${layout.spacerHeight}`);
     assert.equal(layout.threadPaddingBottom, 24, 'ChatGPT active thread column bottom padding should tighten to 24px');
@@ -1009,10 +1010,21 @@ async function exerciseFixture(browser, host) {
     }
     await exerciseSidebarSelection(page, originalSidebarSelection);
     await page.evaluate(() => __prismFixture.patch({ composerRestyle: false }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-composer') === 'false' && !document.querySelector('[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-primary-action="true"],[data-op-composer-chip="true"],[data-op-composer-attachment="true"],[data-op-composer-toolbar="true"],[data-op-model-capsule-item="true"]') && document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'fixture-original');
     await assertComposerBackdrops(page, originalSurfaces);
-    await page.waitForFunction(() => !document.querySelector('[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-primary-action="true"],[data-op-composer-chip="true"],[data-op-composer-attachment="true"],[data-op-composer-toolbar="true"],[data-op-model-capsule-item="true"]') && document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'fixture-original');
     await settleComposerControls(page);
     assert.deepEqual(composerSurfaceAndGeometry(await composerControlsSnapshot(page)), composerSurfaceAndGeometry(originalComposerControls), `${host}: composerRestyle=false restores native composer, add button, model capsule, and chips`);
+    if (host === 'chatgpt') {
+      const dockRestoredKeys = snap => ({
+        composerBottomGap: snap.composerBottomGap,
+        composerColPaddingTop: snap.composerColPaddingTop,
+        composerColPaddingBottom: snap.composerColPaddingBottom,
+        hintMarginTop: snap.hintMarginTop,
+        hintMarginBottom: snap.hintMarginBottom,
+        hintBottomGap: snap.hintBottomGap
+      });
+      assert.deepEqual(dockRestoredKeys(await chatgptLayoutSnapshot(page)), dockRestoredKeys(originalChatGPTLayout), 'chatgpt: composerRestyle=false restores native dock, composer column, and hint geometry');
+    }
     await page.evaluate(() => __prismFixture.patch({ composerRestyle: true }));
     await exerciseNativeComposer(page);
 
