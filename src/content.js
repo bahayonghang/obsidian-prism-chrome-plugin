@@ -46,50 +46,89 @@
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
   const instanceId = `op-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const RUNTIME_SURFACE_ATTRS = Object.freeze([
+    'data-op-main-surface',
+    'data-op-thread-column',
+    'data-op-composer-column',
+    'data-op-code-surface',
+    'data-op-code-header',
+    'data-op-composer-dock',
+    'data-op-composer-scrim',
+    'data-op-thread-scroller',
+    'data-op-composer-empty-sibling',
+    'data-op-composer-disclaimer',
+    'data-op-thread-spacer',
+    'data-op-composer-surface',
+    'data-op-composer-grid',
+    'data-op-composer-leading',
+    'data-op-composer-primary',
+    'data-op-composer-trailing',
+    'data-op-composer-toolbar',
+    'data-op-composer-add',
+    'data-op-model-capsule',
+    'data-op-model-capsule-item',
+    'data-op-composer-primary-action',
+    'data-op-composer-attachment',
+    'data-op-composer-chip',
+    'data-op-composer-backdrop',
+    'data-op-sidebar-surface',
+    'data-op-sidebar-active'
+  ]);
+  const RUNTIME_SURFACE_SELECTOR = RUNTIME_SURFACE_ATTRS.map(attr => `[${attr}="true"]`).join(',');
+  const RUNTIME_ROOT_VARS = Object.freeze([
+    '--op-reading-width',
+    '--op-reading-shift',
+    '--op-dock-clearance',
+    '--op-dock-offset-x',
+    '--op-dock-offset-y'
+  ]);
   let unsubscribe = () => {};
   let yielded = false;
   let claimedOwnership = false;
+  let handoverPending = false;
   let mediaChanged = () => {};
   let onHide = () => {};
   let onShow = () => {};
   const currentOwner = () => document.documentElement?.getAttribute('data-op-instance') || null;
-  const hasOtherOwner = () => {
-    if (!claimedOwnership) return false;
-    const owner = currentOwner();
-    return Boolean(owner && owner !== instanceId);
-  };
-  const isOwner = () => !hasOtherOwner();
+  const hasLostOwnership = () => claimedOwnership && Boolean(currentOwner() && currentOwner() !== instanceId);
+  const isOwner = () => !hasLostOwnership();
   const ownsRootAttr = () => currentOwner() === instanceId;
-  function yieldOwnership() {
-    if (yielded) return;
-    yielded = true;
-    stopped = true;
+  function disconnectRuntime({ permanent = false } = {}) {
     enabled = false;
     observer?.disconnect(); observer = null;
     documentObserver?.disconnect(); documentObserver = null; observedBody = null;
-    surfaceObserver?.disconnect(); surfaceObserver = null; primarySurface = null;
     events?.abort(); events = null;
     clearTimeout(pending); pending = null;
-    clearTimeout(streamIdle); streamIdle = null;
-    clearTimeout(fadeTimer); fadeTimer = null; fadeEntries = [];
     if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = null;
     if (geometryFrame) cancelAnimationFrame(geometryFrame); geometryFrame = null;
-    unsubscribe();
-    systemTheme.removeEventListener('change', mediaChanged);
-    reducedMotion.removeEventListener('change', mediaChanged);
-    window.removeEventListener('pagehide', onHide);
-    window.removeEventListener('pageshow', onShow);
+    dockScrim = dockScroller = null;
+    railSignature = ''; lastEstimate = 0; lastModelLabel = ''; lastAttachments = 0; activeTurn = -1;
+    if (permanent) {
+      stopped = true;
+      surfaceObserver?.disconnect(); surfaceObserver = null; primarySurface = null;
+      clearTimeout(streamIdle); streamIdle = null;
+      clearTimeout(fadeTimer); fadeTimer = null; fadeEntries = [];
+      unsubscribe();
+      systemTheme.removeEventListener('change', mediaChanged);
+      reducedMotion.removeEventListener('change', mediaChanged);
+      window.removeEventListener('pagehide', onHide);
+      window.removeEventListener('pageshow', onShow);
+    }
+  }
+  function yieldOwnership() {
+    if (yielded) return;
+    yielded = true;
+    disconnectRuntime({ permanent: true });
+    handoverPending = false;
     surfaceMarks.clear();
     codes.clear();
     thoughts.clear();
     rootVarOriginals.clear();
     readingWidth = '';
-    dockScrim = dockScroller = null;
     dock = rail = ambient = null;
-    railSignature = ''; lastEstimate = 0; lastModelLabel = ''; lastAttachments = 0; activeTurn = -1;
   }
-  function yieldIfNotOwner() {
-    if (!hasOtherOwner()) return false;
+  function lostOwnership() {
+    if (!hasLostOwnership()) return false;
     yieldOwnership();
     return true;
   }
@@ -210,7 +249,7 @@
     }, 1200);
   }
   function mutationsChanged(records) {
-    if (yieldIfNotOwner() || !enabled || stopped) return;
+    if (lostOwnership() || !enabled || stopped) return;
     // A host rerender can remove our complete controls. Reattach them without
     // subscribing to ordinary text changes inside controls we still own.
     let changed = [rail,dock,ambient].some(root=>root&&!root.isConnected)
@@ -242,8 +281,8 @@
     if (changed) schedule();
   }
   function schedule() {
-    if (yieldIfNotOwner() || !enabled || stopped || pending || document.hidden) return;
-    pending = setTimeout(() => { pending = null; if (yieldIfNotOwner()) return; scan(); }, 160);
+    if (lostOwnership() || !enabled || stopped || pending || document.hidden) return;
+    pending = setTimeout(() => { pending = null; if (lostOwnership()) return; scan(); }, 160);
   }
 
   function syncCodes() {
@@ -319,7 +358,7 @@
     updateRailActive();
   }
   function syncRail() {
-    if (yieldIfNotOwner()) return;
+    if (lostOwnership()) return;
     pruneOrphanRoots();
     const turns = adapter.userTurns();
     if (!cfg.railOutline || !turns.length) {
@@ -548,7 +587,7 @@
     }
   }
   function syncDock() {
-    if (yieldIfNotOwner()) return;
+    if (lostOwnership()) return;
     pruneOrphanRoots();
     if (!dock) { dock=own(make('aside','op-dock')); dock.id='op-bottom-dock'; document.body.append(dock); }
     if (!dock.isConnected) document.body.append(dock);
@@ -633,11 +672,40 @@
   }
   // Mark native surfaces reversibly. Never wrap or recreate the site's editor,
   // navigation buttons, or framework-owned message structure.
+  function findSurfaceMarkedNodes() {
+    if (typeof document.querySelectorAll === 'function') {
+      try { return [...document.querySelectorAll(RUNTIME_SURFACE_SELECTOR)]; } catch (_) {}
+    }
+    const seen = new Set();
+    const walk = node => {
+      if (!node || seen.has(node)) return;
+      seen.add(node);
+      for (const child of node.children || []) walk(child);
+    };
+    walk(document.documentElement);
+    walk(document.body);
+    return [...seen].filter(node => !Adapters.isOwned(node) && RUNTIME_SURFACE_ATTRS.some(attr => node.getAttribute?.(attr) === 'true'));
+  }
+  function adoptHandoverSurfaceMarks() {
+    if (!handoverPending) return false;
+    handoverPending = false;
+    for (const element of findSurfaceMarkedNodes()) {
+      if (Adapters.isOwned(element)) continue;
+      let originals = surfaceMarks.get(element);
+      for (const attribute of RUNTIME_SURFACE_ATTRS) {
+        if (element.getAttribute(attribute) !== 'true') continue;
+        if (!originals) { originals = new Map(); surfaceMarks.set(element, originals); }
+        if (!originals.has(attribute)) originals.set(attribute, null);
+      }
+    }
+    return true;
+  }
   function restoreSurfaceMark(element, attribute, original) {
     if (original === null) element.removeAttribute(attribute);
     else if (element.getAttribute(attribute) !== original) element.setAttribute(attribute,original);
   }
   function clearSurfaceMarks() {
+    adoptHandoverSurfaceMarks();
     for (const [element, attributes] of surfaceMarks) {
       for (const [attribute, original] of attributes) restoreSurfaceMark(element,attribute,original);
     }
@@ -706,6 +774,7 @@
       for (const element of sidebars) add(element,'data-op-sidebar-surface');
       for (const element of adapter.sidebarActiveRows?.(sidebars) || []) add(element,'data-op-sidebar-active');
     }
+    const adoptingHandover = adoptHandoverSurfaceMarks();
     for (const [element, attributes] of surfaceMarks) {
       for (const [attribute, original] of attributes) {
         if (!targets.get(element)?.has(attribute)) {
@@ -718,7 +787,10 @@
       if (!surfaceMarks.has(element)) surfaceMarks.set(element,new Map());
       const originals = surfaceMarks.get(element);
       for (const attribute of attributes) {
-        if (!originals.has(attribute)) originals.set(attribute,element.getAttribute(attribute));
+        if (!originals.has(attribute)) {
+          const current = element.getAttribute(attribute);
+          originals.set(attribute, adoptingHandover && current === 'true' ? null : current);
+        }
         if (element.getAttribute(attribute) !== 'true') element.setAttribute(attribute,'true');
       }
     }
@@ -736,7 +808,7 @@
   }
   function updateAmbientGeometry() {
     geometryFrame=null;
-    if (yieldIfNotOwner() || !enabled || stopped || document.hidden) return;
+    if (lostOwnership() || !enabled || stopped || document.hidden) return;
     if (ambient && primarySurface?.isConnected) {
       const rect=primarySurface.getBoundingClientRect();
       const left=Math.max(0,Math.min(innerWidth,rect.left));
@@ -751,7 +823,7 @@
     syncDockAvoidance();
   }
   function scheduleGeometry() {
-    if (yieldIfNotOwner() || !enabled || stopped || document.hidden || (!ambient && !dock) || geometryFrame) return;
+    if (lostOwnership() || !enabled || stopped || document.hidden || (!ambient && !dock) || geometryFrame) return;
     geometryFrame=requestAnimationFrame(updateAmbientGeometry);
   }
   /* Root custom properties owned by the runtime (review fix S2), following the --op-ambient-alpha pattern in
@@ -759,6 +831,22 @@
    * and an emptied style attribute that did not exist before is removed (no style="" residue). */
   const rootVarOriginals=new Map();
   let rootHadStyle=false;
+  function hasNonRuntimeStyle(root) {
+    const raw=root?.getAttribute('style');
+    if (raw===null || raw===undefined) return false;
+    if (typeof root.style?.length==='number') {
+      for (let i=0; i<root.style.length; i++) {
+        if (!RUNTIME_ROOT_VARS.includes(root.style[i])) return true;
+      }
+      return false;
+    }
+    return raw.split(';').some(decl=>{
+      const colon=decl.indexOf(':');
+      if (colon<0) return Boolean(decl.trim());
+      const prop=decl.slice(0,colon).trim();
+      return Boolean(prop) && !RUNTIME_ROOT_VARS.includes(prop);
+    });
+  }
   function setRootVar(name,value) {
     const root=document.documentElement;
     if (!rootVarOriginals.has(name)) {
@@ -821,7 +909,7 @@
     if (clearance) setRootVar('--op-dock-clearance',clearance+'px'); else clearRootVar('--op-dock-clearance');
   }
   function syncDockAvoidance() {
-    if (yieldIfNotOwner()) return;
+    if (lostOwnership()) return;
     if (!enabled || stopped || !dock || !dock.isConnected) {
       clearRootVar('--op-dock-offset-x');
       clearRootVar('--op-dock-offset-y');
@@ -832,11 +920,9 @@
     if (!(vw > 0) || !(vh > 0)) return;
     const dockBox = dock.getBoundingClientRect();
     if (!(dockBox.width > 0) || !(dockBox.height > 0)) return;
-    const narrow = vw <= 700;
-    const baseRight = narrow ? 10 : 20;
-    const baseBottom = narrow ? 10 : 18;
+    const { right: baseRight, bottom: baseBottom } = Adapters.dockEdgeMargin(vw);
     const composer = adapter.composerSurface?.() || null;
-    const composerCard = composer?.closest?.('input-area-v2') || composer;
+    const composerCard = adapter.composerCardSurface?.(composer) || composer;
     const composerVisible = composerCard && (typeof Adapters.isVisible !== 'function' || Adapters.isVisible(composerCard));
     const composerRect = composerVisible ? composerCard.getBoundingClientRect() : null;
     const railRect = rail && rail.isConnected ? rail.getBoundingClientRect() : null;
@@ -857,11 +943,11 @@
     if (popover && !popover.hidden) syncDockPopoverPosition();
   }
   function primaryResized() {
-    if (yieldIfNotOwner() || !enabled || stopped) return;
+    if (lostOwnership() || !enabled || stopped) return;
     syncReadingWidth(); syncDockClearance(); syncDockAvoidance(); scheduleGeometry();
   }
   function syncAmbient() {
-    if (yieldIfNotOwner()) return;
+    if (lostOwnership()) return;
     pruneOrphanRoots();
     const needed=(cfg.ambientIntensity>0 && (cfg.ambientStyle!=='none' || cfg.ambientTexture!=='off')) || cfg.semanticAura;
     if (!needed || !primarySurface) {ambient?.remove();ambient=null;return;}
@@ -887,22 +973,15 @@
     if (isOwner()) { clearRootVar('--op-dock-offset-x'); clearRootVar('--op-dock-offset-y'); }
   }
   function scan() {
-    if(yieldIfNotOwner() || !enabled || stopped || document.hidden || !document.body) return;
+    if(lostOwnership() || !enabled || stopped || document.hidden || !document.body) return;
     passes++;
     if(route!==location.href) {route=location.href;revision++;resetConversation();}
     syncSurfaces(); syncReadingWidth(); syncDockClearance(); syncAmbient(); syncCodes(); syncRail(); syncDock(); syncThoughts(); syncDockAvoidance();
   }
   function suspend() {
-    if (yieldIfNotOwner()) return;
-    enabled=false;
-    observer?.disconnect();observer=null;
-    documentObserver?.disconnect();documentObserver=null;observedBody=null;
-    events?.abort();events=null;
-    clearTimeout(pending);pending=null;
-    if(scrollFrame) cancelAnimationFrame(scrollFrame);scrollFrame=null;
-    if(geometryFrame) cancelAnimationFrame(geometryFrame);geometryFrame=null;
+    if (lostOwnership()) return;
+    disconnectRuntime();
     clearSurfaceMarks();
-    dockScrim=dockScroller=null;
     syncReadingWidth(); syncDockClearance();
     clearRootVar('--op-dock-offset-x'); clearRootVar('--op-dock-offset-y');
     if (ownsRootAttr()) document.documentElement?.removeAttribute('data-op-instance');
@@ -912,20 +991,25 @@
     for(const [pre,entry] of codes) cleanupCode(pre,entry);
     for(const [element,entry] of thoughts) cleanupThought(element,entry);
     rail?.remove();dock?.remove();ambient?.remove();rail=dock=ambient=null;
-    railSignature='';lastEstimate=0;lastModelLabel='';lastAttachments=0;activeTurn=-1;
   }
   function activate() {
-    if(yieldIfNotOwner() || enabled || !document.body || stopped) return;
-    const hadPreviousOwner = Boolean(currentOwner() && currentOwner() !== instanceId);
+    if(lostOwnership() || enabled || !document.body || stopped) return;
+    const prevInstance = currentOwner();
+    const tookOver = Boolean(prevInstance && prevInstance !== instanceId);
     enabled=true;events=new AbortController();
     claimedOwnership=true;
     document.documentElement.setAttribute('data-op-instance',instanceId);
     pruneOrphanRoots();
-    if (hadPreviousOwner) {
-      for (const name of ['--op-reading-width','--op-reading-shift','--op-dock-clearance','--op-dock-offset-x','--op-dock-offset-y']) {
-        document.documentElement.style.removeProperty(name);
+    if (tookOver) {
+      const root=document.documentElement;
+      if (!rootVarOriginals.size) rootHadStyle=hasNonRuntimeStyle(root);
+      for (const name of RUNTIME_ROOT_VARS) {
+        if (!rootVarOriginals.has(name) && (root.style.getPropertyValue(name) || root.style.getPropertyPriority(name))) {
+          rootVarOriginals.set(name,['','']);
+        }
       }
-      if (document.documentElement.getAttribute('style')?.trim() === '') document.documentElement.removeAttribute('style');
+      if (rootVarOriginals.has('--op-reading-width') || rootVarOriginals.has('--op-reading-shift')) readingWidth=null;
+      handoverPending=true;
     }
     observer=new MutationObserver(mutationsChanged);
     function observeBody() {
@@ -939,29 +1023,29 @@
       }
     }
     documentObserver=new MutationObserver(records=>{
-      if(yieldIfNotOwner()) return;
+      if(lostOwnership()) return;
       if(document.body!==observedBody) {observeBody();lastEstimate=0;railSignature='';schedule();}
       if(records.some(record=>record.type==='attributes' && record.attributeName!=='data-op-instance') && Schema.resolvePalette(cfg)==='host') {
         Schema.applyConfigToRoot(cfg);schedule();
       }
     });
     observeBody();
-    listen(document,'keydown',event=>{ if (!yieldIfNotOwner() && enabled) onKey(event); });
+    listen(document,'keydown',event=>{ if (!lostOwnership() && enabled) onKey(event); });
     listen(document,'click',event=>{
-      if(yieldIfNotOwner() || !enabled) return;
+      if(lostOwnership() || !enabled) return;
       if(rail&&!rail.contains(event.target)) closeRail();
       if(dock&&!dock.contains(event.target)) setDockOpen(false);
     });
     listen(document,'scroll',()=>{
-      if(yieldIfNotOwner()) return;
+      if(lostOwnership()) return;
       scheduleGeometry();
       if(scrollFrame||document.hidden) return;
-      scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;if(yieldIfNotOwner()) return;activeTurn=nearestTurn();updateRailActive();});
+      scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;if(lostOwnership()) return;activeTurn=nearestTurn();updateRailActive();});
     },{capture:true,passive:true});
-    listen(window,'resize',()=>{if(yieldIfNotOwner()) return;scheduleGeometry();schedule();});
+    listen(window,'resize',()=>{if(lostOwnership()) return;scheduleGeometry();schedule();});
     listen(window,'popstate',schedule);listen(window,'hashchange',schedule);
     listen(document,'visibilitychange',()=>{
-      if(yieldIfNotOwner()) return;
+      if(lostOwnership()) return;
       document.documentElement.setAttribute('data-op-visibility',document.hidden?'hidden':'visible');
       if(document.hidden) {clearActivity();clearTimeout(pending);pending=null;if(geometryFrame)cancelAnimationFrame(geometryFrame);geometryFrame=null;}
       else {lastEstimate=0;schedule();}
@@ -969,7 +1053,7 @@
     scan();
   }
   function configure(next) {
-    if(yieldIfNotOwner() || stopped) return;
+    if(lostOwnership() || stopped) return;
     revision++;
     const previous=cfg;cfg=Schema.sanitizeConfig(next);
     if(previous.thoughtView!==cfg.thoughtView) for(const [element,entry] of thoughts){entry.view=cfg.thoughtView;applyThoughtView(element,entry);}
@@ -981,28 +1065,25 @@
     railSignature='';lastEstimate=0;
     if(!enabled) activate();else scan();
   }
-  mediaChanged=()=>{if(!yieldIfNotOwner()&&hasConfig)configure(cfg);};
+  mediaChanged=()=>{if(!lostOwnership()&&hasConfig)configure(cfg);};
   systemTheme.addEventListener('change',mediaChanged);
   reducedMotion.addEventListener('change',mediaChanged);
-  onHide=()=>{if(!yieldIfNotOwner())suspend();};
-  onShow=()=>{if(!yieldIfNotOwner()&&!stopped&&hasConfig)configure(cfg);};
+  onHide=()=>{if(!lostOwnership())suspend();};
+  onShow=()=>{if(!lostOwnership()&&!stopped&&hasConfig)configure(cfg);};
   window.addEventListener('pagehide',onHide);window.addEventListener('pageshow',onShow);
   let changes=0;
-  unsubscribe=Schema.subscribe(next=>{if(yieldIfNotOwner())return;changes++;hasConfig=true;configure(next);});
+  unsubscribe=Schema.subscribe(next=>{if(lostOwnership())return;changes++;hasConfig=true;configure(next);});
   const initialChanges=changes;
-  Schema.loadConfig().then(loaded=>{if(yieldIfNotOwner()||stopped)return;if(changes===initialChanges){hasConfig=true;configure(loaded);}}).catch(()=>{
-    if(yieldIfNotOwner()||stopped)return;
+  Schema.loadConfig().then(loaded=>{if(lostOwnership()||stopped)return;if(changes===initialChanges){hasConfig=true;configure(loaded);}}).catch(()=>{
+    if(lostOwnership()||stopped)return;
     suspend();Schema.applyConfigToRoot({...cfg,enabled:false});
   });
   global.ObsidianPrismRuntime=Object.freeze({
     refresh:schedule,
     diagnostics:()=>({passes,enabled,observing:Boolean(observer),pending:Boolean(pending),codeBlocks:codes.size,thoughtBlocks:thoughts.size,surfaces:surfaceMarks.size}),
     stop(){
-      if(yieldIfNotOwner()) return;
-      stopped=true;revision++;suspend();unsubscribe();
-      systemTheme.removeEventListener('change',mediaChanged);reducedMotion.removeEventListener('change',mediaChanged);
-      window.removeEventListener('pagehide',onHide);window.removeEventListener('pageshow',onShow);
-      if (ownsRootAttr()) document.documentElement?.removeAttribute('data-op-instance');
+      if(lostOwnership()) return;
+      revision++;suspend();disconnectRuntime({permanent:true});
       Schema.applyConfigToRoot({...cfg,enabled:false});
     }
   });

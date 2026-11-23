@@ -177,60 +177,105 @@ async function assertPopoverInsideViewport(page, label) {
   return pop;
 }
 
-export async function checkBottomDock(suite) {
-  const { engine, artifacts, scripts } = suite;
+const RUNTIME_SURFACE_ATTRS = [
+  'data-op-main-surface', 'data-op-thread-column', 'data-op-composer-column', 'data-op-code-surface',
+  'data-op-code-header', 'data-op-composer-dock', 'data-op-composer-scrim', 'data-op-thread-scroller',
+  'data-op-composer-empty-sibling', 'data-op-composer-disclaimer', 'data-op-thread-spacer',
+  'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-leading', 'data-op-composer-primary',
+  'data-op-composer-trailing', 'data-op-composer-toolbar', 'data-op-composer-add', 'data-op-model-capsule',
+  'data-op-model-capsule-item', 'data-op-composer-primary-action', 'data-op-composer-attachment',
+  'data-op-composer-chip', 'data-op-composer-backdrop', 'data-op-sidebar-surface', 'data-op-sidebar-active'
+];
+const RUNTIME_ROOT_VARS = [
+  '--op-reading-width', '--op-reading-shift', '--op-dock-clearance', '--op-dock-offset-x', '--op-dock-offset-y'
+];
+
+async function assertNoRuntimeResidue(page, label) {
+  const residue = await page.evaluate(({ attrs, vars }) => ({
+    docks: document.querySelectorAll('#op-bottom-dock, [data-op-owned]').length,
+    hasInstance: document.documentElement.hasAttribute('data-op-instance'),
+    hasEnabled: document.documentElement.hasAttribute('data-op-enabled'),
+    surfaceMarks: Object.fromEntries(attrs.map(attr => [attr, document.querySelectorAll(`[${attr}="true"]`).length]).filter(([, n]) => n > 0)),
+    rootVars: Object.fromEntries(vars.map(v => [v, document.documentElement.style.getPropertyValue(v)]).filter(([, val]) => val !== ''))
+  }), { attrs: RUNTIME_SURFACE_ATTRS, vars: RUNTIME_ROOT_VARS });
+  assert.deepEqual(
+    residue,
+    { docks: 0, hasInstance: false, hasEnabled: false, surfaceMarks: {}, rootVars: {} },
+    `${label}: leaves zero owned nodes, data-op-instance, surface marks, or runtime root vars`
+  );
+}
+
+async function verifySingletonAndHandover(page, suite, host, s) {
+  const { engine, scripts } = suite;
   const contentScript = scripts[scripts.length - 1];
+
+  // 1. Pre-seed orphan extension roots BEFORE injecting the runtime.
+  await page.evaluate(mainSelector => {
+    const main = document.querySelector(mainSelector);
+    const addOrphan = (parent, tag, id, cls) => {
+      const el = document.createElement(tag);
+      if (id) el.id = id;
+      el.className = cls;
+      el.setAttribute('data-op-owned', '');
+      el.textContent = 'orphan-stale';
+      parent.append(el);
+    };
+    addOrphan(document.body, 'aside', 'op-bottom-dock', 'op-dock');
+    addOrphan(document.body, 'aside', '', 'op-dock');
+    addOrphan(document.body, 'aside', 'op-rail-root', 'op-rail');
+    addOrphan(main, 'div', 'op-ambient-stage', 'op-ambient');
+  }, s.main);
+
+  await injectExtension(page, suite, { waitFor: '#op-bottom-dock' });
+  await patchConfig(page, { contentWidth: 'full' }, () => document.documentElement.getAttribute('data-op-content-width') === 'full');
+  await settle(page);
+
+  const firstId = await page.evaluate(() => document.documentElement.getAttribute('data-op-instance'));
+  assert.ok(firstId && firstId.startsWith('op-'), `${engine} ${host}: activation sets data-op-instance`);
+  assert.equal(await page.locator('#op-bottom-dock').count(), 1, `${engine} ${host}: orphan dock pruned`);
+  assert.equal(await page.locator('.op-dock[data-op-owned]').count(), 1);
+  assert.equal(await page.locator('#op-rail-root').count(), 1, `${engine} ${host}: orphan rail pruned`);
+  assert.equal(await page.locator('#op-ambient-stage').count(), 1, `${engine} ${host}: orphan ambient pruned`);
+  assert.ok(await page.evaluate(() => Boolean(document.documentElement.style.getPropertyValue('--op-reading-width'))), `${engine} ${host}: reading width var active before handover`);
+
+  // 2. Re-inject a second runtime instance (simulating extension reload / double injection).
+  await page.evaluate(() => { delete window.ObsidianPrismRuntime; });
+  await page.addScriptTag({ content: contentScript });
+  await page.waitForFunction(prev => {
+    const cur = document.documentElement.getAttribute('data-op-instance');
+    return Boolean(cur && cur !== prev && window.ObsidianPrismRuntime?.diagnostics().enabled);
+  }, firstId);
+  await settle(page);
+
+  assert.equal(await page.locator('#op-bottom-dock').count(), 1, `${engine} ${host}: strictly 1 dock after handover`);
+  assert.equal(await page.locator('#op-bottom-dock:visible').count(), 1);
+  assert.equal(await page.locator('#op-rail-root').count(), 1, `${engine} ${host}: strictly 1 rail after handover`);
+  assert.equal(await page.locator('#op-ambient-stage').count(), 1, `${engine} ${host}: strictly 1 ambient after handover`);
+  assert.equal(await page.locator('.op-code-fold-bar').count(), 0, `${engine} ${host}: no duplicate fold bars`);
+
+  // Wait 300ms to assert zero observer loop.
+  const passesBefore = await page.evaluate(() => window.ObsidianPrismRuntime.diagnostics().passes);
+  await page.waitForTimeout(300);
+  const passesAfter = await page.evaluate(() => window.ObsidianPrismRuntime.diagnostics().passes);
+  assert.equal(passesAfter, passesBefore, `${engine} ${host}: zero observer ping-pong after handover`);
+
+  // Disable immediately after handover -> zero surface marks & zero runtime root vars remain.
+  await patchConfig(page, { enabled: false }, () => !document.documentElement.hasAttribute('data-op-enabled'));
+  await settle(page);
+  await assertNoRuntimeResidue(page, `${engine} ${host} post-handover disable`);
+
+  // Re-enable cleanly for matrix & typography assertions.
+  await patchConfig(page, { enabled: true, contentWidth: 'standard' }, () => document.querySelector('#op-bottom-dock'));
+  await settle(page);
+}
+
+export async function checkBottomDock(suite) {
+  const { engine, artifacts } = suite;
 
   for (const host of ['chatgpt', 'gemini']) {
     const s = LIVE_SELECTORS[host];
     await onLiveFixture(suite, host, { failure: `${host}-bottom-dock-failure`, colorScheme: 'dark' }, async ({ page, errors }) => {
-      // 1. Pre-seed orphan extension roots BEFORE injecting the runtime.
-      await page.evaluate(mainSelector => {
-        const main = document.querySelector(mainSelector);
-        const addOrphan = (parent, tag, id, cls) => {
-          const el = document.createElement(tag);
-          if (id) el.id = id;
-          el.className = cls;
-          el.setAttribute('data-op-owned', '');
-          el.textContent = 'orphan-stale';
-          parent.append(el);
-        };
-        addOrphan(document.body, 'aside', 'op-bottom-dock', 'op-dock');
-        addOrphan(document.body, 'aside', '', 'op-dock');
-        addOrphan(document.body, 'aside', 'op-rail-root', 'op-rail');
-        addOrphan(main, 'div', 'op-ambient-stage', 'op-ambient');
-      }, s.main);
-
-      await injectExtension(page, suite, { waitFor: '#op-bottom-dock' });
-      await settle(page);
-
-      const firstId = await page.evaluate(() => document.documentElement.getAttribute('data-op-instance'));
-      assert.ok(firstId && firstId.startsWith('op-'), `${engine} ${host}: activation sets data-op-instance`);
-      assert.equal(await page.locator('#op-bottom-dock').count(), 1, `${engine} ${host}: orphan dock pruned`);
-      assert.equal(await page.locator('.op-dock[data-op-owned]').count(), 1);
-      assert.equal(await page.locator('#op-rail-root').count(), 1, `${engine} ${host}: orphan rail pruned`);
-      assert.equal(await page.locator('#op-ambient-stage').count(), 1, `${engine} ${host}: orphan ambient pruned`);
-
-      // 2. Re-inject a second runtime instance (simulating extension reload / double injection).
-      await page.evaluate(() => { delete window.ObsidianPrismRuntime; });
-      await page.addScriptTag({ content: contentScript });
-      await page.waitForFunction(prev => {
-        const cur = document.documentElement.getAttribute('data-op-instance');
-        return Boolean(cur && cur !== prev && window.ObsidianPrismRuntime?.diagnostics().enabled);
-      }, firstId);
-      await settle(page);
-
-      assert.equal(await page.locator('#op-bottom-dock').count(), 1, `${engine} ${host}: strictly 1 dock after handover`);
-      assert.equal(await page.locator('#op-bottom-dock:visible').count(), 1);
-      assert.equal(await page.locator('#op-rail-root').count(), 1, `${engine} ${host}: strictly 1 rail after handover`);
-      assert.equal(await page.locator('#op-ambient-stage').count(), 1, `${engine} ${host}: strictly 1 ambient after handover`);
-      assert.equal(await page.locator('.op-code-fold-bar').count(), 0, `${engine} ${host}: no duplicate fold bars`);
-
-      // Wait 300ms to assert zero observer loop.
-      const passesBefore = await page.evaluate(() => window.ObsidianPrismRuntime.diagnostics().passes);
-      await page.waitForTimeout(300);
-      const passesAfter = await page.evaluate(() => window.ObsidianPrismRuntime.diagnostics().passes);
-      assert.equal(passesAfter, passesBefore, `${engine} ${host}: zero observer ping-pong after handover`);
+      await verifySingletonAndHandover(page, suite, host, s);
 
       // 3. Button typography, anti-squish & contrast (dark obsidian + light crystal).
       await assertButtonTypographyAndContrast(page, `${engine} ${host} obsidian`);
@@ -308,29 +353,17 @@ export async function checkBottomDock(suite) {
         if (editor) editor.style.removeProperty('min-height');
       }, s.editor);
 
-      // 6. Disable extension -> zero nodes, zero data-op-instance, zero offset CSS variables.
+      // 6. Disable extension -> zero nodes, zero data-op-instance, zero surface marks, zero root CSS variables.
       await page.setViewportSize({ width: 1280, height: 900 });
       await patchConfig(page, { enabled: false }, () => !document.documentElement.hasAttribute('data-op-enabled'));
       await settle(page);
-      const afterDisable = await page.evaluate(() => ({
-        docks: document.querySelectorAll('#op-bottom-dock, [data-op-owned]').length,
-        hasInstance: document.documentElement.hasAttribute('data-op-instance'),
-        offsetX: document.documentElement.style.getPropertyValue('--op-dock-offset-x'),
-        offsetY: document.documentElement.style.getPropertyValue('--op-dock-offset-y')
-      }));
-      assert.deepEqual(afterDisable, { docks: 0, hasInstance: false, offsetX: '', offsetY: '' }, `${engine} ${host}: disable leaves zero residue`);
+      await assertNoRuntimeResidue(page, `${engine} ${host} disable`);
 
       // Re-enable -> stop() also removes everything with zero residue.
       await patchConfig(page, { enabled: true, contentWidth: 'full' }, () => document.querySelector('#op-bottom-dock'));
       await settle(page);
       await page.evaluate(() => window.ObsidianPrismRuntime.stop());
-      const afterStop = await page.evaluate(() => ({
-        docks: document.querySelectorAll('#op-bottom-dock, [data-op-owned]').length,
-        hasInstance: document.documentElement.hasAttribute('data-op-instance'),
-        offsetX: document.documentElement.style.getPropertyValue('--op-dock-offset-x'),
-        offsetY: document.documentElement.style.getPropertyValue('--op-dock-offset-y')
-      }));
-      assert.deepEqual(afterStop, { docks: 0, hasInstance: false, offsetX: '', offsetY: '' }, `${engine} ${host}: stop() leaves zero residue`);
+      await assertNoRuntimeResidue(page, `${engine} ${host} stop()`);
 
       assert.deepEqual(errors, []);
       console.log(`PASS ${engine} ${host} bottom dock: singleton handover, typography/anti-squish, zero-overlap matrix (1707/1280/820 x standard/wide/full), popover containment & clean teardown`);

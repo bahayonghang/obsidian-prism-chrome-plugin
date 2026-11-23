@@ -24,7 +24,11 @@
       addTriggers: '[data-testid="composer-plus-btn"], button[aria-label*="Add files" i], button[aria-label*="Attach" i], button[aria-label*="上传"], button[aria-label*="添加"]',
       composerChips: '[data-testid="composer-mode-pill"], [data-testid="composer-chip"], [data-testid="composer-tool-chip"]',
       attachments: '[data-testid="attachment-card"], [data-testid="file-attachment"], [data-testid="uploaded-file"], [data-testid="image-attachment"], [class*="file-tile"], .native-footer-attachment',
-      primaryActions: '[data-testid="send-button"], [data-testid="composer-speech-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="Start Voice" i], button[aria-label*="Voice" i], button[aria-label*="发送"], button[aria-label*="语音"]',
+      primaryActions: [
+        '[data-testid="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="发送"]',
+        '[data-testid="composer-speech-button"], button[aria-label*="Start Voice" i], button[aria-label*="Voice" i], button[aria-label*="语音"]',
+        'button[aria-label*="Microphone" i], button[aria-label*="麦克风"]'
+      ],
       /* v0.3.1 #21 / v0.4.0 #26 Content Width Presets: the reading (text) width is 48rem natively (the 808px
        * transcript = 48rem + 2 × 20px padding, probe 2026-11-22). This declaration owns the width
        * limiters: hosts.css repeats them in its static width rules (CSS cannot read it) and
@@ -38,7 +42,7 @@
           '#thread-bottom-container',
           '#thread-bottom',
           '#thread-bottom [class*="--thread-content-max-width"]',
-          '#thread-bottom > :has(form[data-chatgpt-composer])',
+          '#thread-bottom :has(> form[data-chatgpt-composer])',
           '#thread-bottom > form[data-chatgpt-composer]'
         ]
       },
@@ -62,6 +66,7 @@
       primary: ['chat-window', 'main', '[role="main"]', '.chat-app'],
       editors: ['input-area-v2 .ql-editor[contenteditable="true"]', 'rich-textarea .ql-editor', 'input-area-v2 [contenteditable="true"]', 'rich-textarea [contenteditable="true"]', 'textarea[aria-label]', 'main [contenteditable="true"][role="textbox"]'],
       composers: ['input-area-v2 .text-input-field', 'input-area-v2 .input-area-container', '.input-area-container', '[data-test-id="input-area"]', 'input-area-v2', 'input-area'],
+      composerCard: 'input-area-v2',
       composerBackdrops: 'input-area-v2,input-area,.input-area-container,[data-test-id="input-area"],[data-test-id="input-area-container"],.input-area-wrapper',
       codeSurfaces: 'code-block, .code-block',
       codeHeaders: '.code-block-decoration, [data-test-id="code-block-header"]',
@@ -70,7 +75,11 @@
       addTriggers: '[data-test-id="upload-file-button"], button[aria-label*="Add files" i], button[aria-label*="Upload" i], button[aria-label*="上传"], button[aria-label*="添加"]',
       composerChips: '.toolbox-drawer-item-button, [data-test-id="composer-chip"]',
       attachments: '[data-test-id="file-preview-chip"], [data-test-id="attachment-card"], .file-preview-chip, uploader-file-preview, file-preview-chip, .native-footer-attachment',
-      primaryActions: '[data-test-id="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="Microphone" i], button[aria-label*="发送"], button[aria-label*="麦克风"]',
+      primaryActions: [
+        '[data-test-id="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="发送"]',
+        'button[aria-label*="Start Voice" i], button[aria-label*="Voice" i], button[aria-label*="语音"]',
+        'button[aria-label*="Microphone" i], button[aria-label*="麦克风"]'
+      ],
       /* v0.3.1 #21: Gemini caps every markdown block at 708px (not the outer panel), plus the
        * User Turn, the response footer, the disclaimer and the 660px input area (probe 2026-11-22).
        * Owned here and mirrored by the hosts.css width rules (see the ChatGPT note above). */
@@ -602,6 +611,10 @@
     if (!trailing.contains(modelTrigger)) return null;
     return [...trailing.children].find(child => !isOwned(child) && (child === modelTrigger || child.contains(modelTrigger))) || null;
   }
+  function findComposerCard(spec, composer) {
+    if (!composer) return null;
+    return (spec?.composerCard && composer.closest?.(spec.composerCard)) || composer;
+  }
   function findComposerPrimaryAction(spec, composer, addTrigger, modelTrigger, trailing) {
     if (!composer || isOwned(composer)) return null;
     const isCandidate = node => {
@@ -615,9 +628,14 @@
       if (/\bdictate\b|听写/i.test(aria)) return false;
       return true;
     };
-    if (spec.primaryActions) {
-      const matched = [...composer.querySelectorAll(spec.primaryActions)].filter(isCandidate);
-      if (matched.length) return matched[matched.length - 1];
+    const tiers = Array.isArray(spec.primaryActions) ? spec.primaryActions : (spec.primaryActions ? [spec.primaryActions] : []);
+    const scopes = trailing && composer.contains(trailing) && trailing !== composer ? [trailing, composer] : [composer];
+    for (const selector of tiers) {
+      if (!selector) continue;
+      for (const scope of scopes) {
+        const matched = [...scope.querySelectorAll(selector)].filter(isCandidate);
+        if (matched.length) return matched[matched.length - 1];
+      }
     }
     if (trailing && composer.contains(trailing)) {
       const fallback = [...trailing.querySelectorAll('button')].filter(isCandidate);
@@ -762,14 +780,14 @@
     const oy = Math.max(0, Math.min(a.bottom, b.bottom + pad) - Math.max(a.top, b.top - pad));
     return ox * oy;
   }
-  function findCornerFloatingObstacles(root, composer) {
+  function findCornerFloatingObstacles(root, composer, spec) {
     const scope = root || document;
     const doc = scope?.ownerDocument || scope;
     const view = doc?.defaultView || global;
     const vw = view?.innerWidth || doc?.documentElement?.clientWidth || 0;
     const vh = view?.innerHeight || doc?.documentElement?.clientHeight || 0;
     if (!scope?.querySelectorAll || !view?.getComputedStyle || !(vw > 0) || !(vh > 0)) return [];
-    const composerCard = composer?.closest?.('input-area-v2') || composer;
+    const composerCard = findComposerCard(spec, composer);
     const excludeZone = 'dialog,[role="dialog"],[aria-modal="true"],nav,[role="navigation"],[data-op-owned],[data-op-composer-backdrop="true"]';
     const mainSelector = 'main,[role="main"],chat-window';
     const raw = [...scope.querySelectorAll('button,[role="button"],a[href]')].filter(node => {
@@ -822,6 +840,25 @@
     }
     return deduped.map(item => item.rect);
   }
+  function dockEdgeMargin(viewportWidth) {
+    const narrow = Number(viewportWidth) <= 700;
+    return { right: narrow ? 10 : 20, bottom: narrow ? 10 : 18 };
+  }
+  function pushAwayFromObstacles(obstacles, axis, initialOffset, boxFor, shiftFor, pad) {
+    let offset = initialOffset;
+    for (let i = 0; i < obstacles.length; i++) {
+      let advanced = false;
+      for (const obs of obstacles) {
+        const box = axis === 'x' ? boxFor(offset, 0) : boxFor(0, offset);
+        if (boxOverlapArea(box, obs, pad) > 0) {
+          const next = Math.max(offset, shiftFor(obs));
+          if (next > offset) { offset = next; advanced = true; }
+        }
+      }
+      if (!advanced) break;
+    }
+    return offset;
+  }
   function computeDockAvoidance({ viewport, dockSize, baseRight, baseBottom, composerRect, railRect, cornerObstacles = [], gap = 10 } = {}) {
     const vw = Number(viewport?.width) || 0;
     const vh = Number(viewport?.height) || 0;
@@ -829,8 +866,9 @@
     const dockH = Number(dockSize?.height) || 0;
     if (!(vw > 0) || !(vh > 0) || !(dockW > 0) || !(dockH > 0)) return { offsetX: 0, offsetY: 0 };
     const margin = 8;
-    const bRight = Number.isFinite(Number(baseRight)) ? Number(baseRight) : (vw <= 700 ? 10 : 20);
-    const bBottom = Number.isFinite(Number(baseBottom)) ? Number(baseBottom) : (vw <= 700 ? 10 : 18);
+    const defaults = dockEdgeMargin(vw);
+    const bRight = Number.isFinite(Number(baseRight)) ? Number(baseRight) : defaults.right;
+    const bBottom = Number.isFinite(Number(baseBottom)) ? Number(baseBottom) : defaults.bottom;
     const pad = Math.max(0, Number.isFinite(Number(gap)) ? Number(gap) : 10);
     const baseBox = { left: vw - bRight - dockW, top: vh - bBottom - dockH, right: vw - bRight, bottom: vh - bBottom, width: dockW, height: dockH };
     const boxFor = (x, y) => ({ left: baseBox.left - x, top: baseBox.top - y, right: baseBox.right - x, bottom: baseBox.bottom - y, width: dockW, height: dockH });
@@ -839,19 +877,10 @@
     const corners = (Array.isArray(cornerObstacles) ? cornerObstacles : []).map(normalizeBox).filter(Boolean);
     const shiftLeftOf = (obs, g = pad) => obs ? Math.max(0, Math.ceil(baseBox.right - (obs.left - g))) : 0;
     const shiftAboveOf = (obs, g = pad) => obs ? Math.max(0, Math.ceil(baseBox.bottom - (obs.top - g))) : 0;
-    let neededCornerLeftX = 0;
-    for (let i = 0; i < corners.length; i++) {
-      for (const c of corners) if (boxOverlapArea(boxFor(neededCornerLeftX, 0), c, pad) > 0) neededCornerLeftX = Math.max(neededCornerLeftX, shiftLeftOf(c));
-    }
-    let neededCornerUpY = 0;
-    for (let i = 0; i < corners.length; i++) {
-      for (const c of corners) if (boxOverlapArea(boxFor(0, neededCornerUpY), c, pad) > 0) neededCornerUpY = Math.max(neededCornerUpY, shiftAboveOf(c));
-    }
+    const neededCornerLeftX = pushAwayFromObstacles(corners, 'x', 0, boxFor, shiftLeftOf, pad);
+    const neededCornerUpY = pushAwayFromObstacles(corners, 'y', 0, boxFor, shiftAboveOf, pad);
     const aboveComposerY = shiftAboveOf(comp);
-    let maxAboveY = Math.max(aboveComposerY, neededCornerUpY);
-    for (let i = 0; i < corners.length; i++) {
-      for (const c of corners) if (boxOverlapArea(boxFor(0, maxAboveY), c, pad) > 0) maxAboveY = Math.max(maxAboveY, shiftAboveOf(c));
-    }
+    const maxAboveY = pushAwayFromObstacles(corners, 'y', Math.max(aboveComposerY, neededCornerUpY), boxFor, shiftAboveOf, pad);
     const railClearX = shiftLeftOf(rail);
     const aboveRailY = shiftAboveOf(rail);
     const composerLeftX = shiftLeftOf(comp);
@@ -943,6 +972,7 @@
       conversationRoot: () => root.querySelector(spec.conversation) || root.body || root,
       primarySurface: () => findPrimary(spec, root),
       composerSurface: () => findComposer(spec, root),
+      composerCardSurface: (composer) => findComposerCard(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerBackdropSurfaces: (composer) => findComposerBackdrops(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerScrimSurface: (composer) => findComposerScrim(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerBelowSiblings: (composer, dock) => {
@@ -976,7 +1006,7 @@
       composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, findPrimary(spec, root), composer === undefined ? findComposer(spec, root) : composer),
       sidebarSurfaces: () => findSidebars(spec, root),
       sidebarActiveRows: (sidebars) => findSidebarActiveRows(sidebars === undefined ? findSidebars(spec, root) : sidebars),
-      cornerFloatingObstacles: (composer) => findCornerFloatingObstacles(root, composer === undefined ? findComposer(spec, root) : composer),
+      cornerFloatingObstacles: (composer) => findCornerFloatingObstacles(root, composer === undefined ? findComposer(spec, root) : composer, spec),
       codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))],
       thoughtBlocks: () => collect(spec.thoughts),
       isAssistantNode(node) {
@@ -988,6 +1018,6 @@
     });
   }
   global.ObsidianPrismAdapters = Object.freeze({
-    forHost, contentWidthTarget, computeDockAvoidance, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, isComposerDockOverlaid, scrollContainer
+    forHost, contentWidthTarget, dockEdgeMargin, computeDockAvoidance, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, isComposerDockOverlaid, scrollContainer
   });
 })(globalThis);

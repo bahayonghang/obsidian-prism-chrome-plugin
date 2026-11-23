@@ -997,3 +997,239 @@ test('v0.4.0 #27: runtime wires syncDockAvoidance and syncDockPopoverPosition wi
   ctx.h.context.ObsidianPrismRuntime.stop();
   assert.equal(docEl.getAttribute('style'), null);
 });
+
+test('v0.4.0 handover: same-realm double-injection keeps active marks flicker-free, drops stale marks, preserves host values, and leaves zero residue on disable/Native Palette/stop', async () => {
+  const ctx = createRuntimeDom({ contentWidth: 'full' });
+  const docEl = ctx.elements.get('docEl');
+  const body = ctx.elements.get('body');
+  const primary = ctx.elements.get('primary');
+  const composer = ctx.elements.get('composer');
+  const gridEl = ctx.elements.get('gridEl');
+  const trailingEl = ctx.elements.get('trailingEl');
+  const scrim = ctx.elements.get('scrim');
+  const codeSurface = ctx.elements.get('codeSurface');
+  const threadCol = ctx.elements.get('threadCol');
+  const addBtn = ctx.elements.get('addBtn');
+  const modelBtn = ctx.elements.get('modelBtn');
+  const modelSlotEl = ctx.elements.get('modelSlotEl');
+  const primaryActionBtn = ctx.elements.get('primaryActionBtn');
+  const composerAttachment = ctx.elements.get('composerAttachment');
+  const chip = ctx.elements.get('chip');
+  reflectInlineStyle(docEl);
+
+  // Connect nodes inside body/primary so document.querySelectorAll scans the real tree.
+  const staleNode = ctx.h.context.document.createElement('div');
+  staleNode.setAttribute('data-op-code-surface', 'true');
+  const hostValueNode = ctx.h.context.document.createElement('div');
+  hostValueNode.setAttribute('data-op-composer-surface', 'fixture-original');
+  trailingEl.append(addBtn, modelSlotEl, modelBtn, primaryActionBtn);
+  gridEl.append(trailingEl);
+  composer.append(gridEl, composerAttachment, chip);
+  scrim.append(composer);
+  primary.append(threadCol, scrim, codeSurface, staleNode, hostValueNode);
+  body.append(primary);
+  docEl.append(body);
+
+  // Support [attr="val"] queries on document so adoptHandoverSurfaceMarks exercises real querySelectorAll.
+  ctx.h.context.document.querySelectorAll = sel => {
+    const out = [];
+    const matchNode = (node, part) => {
+      const attrs = [...part.matchAll(/\[([^\]=]+)(?:="([^"]*)")?\]/g)];
+      const tag = part.replace(/\[[^\]]+\]/g, '').replace(/[#.].*$/, '').trim();
+      if (tag && node.tagName.toLowerCase() !== tag.toLowerCase()) return false;
+      if (part.startsWith('#') && node.id !== part.slice(1).replace(/\[.*$/, '')) return false;
+      if (part.startsWith('.') && !String(node.className || '').split(/\s+/).includes(part.slice(1).replace(/\[.*$/, ''))) return false;
+      return attrs.every(([, name, val]) => val === undefined ? node.hasAttribute(name) : node.getAttribute(name) === val);
+    };
+    const walk = (node, part) => {
+      if (matchNode(node, part) && !out.includes(node)) out.push(node);
+      for (const child of node.children || []) walk(child, part);
+    };
+    for (const part of sel.split(',').map(s => s.trim()).filter(Boolean)) {
+      walk(docEl, part);
+    }
+    return out;
+  };
+
+  // Pre-seed runtime1 with an extra dock offset & dock clearance to confirm all 5 runtime root vars adopt cleanly.
+  await new Promise(resolve => setTimeout(resolve, 25));
+  docEl.style.setProperty('--op-dock-clearance', '24px');
+  docEl.style.setProperty('--op-dock-offset-x', '38px');
+  docEl.style.setProperty('--op-dock-offset-y', '162px');
+
+  assert.equal(composer.getAttribute('data-op-composer-surface'), 'true');
+  assert.equal(gridEl.getAttribute('data-op-composer-grid'), 'true');
+  assert.equal(trailingEl.getAttribute('data-op-composer-toolbar'), 'true');
+  assert.equal(primaryActionBtn.getAttribute('data-op-composer-primary-action'), 'true');
+  assert.equal(primary.getAttribute('data-op-main-surface'), 'true');
+  assert.equal(scrim.getAttribute('data-op-composer-dock'), 'true');
+  assert.equal(scrim.getAttribute('data-op-composer-scrim'), 'true');
+
+  // Spy on removeAttribute / removeProperty during handover to guarantee zero flicker on active marks/vars.
+  const flickerEvents = [];
+  const origComposerRemove = composer.removeAttribute.bind(composer);
+  composer.removeAttribute = name => { flickerEvents.push(`composer.remove:${name}`); origComposerRemove(name); };
+  const origPrimaryRemove = primary.removeAttribute.bind(primary);
+  primary.removeAttribute = name => { flickerEvents.push(`primary.remove:${name}`); origPrimaryRemove(name); };
+  const origRemoveProp = docEl.style.removeProperty.bind(docEl.style);
+  docEl.style.removeProperty = name => {
+    if (name === '--op-reading-width' || name === '--op-reading-shift') flickerEvents.push(`style.remove:${name}`);
+    origRemoveProp(name);
+  };
+
+  // Second instance takes over (same-realm double injection).
+  delete ctx.h.context.ObsidianPrismRuntime;
+  ctx.h.load('src/content.js');
+  await new Promise(resolve => setTimeout(resolve, 25));
+
+  assert.deepEqual(flickerEvents, [], 'active marks and reading-width root vars must never be removed & re-added during handover');
+  assert.equal(staleNode.getAttribute('data-op-code-surface'), null, 'stale mark from previous instance is removed immediately');
+  assert.equal(hostValueNode.getAttribute('data-op-composer-surface'), 'fixture-original', 'genuine non-true host attribute value is preserved');
+  assert.equal(composer.getAttribute('data-op-composer-surface'), 'true');
+  assert.equal(docEl.style.getPropertyValue('--op-reading-width'), '1124px');
+
+  // Native Palette ('host') after handover clears all visual marks (must not retain "true" as original!).
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'host', themeMode: 'dark' } });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  for (const [node, attr] of [
+    [composer, 'data-op-composer-surface'],
+    [gridEl, 'data-op-composer-grid'],
+    [trailingEl, 'data-op-composer-toolbar'],
+    [primaryActionBtn, 'data-op-composer-primary-action'],
+    [scrim, 'data-op-composer-dock'],
+    [scrim, 'data-op-composer-scrim'],
+    [codeSurface, 'data-op-code-surface']
+  ]) {
+    assert.equal(node.getAttribute(attr), null, `Native Palette after handover clears ${attr}`);
+  }
+  assert.equal(hostValueNode.getAttribute('data-op-composer-surface'), 'fixture-original');
+
+  // Re-enable prism palette then disable extension -> ALL runtime surface attrs and root vars clear cleanly!
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', contentWidth: 'full' } });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(composer.getAttribute('data-op-composer-surface'), 'true');
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: false, palette: 'obsidian', themeMode: 'dark', contentWidth: 'full' } });
+  await new Promise(resolve => setTimeout(resolve, 15));
+
+  const SURFACE_ATTRS = [
+    'data-op-main-surface', 'data-op-thread-column', 'data-op-composer-column', 'data-op-code-surface',
+    'data-op-code-header', 'data-op-composer-dock', 'data-op-composer-scrim', 'data-op-thread-scroller',
+    'data-op-composer-empty-sibling', 'data-op-composer-disclaimer', 'data-op-thread-spacer',
+    'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-leading', 'data-op-composer-primary',
+    'data-op-composer-trailing', 'data-op-composer-toolbar', 'data-op-composer-add', 'data-op-model-capsule',
+    'data-op-model-capsule-item', 'data-op-composer-primary-action', 'data-op-composer-attachment',
+    'data-op-composer-chip', 'data-op-composer-backdrop', 'data-op-sidebar-surface', 'data-op-sidebar-active'
+  ];
+  for (const attr of SURFACE_ATTRS) {
+    assert.equal(ctx.h.context.document.querySelectorAll(`[${attr}="true"]`).length, 0, `disable after handover leaves zero [${attr}="true"]`);
+  }
+  for (const v of ['--op-reading-width', '--op-reading-shift', '--op-dock-clearance', '--op-dock-offset-x', '--op-dock-offset-y']) {
+    assert.equal(docEl.style.getPropertyValue(v), '', `disable after handover clears ${v}`);
+  }
+  assert.equal(docEl.getAttribute('style'), null, 'disable after handover leaves no style="" residue');
+
+  // Re-enable -> double-inject again -> stop() also leaves zero residue.
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', contentWidth: 'full' } });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  delete ctx.h.context.ObsidianPrismRuntime;
+  ctx.h.load('src/content.js');
+  await new Promise(resolve => setTimeout(resolve, 25));
+  ctx.h.context.ObsidianPrismRuntime.stop();
+  for (const attr of SURFACE_ATTRS) {
+    assert.equal(ctx.h.context.document.querySelectorAll(`[${attr}="true"]`).length, 0, `stop() after handover leaves zero [${attr}="true"]`);
+  }
+  for (const v of ['--op-reading-width', '--op-reading-shift', '--op-dock-clearance', '--op-dock-offset-x', '--op-dock-offset-y']) {
+    assert.equal(docEl.style.getPropertyValue(v), '', `stop() after handover clears ${v}`);
+  }
+  assert.equal(docEl.getAttribute('style'), null, 'stop() after handover leaves no style="" residue');
+});
+
+test('v0.4.0 handover: isolated-world reload adopts DOM marks & root vars without shared JS state and clears cleanly', async () => {
+  const ctx1 = createRuntimeDom({ contentWidth: 'full' });
+  const docEl = ctx1.elements.get('docEl');
+  const body = ctx1.elements.get('body');
+  const primary = ctx1.elements.get('primary');
+  const composer = ctx1.elements.get('composer');
+  const scrim = ctx1.elements.get('scrim');
+  reflectInlineStyle(docEl);
+  scrim.append(composer);
+  primary.append(scrim);
+  body.append(primary);
+  docEl.append(body);
+  await new Promise(resolve => setTimeout(resolve, 25));
+
+  assert.equal(composer.getAttribute('data-op-composer-surface'), 'true');
+  assert.equal(docEl.style.getPropertyValue('--op-reading-width'), '1124px');
+
+  // Create a completely separate isolated-world VM sharing only the DOM document and storage state.
+  const ctx2 = harness({
+    storage: { obsidianPrismWebConfig_v1: { enabled: true, themeMode: 'dark', palette: 'obsidian', composerRestyle: true, contentWidth: 'standard' } }
+  });
+  ctx2.context.document = ctx1.h.context.document;
+  ctx2.context.window = ctx2.context;
+  ctx2.context.addEventListener = () => {};
+  ctx2.context.removeEventListener = () => {};
+  ctx2.context.innerWidth = 1280;
+  ctx2.context.innerHeight = 900;
+  ctx2.context.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
+  ctx2.context.ResizeObserver = class { observe() {} disconnect() {} };
+  ctx2.context.MutationObserver = class { observe() {} disconnect() {} };
+  ctx2.context.requestAnimationFrame = () => 1;
+  ctx2.context.cancelAnimationFrame = () => {};
+  ctx2.context.performance = { now: () => 200 };
+  ctx2.load('src/adapters.js');
+  const real2 = ctx2.context.ObsidianPrismAdapters;
+  ctx2.context.ObsidianPrismAdapters = {
+    ...real2,
+    forHost: () => ({
+      host: 'chatgpt',
+      contentWidth: { native: 768, targets: [], composerTargets: [] },
+      userTurns: () => [ctx1.elements.get('userTurn')],
+      assistantTurns: () => [ctx1.elements.get('assistantTurn')],
+      primarySurface: () => primary,
+      composerSurface: () => composer,
+      composerCardSurface: comp => comp,
+      composerGrid: () => ({ element: ctx1.elements.get('gridEl'), slots: null, trailing: ctx1.elements.get('trailingEl') }),
+      composerBackdropSurfaces: () => [scrim],
+      composerScrimSurface: () => scrim,
+      composerBelowSiblings: () => ({ empty: [], disclaimers: [] }),
+      composerAddTrigger: () => ctx1.elements.get('addBtn'),
+      modelSelectorTrigger: () => ctx1.elements.get('modelBtn'),
+      modelCapsuleSlot: () => ctx1.elements.get('modelSlotEl'),
+      composerPrimaryAction: () => ctx1.elements.get('primaryActionBtn'),
+      composerAttachments: () => [],
+      composerChips: () => [],
+      codeSurfaces: () => [],
+      codeHeaders: () => [],
+      threadTailSpacers: () => [],
+      threadColumns: () => [],
+      composerColumns: () => [],
+      visibleAttachments: () => [],
+      activeModelLabel: () => 'ChatGPT 5.2',
+      sidebarSurfaces: () => [],
+      sidebarActiveRows: () => [],
+      codeBlocks: () => [],
+      thoughtBlocks: () => [],
+      isAssistantNode: () => false,
+      isStreaming: () => false,
+      scrollContainer: () => body
+    })
+  };
+  ctx2.load('src/content.js');
+  await new Promise(resolve => setTimeout(resolve, 25));
+
+  // Even when incoming world switches directly to standard, adopted --op-reading-width/--op-reading-shift from prior world are cleared!
+  assert.equal(docEl.style.getPropertyValue('--op-reading-width'), '');
+  assert.equal(docEl.style.getPropertyValue('--op-reading-shift'), '');
+  assert.equal(composer.getAttribute('data-op-composer-surface'), 'true');
+
+  ctx2.context.ObsidianPrismRuntime.stop();
+  assert.equal(composer.getAttribute('data-op-composer-surface'), null);
+  assert.equal(scrim.getAttribute('data-op-composer-dock'), null);
+  assert.equal(primary.getAttribute('data-op-main-surface'), null);
+  assert.equal(docEl.getAttribute('data-op-instance'), null);
+  assert.equal(docEl.getAttribute('data-op-enabled'), null);
+  assert.equal(docEl.style.getPropertyValue('--op-reading-width'), '');
+  assert.equal(docEl.style.getPropertyValue('--op-dock-offset-x'), '');
+  assert.equal(docEl.getAttribute('style'), null);
+});

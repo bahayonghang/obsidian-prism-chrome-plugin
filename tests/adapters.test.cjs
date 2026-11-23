@@ -789,6 +789,63 @@ test('v0.4.0 #26: Gemini adapter resolves bard-mode-switcher capsule slot, trail
   const sendBtn = el('button', { type: 'button', 'data-test-id': 'send-button', 'aria-label': 'Send message' });
   trailing.append(sendBtn);
   assert.equal(adapter.composerPrimaryAction(inputArea), sendBtn);
+  assert.equal(adapter.composerCardSurface(grid), inputArea, 'Gemini composerCardSurface resolves enclosing input-area-v2');
+});
+
+test('primaryAction tier priority: Send beats Voice and Microphone even when Send precedes them in DOM order', () => {
+  const A = adapters();
+
+  // ChatGPT: [sendBtn, voiceBtn, micBtn] in DOM order -> Send must win over Voice & Microphone.
+  {
+    const { doc, body, el } = makeDoc('chatgpt');
+    const composer = el('div', { 'data-composer-layout': 'single-line' });
+    const grid = el('div', {}, { style: { display: 'grid', visibility: 'visible', opacity: '1' } });
+    const leading = el('div', {}, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridColumnStart: 'leading' } });
+    const primary = el('div', {}, { style: { display: 'block', visibility: 'visible', opacity: '1', gridColumnStart: 'primary' } });
+    primary.append(el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' }));
+    const trailing = el('div', {}, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridColumnStart: 'trailing' } });
+    const sendBtn = el('button', { type: 'button', 'data-testid': 'send-button', 'aria-label': 'Send prompt' });
+    const voiceBtn = el('button', { type: 'button', 'data-testid': 'composer-speech-button', 'aria-label': 'Start Voice' });
+    const micBtn = el('button', { type: 'button', 'aria-label': 'Microphone' });
+    trailing.append(sendBtn, voiceBtn, micBtn);
+    grid.append(leading, primary, trailing);
+    composer.append(grid);
+    body.append(composer);
+
+    const adapter = A.forHost('chatgpt', doc);
+    assert.equal(adapter.composerCardSurface(composer), composer);
+    assert.equal(adapter.composerPrimaryAction(composer), sendBtn, 'ChatGPT Tier 1 Send beats later Tier 2 Voice and Tier 3 Microphone');
+    sendBtn.style.display = 'none';
+    assert.equal(adapter.composerPrimaryAction(composer), voiceBtn, 'ChatGPT Tier 2 Voice beats later Tier 3 Microphone');
+    voiceBtn.style.display = 'none';
+    assert.equal(adapter.composerPrimaryAction(composer), micBtn, 'ChatGPT falls back to Tier 3 Microphone when Send/Voice hidden');
+  }
+
+  // Gemini: [sendBtn, micBtn] in DOM order -> Send must win over Microphone.
+  {
+    const { doc, body, el } = makeDoc('gemini');
+    const inputArea = el('input-area-v2');
+    const grid = el('div', { class: 'text-input-field' }, { style: { display: 'grid', visibility: 'visible', opacity: '1' } });
+    const leading = el('div', {}, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridColumnStart: 'leading-actions' } });
+    const textWrap = el('div', {}, { style: { display: 'block', visibility: 'visible', opacity: '1', gridColumnStart: 'text-input' } });
+    textWrap.append(el('div', { class: 'ql-editor', contenteditable: 'true', role: 'textbox' }));
+    const trailing = el('div', {}, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridColumnStart: 'trailing-actions' } });
+    const sendBtn = el('button', { type: 'button', 'data-test-id': 'send-button', 'aria-label': 'Send message' });
+    const micBtn = el('button', { type: 'button', 'aria-label': 'Microphone' });
+    trailing.append(sendBtn, micBtn);
+    grid.append(leading, textWrap, trailing);
+    inputArea.append(grid);
+    body.append(inputArea);
+
+    const adapter = A.forHost('gemini', doc);
+    assert.equal(adapter.composerCardSurface(grid), inputArea);
+    assert.equal(adapter.composerPrimaryAction(inputArea), sendBtn, 'Gemini Tier 1 Send beats later Tier 3 Microphone');
+    sendBtn.style.display = 'none';
+    assert.equal(adapter.composerPrimaryAction(inputArea), micBtn, 'Gemini falls back to Tier 3 Microphone when Send hidden');
+  }
+
+  assert.deepEqual(JSON.parse(JSON.stringify(A.dockEdgeMargin(1280))), { right: 20, bottom: 18 });
+  assert.deepEqual(JSON.parse(JSON.stringify(A.dockEdgeMargin(700))), { right: 10, bottom: 10 });
 });
 
 test('ChatGPT live dock detection covers #thread-bottom-container, .content-fade, transcriptContent and .composer-column', () => {

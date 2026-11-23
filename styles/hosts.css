@@ -144,8 +144,8 @@ html[data-op-enabled="true"][data-op-sidebar-compact="true"]:not([data-op-sideba
  * empty, noninteractive fade layers; the actual composer remains opaque.
  * Clear paint rather than hiding generated content or altering footer layout. */
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"],
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]::before,
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]::after {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])::before,
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])::after {
   background-color: transparent !important;
   background-image: none !important;
   -webkit-mask-image: none !important;
@@ -581,9 +581,6 @@ html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([
   text-align: center !important;
 }
 
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"]),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])::before,
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])::after,
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) .native-composer-fade:not([data-op-composer-scrim="true"]) {
   background-color: transparent !important;
   background-image: none !important;
@@ -624,6 +621,8 @@ html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palett
   pointer-events: none !important;
   background-color: transparent !important;
   background-image: linear-gradient(to bottom, transparent 0, color-mix(in srgb, var(--op-canvas) 32%, transparent) var(--op-scrim-feather), color-mix(in srgb, var(--op-canvas) 56%, transparent) 100%) !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
 }
 html[data-op-enabled="true"][data-op-home="false"][data-op-scheme="light"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
   background-image: linear-gradient(to bottom, transparent 0, color-mix(in srgb, var(--op-canvas) 20%, transparent) var(--op-scrim-feather), color-mix(in srgb, var(--op-canvas) 36%, transparent) 100%) !important;
@@ -748,7 +747,7 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-m
 html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(main,#thread-bottom-container,#thread-bottom,#thread-bottom [class*="--thread-content-max-width"]) {
   --thread-content-max-width: var(--op-reading-width, 48rem) !important;
 }
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([class*="transcriptContent"],#thread-bottom > :has(form[data-chatgpt-composer])) {
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([class*="transcriptContent"],#thread-bottom :has(> form[data-chatgpt-composer])) {
   --thread-content-max-width: var(--op-reading-width, 48rem) !important;
   max-width: calc(var(--op-reading-width, 48rem) + 40px) !important;
   margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem) - 40px) / 2 + var(--op-reading-shift, 0px))) !important;

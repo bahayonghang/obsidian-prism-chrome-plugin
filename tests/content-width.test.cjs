@@ -22,7 +22,7 @@ test('each site declares its native reading width and the elements that actually
     '#thread-bottom-container',
     '#thread-bottom',
     '#thread-bottom [class*="--thread-content-max-width"]',
-    '#thread-bottom > :has(form[data-chatgpt-composer])',
+    '#thread-bottom :has(> form[data-chatgpt-composer])',
     '#thread-bottom > form[data-chatgpt-composer]'
   ], 'ChatGPT: dock containers bridge --thread-content-max-width and composer wrapper/form follow the reading width');
   for (const selector of ['.md-content > *', 'user-query', '.response-footer', 'hallucination-disclaimer']) {

@@ -140,32 +140,37 @@ test('hosts.css tightens ChatGPT active conversation bottom spacer, thread colum
 test('hosts.css keeps non-scrim composer backdrop layers and native fades transparent and mask-free', () => {
   const allBlocks = parseRuleBlocks(hostsCss);
   const dualPrefix = 'html[data-op-enabled="true"]:not([data-op-effective-palette="host"])';
+  assert.equal(
+    allBlocks.some(b =>
+      b.selectors.some(s =>
+        s === `${dualPrefix} [data-op-composer-backdrop="true"]::before` ||
+        s === `${dualPrefix} [data-op-composer-backdrop="true"]::after`
+      )
+    ),
+    false,
+    'must not unconditionally clear pseudo-elements on scrim-eligible backdrop hosts'
+  );
+
   const baseBackdropRule = allBlocks.find(
     b =>
       b.selectors.some(s => s === `${dualPrefix} [data-op-composer-backdrop="true"]`) &&
-      b.selectors.some(s => s === `${dualPrefix} [data-op-composer-backdrop="true"]::before`) &&
-      b.selectors.some(s => s === `${dualPrefix} [data-op-composer-backdrop="true"]::after`)
+      b.selectors.some(s => s === `${dualPrefix} [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])::before`) &&
+      b.selectors.some(s => s === `${dualPrefix} [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])::after`)
   );
-  assert.ok(baseBackdropRule, 'base [data-op-composer-backdrop="true"] rule must clear background and mask');
-  assert.match(baseBackdropRule.body, /-webkit-mask-image:\s*none\s*!important/);
-  assert.match(baseBackdropRule.body, /\bmask-image:\s*none\s*!important/);
+  assert.ok(baseBackdropRule, 'non-scrim backdrop rule must clear background and mask without overriding scrim ::before/::after');
+  for (const prop of [
+    /background-color:\s*transparent\s*!important/,
+    /background-image:\s*none\s*!important/,
+    /-webkit-mask-image:\s*none\s*!important/,
+    /\bmask-image:\s*none\s*!important/
+  ]) {
+    assert.match(baseBackdropRule.body, prop);
+  }
 
   const idx = hostsCss.indexOf(SECTION_MARKER);
   assert.notEqual(idx, -1);
   const nextIdx = hostsCss.indexOf('/* === ', idx + SECTION_MARKER.length);
   const blocks = parseRuleBlocks(nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx));
-
-  const innerRule = blocks.find(
-    b =>
-      b.selectors.some(s => s.startsWith(dualPrefix) && s.includes('[data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])')) &&
-      b.selectors.some(s => s.includes('::before')) &&
-      b.selectors.some(s => s.includes('::after'))
-  );
-  assert.ok(innerRule, 'must keep non-scrim backdrop layers and their ::before/::after transparent and mask-free');
-  assert.match(innerRule.body, /background-color:\s*transparent\s*!important/);
-  assert.match(innerRule.body, /background-image:\s*none\s*!important/);
-  assert.match(innerRule.body, /-webkit-mask-image:\s*none\s*!important/);
-  assert.match(innerRule.body, /\bmask-image:\s*none\s*!important/);
 
   const fadeRule = blocks.find(b => b.selectors.some(s => s.startsWith(dualPrefix) && s.includes('.native-composer-fade:not([data-op-composer-scrim="true"])')));
   assert.ok(fadeRule, 'must keep .native-composer-fade transparent when not scrim host');

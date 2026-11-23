@@ -200,9 +200,32 @@
     const host = detectHost();
     const enabled = cfg.enabled && ((host === 'chatgpt' && cfg.enableChatGPT) || (host === 'gemini' && cfg.enableGemini) || host === 'unknown');
     if (!originals.has(root)) {
+      const priorPrism = root.getAttribute('data-op-enabled') === 'true' || root.getAttribute('data-op-instance') !== null;
       const attrs = {};
-      for (const attr of Array.from(root.attributes)) if (attr.name.startsWith('data-op-')) attrs[attr.name] = attr.value;
-      originals.set(root, {attrs, alpha: root.style.getPropertyValue('--op-ambient-alpha'), priority: root.style.getPropertyPriority('--op-ambient-alpha'), hadStyle: root.getAttribute('style') !== null});
+      if (!priorPrism) {
+        for (const attr of Array.from(root.attributes)) if (attr.name.startsWith('data-op-')) attrs[attr.name] = attr.value;
+      }
+      let hadStyle = root.getAttribute('style') !== null;
+      if (priorPrism && hadStyle) {
+        if (typeof root.style?.length === 'number') {
+          hadStyle = false;
+          for (let i = 0; i < root.style.length; i++) {
+            if (!root.style[i].startsWith('--op-')) { hadStyle = true; break; }
+          }
+        } else {
+          hadStyle = root.getAttribute('style').split(';').some(decl => {
+            const colon = decl.indexOf(':');
+            const prop = (colon < 0 ? decl : decl.slice(0, colon)).trim();
+            return Boolean(prop) && !prop.startsWith('--op-');
+          });
+        }
+      }
+      originals.set(root, {
+        attrs,
+        alpha: priorPrism ? '' : root.style.getPropertyValue('--op-ambient-alpha'),
+        priority: priorPrism ? '' : root.style.getPropertyPriority('--op-ambient-alpha'),
+        hadStyle
+      });
     }
     if (!enabled) {
       const original = originals.get(root);

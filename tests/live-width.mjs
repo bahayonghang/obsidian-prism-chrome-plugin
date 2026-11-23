@@ -101,13 +101,27 @@ async function unwrapComposerFormInDom(page) {
   assert.equal(unwrapped, true, 'chatgpt variant: form[data-chatgpt-composer] is directly under #thread-bottom');
 }
 
-async function checkHost(suite, host, { withoutComposerLimiter = false, unwrapComposerForm = false } = {}) {
+async function nestComposerWrapperInDom(page) {
+  const nested = await page.evaluate(() => {
+    const col = document.querySelector('#thread-bottom > .composer-column');
+    if (!col) return false;
+    const shell = document.createElement('div');
+    shell.className = 'nested-dock-shell';
+    col.before(shell);
+    shell.append(col);
+    return Boolean(document.querySelector('#thread-bottom > .nested-dock-shell > .composer-column > form[data-chatgpt-composer]'));
+  });
+  assert.equal(nested, true, 'chatgpt variant: .composer-column is nested inside an intermediate wrapper under #thread-bottom');
+}
+
+async function checkHost(suite, host, { withoutComposerLimiter = false, unwrapComposerForm = false, nestComposerWrapper = false } = {}) {
   const { engine, artifacts } = suite;
-  const variant = withoutComposerLimiter ? ' (no inferred composer limiter)' : unwrapComposerForm ? ' (direct form under #thread-bottom)' : '';
-  const failureTag = withoutComposerLimiter ? '-variant' : unwrapComposerForm ? '-direct-form' : '';
+  const variant = withoutComposerLimiter ? ' (no inferred composer limiter)' : unwrapComposerForm ? ' (direct form under #thread-bottom)' : nestComposerWrapper ? ' (nested wrapper under #thread-bottom)' : '';
+  const failureTag = withoutComposerLimiter ? '-variant' : unwrapComposerForm ? '-direct-form' : nestComposerWrapper ? '-nested-wrapper' : '';
   await onLiveFixture(suite, host, { failure: `${host}-live-width${failureTag}-failure` }, async ({ page, errors }) => {
     if (withoutComposerLimiter) await removeInferredComposerLimiter(page);
     if (unwrapComposerForm) await unwrapComposerFormInDom(page);
+    if (nestComposerWrapper) await nestComposerWrapperInDom(page);
     // Native widths before the extension exists.
     const native = await measure(page, host);
     await injectExtension(page, suite, { waitFor: '.op-width-toggle' });
@@ -133,7 +147,7 @@ async function checkHost(suite, host, { withoutComposerLimiter = false, unwrapCo
       const full = await measure(page, host);
       if (host === 'gemini') full.longTable = await longTableWidth(page);
       await assertBubbleCap(page, host, 'full');
-      if (!withoutComposerLimiter && !unwrapComposerForm && ['vp1707', 'main1280', 'main1100'].includes(size.key)) {
+      if (!withoutComposerLimiter && !unwrapComposerForm && !nestComposerWrapper && ['vp1707', 'main1280', 'main1100'].includes(size.key)) {
         await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-live-width-full-${size.key}.png`) });
       }
 
@@ -225,4 +239,5 @@ export async function checkLiveWidthPresets(options) {
   for (const host of ['chatgpt', 'gemini']) await checkHost(options, host);
   await checkHost(options, 'chatgpt', { withoutComposerLimiter: true });
   await checkHost(options, 'chatgpt', { unwrapComposerForm: true });
+  await checkHost(options, 'chatgpt', { nestComposerWrapper: true });
 }

@@ -372,7 +372,7 @@ async function checkChatGPTInFlow(suite) {
       const canvas = await canvasColor(page);
       await assertGlowContinuous(page, host, label, canvas, { includeInFlowBands: true });
       const occlusion = await occlusionColumn(page, host, canvas);
-      assert.ok(occlusion.max <= 0.08, `${label}: zero white slab or canvas veil (max alpha ${occlusion.max.toFixed(2)})`);
+      assert.ok(occlusion.max <= 0.08, `${label}: zero opaque canvas band or canvas veil (max alpha ${occlusion.max.toFixed(2)})`);
       assert.ok(occlusion.maxStep <= 0.08, `${label}: zero horizontal alpha step (max step ${occlusion.maxStep.toFixed(2)})`);
 
       const declared = await scrimBackdropFilter(page, host);
