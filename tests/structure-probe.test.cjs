@@ -120,8 +120,8 @@ function makeMockDom(hostname) {
       style: { display: 'block', position: 'static', visibility: 'visible', opacity: '1', minHeight: '0px', ...opts.style },
       pseudos: opts.pseudos || {},
       getAttributeNames: () => [...attrs.keys()],
-      getAttribute: name => attrs.get(name) ?? null,
-      hasAttribute: name => attrs.has(name),
+      getAttribute: name => (name === 'class' && el.classList.length ? el.classList.join(' ') : (attrs.get(name) ?? null)),
+      hasAttribute: name => (name === 'class' && el.classList.length > 0) || attrs.has(name),
       getBoundingClientRect: () => ({ ...el.rect }),
       contains: other => { for (let c = other; c; c = c.parentElement) if (c === el) return true; return false; },
       matches: sel => matchSelector(el, sel),
@@ -165,25 +165,80 @@ function makeMockDom(hostname) {
     const dock = create('div', {
       attrs: { id: 'thread-bottom-container' },
       classes: ['content-fade_b9xk'],
-      style: { position: 'relative', backgroundColor: 'rgb(33, 33, 33)' },
+      rect: { x: 260, y: 700, width: 1280, height: 144 },
+      style: {
+        position: 'relative',
+        backgroundColor: 'rgb(33, 33, 33)',
+        boxShadow: '0 -24px 0 0 #2b2738, 0 18px 0 0 rgba(43, 39, 56, 0.9490196078431372)',
+        '--sharp-edge-bottom-shadow': '0 -24px 0 0 #2b2738, 0 18px 0 0 #2b2738',
+        '--sharp-edge-bottom-shadow-placeholder-content': '""',
+        '--sharp-edge-top-shadow': '0 2px 0 0 #2b2738',
+        '--sharp-edge-top-shadow-placeholder-content': 'Secret top placeholder',
+        '--composer-surface-primary': 'rgba(48, 48, 48, 0.9490196078431372)',
+        '--main-surface-primary': '#212121'
+      },
       pseudos: {
         '::before': {
           content: '""', display: 'block', position: 'absolute', top: '-24px', height: '28px',
           backgroundImage: 'linear-gradient(transparent, rgb(33, 33, 33))',
           maskImage: 'linear-gradient(to bottom, rgba(0, 0, 0, 0), rgb(0, 0, 0))',
           webkitMaskImage: 'linear-gradient(to bottom, rgba(0, 0, 0, 0), rgb(0, 0, 0))'
+        },
+        '::after': {
+          content: '""', display: 'block', position: 'absolute', left: '0px', right: '0px', bottom: '0px', height: '96px', zIndex: '-1',
+          boxShadow: '0 -24px 0 0 #2b2738, 0 0 0 url("https://secret.example/pseudo.png")',
+          backgroundImage: 'linear-gradient(transparent, rgb(45, 42, 58))',
+          maskImage: 'linear-gradient(to bottom, rgba(0, 0, 0, 0), rgb(0, 0, 0))'
         }
       }
     });
+    const contentFadeContainer = create('div', {
+      classes: ['content-fade-container', 'content-fade'],
+      style: { position: 'absolute', left: '0px', right: '0px', bottom: '0px', height: '96px', zIndex: '-1' },
+      pseudos: {
+        '::before': { content: 'normal' },
+        '::after': {
+          content: '""', display: 'block', position: 'absolute', left: '0px', right: '0px', bottom: '0px', height: '96px', zIndex: '-1',
+          backgroundImage: 'linear-gradient(transparent, #2d2a3a 20%, #2d2a3a)',
+          maskImage: 'linear-gradient(to bottom, transparent, #000)'
+        }
+      }
+    });
+    const scrollToBottomBtn = create('button', {
+      attrs: { type: 'button', 'aria-label': 'Scroll to bottom' },
+      classes: ['scroll-to-bottom-btn']
+    });
+    contentFadeContainer.append(scrollToBottomBtn);
+    const extraFade1 = create('div', {
+      classes: ['fade-mask_a1'],
+      pseudos: { '::before': { content: 'normal' }, '::after': { content: 'none' } }
+    });
+    const extraFade2 = create('div', {
+      classes: ['content-fade_extra'],
+      style: {
+        boxShadow: '0 0 0 #00000014 68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13 r_5f2c9a81 4f8a1c2e9b7d url("https://secret.example/fade.png")',
+        maxWidth: '100000px',
+        zIndex: '2147483647',
+        backgroundImage: 'translate3d(0px, 0px, 0px)',
+        '--sharp-edge-bottom-shadow-placeholder-content': 'https://secret.example/placeholder'
+      }
+    });
     const threadBottom = create('div', { attrs: { id: 'thread-bottom' } });
+    const threadBottomAfterSpacer = create('div', { classes: ['thread-bottom-trailing-spacer'], style: { height: '12px' } });
     const col = create('div', { classes: ['composer-column'], style: { '--thread-content-max-width': '48rem' } });
     const form = create('form', { attrs: { 'data-chatgpt-composer': '', 'data-secret': 'Private user text' } });
+    const composerLayout = create('div', {
+      attrs: { 'data-composer-layout': 'single-line' },
+      classes: ['ComposerLayoutRoot_m3kp'],
+      rect: { x: 400, y: 730, width: 768, height: 100 }
+    });
     const formInnerCorner = create('button', {
       attrs: { type: 'button', 'aria-label': 'Start Voice' },
       rect: { x: 1400, y: 800, width: 36, height: 36 },
       style: { position: 'absolute' }
     });
-    form.append(formInnerCorner);
+    composerLayout.append(formInnerCorner);
+    form.append(composerLayout);
     const spacer = create('div', { classes: ['composer-below-spacer'], rect: { x: 400, y: 830, width: 768, height: 24 }, style: { height: '24px' } });
     const disclaimer = create('div', {
       classes: ['disclaimer_v7rk'],
@@ -192,6 +247,25 @@ function makeMockDom(hostname) {
     });
     const disclaimerLink = create('a', { attrs: { href: 'https://secret.example/help' } });
     disclaimer.append(disclaimerLink);
+    const dockOuterSpacer = create('div', {
+      classes: ['dock-outer-spacer'],
+      rect: { x: 260, y: 844, width: 1280, height: 28 },
+      style: { height: '28px' }
+    });
+    const disclaimerOuterWrap = create('div', {
+      classes: ['disclaimer-outer-wrap'],
+      attrs: { 'data-testid': 'bottom-disclaimer' },
+      rect: { x: 260, y: 864, width: 1280, height: 36 },
+      style: { marginTop: '-8px', marginBottom: '0px', minHeight: '36px', paddingBottom: '12px', viewTransitionName: 'disclaimer-shell' }
+    });
+    const secretVtShell = create('div', {
+      attrs: { style: 'view-transition-name: vt-68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13' },
+      style: { viewTransitionName: 'vt-68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13' }
+    });
+    const mixedIdVtShell = create('div', {
+      attrs: { 'data-testid': 'disclaimer-extra' },
+      style: { viewTransitionName: 'r_5f2c9a81' }
+    });
     const cornerBtn = create('button', {
       attrs: { type: 'button', 'aria-label': 'Help and shortcuts', id: 'corner-help-98765' },
       classes: ['host-corner-help'],
@@ -217,17 +291,22 @@ function makeMockDom(hostname) {
     owned.append(ownedFloat);
     col.append(form, spacer, disclaimer);
     threadBottom.append(col);
-    dock.append(threadBottom);
-    parent.append(scroller, dock);
+    dock.append(contentFadeContainer, threadBottom, threadBottomAfterSpacer);
+    parent.append(scroller, extraFade1, extraFade2, dock, dockOuterSpacer, disclaimerOuterWrap, secretVtShell, mixedIdVtShell);
     main.append(parent);
     mainCol.append(main);
     page.append(mainCol);
     body.append(page, cornerBtn, dialog, owned);
-  } else {
+  } else if (hostname === 'gemini.google.com') {
     const app = create('chat-app');
-    const inputContainer = create('input-container', { classes: ['input-gradient'], style: { position: 'absolute', minHeight: '133px' } });
+    const chatWindow = create('chat-window');
+    const inputContainer = create('input-container', {
+      classes: ['input-gradient'],
+      rect: { x: 312, y: 767, width: 1228, height: 133 },
+      style: { position: 'absolute', minHeight: '133px' }
+    });
     const inputAreaContainer = create('div', { classes: ['input-area-container'] });
-    const inputArea = create('input-area-v2');
+    const inputArea = create('input-area-v2', { rect: { x: 540, y: 790, width: 660, height: 72 } });
     const innerFloat = create('button', { rect: { x: 1400, y: 800, width: 32, height: 32 }, style: { position: 'fixed' } });
     inputArea.append(innerFloat);
     inputAreaContainer.append(inputArea);
@@ -239,7 +318,8 @@ function makeMockDom(hostname) {
       rect: { x: 1492, y: 852, width: 32, height: 32 },
       style: { position: 'fixed' }
     });
-    app.append(inputContainer);
+    chatWindow.append(inputContainer);
+    app.append(chatWindow);
     body.append(app, cornerBtn);
   }
   const document = {
@@ -274,16 +354,73 @@ test('structure probe collects pseudo paint/mask, full ancestor depth, siblingsA
   const chatgptJson = JSON.stringify(chatgpt);
   assert.equal(chatgptJson.includes('Private user text'), false, 'redacts long data values');
   assert.equal(chatgptJson.includes('Help and shortcuts'), false, 'never leaks aria-label');
+  assert.equal(chatgptJson.includes('Scroll to bottom'), false, 'never leaks scroll-to-bottom aria-label');
+  assert.equal(chatgptJson.includes('Secret top placeholder'), false, 'redacts *-placeholder-content custom properties');
   assert.equal(chatgptJson.includes('corner-help-98765'), false, 'never leaks element id');
   assert.equal(chatgptJson.includes('secret.example'), false, 'never leaks href or url(...)');
   assert.equal(chatgptJson.includes('secret-conversation-id'), false, 'never leaks page path');
+  assert.equal(chatgptJson.includes('68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13'), false, 'redacts UUID in viewTransitionName and CSS values');
+  assert.equal(chatgptJson.includes('r_5f2c9a81'), false, 'redacts mixed-id in viewTransitionName and CSS values');
+  assert.equal(chatgptJson.includes('4f8a1c2e9b7d'), false, 'redacts long hex in CSS values');
 
-  assert.equal(chatgpt.targets.composerAncestors.count, 6, 'collects all 6 ancestors of composer');
-  assert.equal(chatgpt.targets.composerAncestors.samples.length, 6, 'ancestorsOf is not truncated to SAMPLE_LIMIT=3');
+  assert.equal(chatgpt.targets.composerAncestors.count, 9, 'collects deeper ancestor chain (> 6 levels) up through html');
+  assert.equal(chatgpt.targets.composerAncestors.samples.length, 9, 'ancestorsOf collects beyond old depth 6');
+  assert.ok(chatgpt.targets.composerAncestors.samples.some(s => s.classes.includes('page')), 'captures .page ancestor');
+  assert.ok(chatgpt.targets.composerAncestors.samples.some(s => s.tag === 'body'), 'captures body ancestor');
+
   const dock = chatgpt.targets.composerAncestors.samples.find(s => s.classes.includes('content-fade_b9xk'));
   assert.ok(dock?.pseudos?.before?.hasContent, 'attaches ::before pseudo details when content exists');
   assert.match(dock.pseudos.before.backgroundImage, /linear-gradient/);
   assert.match(dock.pseudos.before.maskImage, /linear-gradient/);
+  assert.ok(dock?.pseudos?.after?.hasContent, 'attaches ::after pseudo details when content exists');
+  assert.equal(dock.pseudos.after.left, '0px');
+  assert.equal(dock.pseudos.after.right, '0px');
+  assert.equal(dock.pseudos.after.zIndex, '-1');
+  assert.match(dock.pseudos.after.boxShadow, /#2b2738/);
+  assert.equal(dock.pseudos.after.boxShadow.includes('url([url])'), true, 'redacts url(...) inside pseudo boxShadow');
+  assert.equal(dock.style.boxShadow, '0 -24px 0 0 #2b2738, 0 18px 0 0 rgba(43, 39, 56, 0.9490196078431372)', 'preserves hex colors and floating point numbers in boxShadow');
+  assert.equal(dock.style['--sharp-edge-bottom-shadow'], '0 -24px 0 0 #2b2738, 0 18px 0 0 #2b2738');
+  assert.equal(dock.style['--sharp-edge-bottom-shadow-placeholder-content'], '[text]');
+  assert.equal(dock.style['--sharp-edge-top-shadow'], '0 2px 0 0 #2b2738');
+  assert.equal(dock.style['--sharp-edge-top-shadow-placeholder-content'], '[text]');
+  assert.equal(dock.style['--composer-surface-primary'], 'rgba(48, 48, 48, 0.9490196078431372)');
+  assert.equal(dock.style['--main-surface-primary'], '#212121');
+  assert.equal(dock.rect.bottom, 844);
+  assert.equal(dock.rect.viewportBottomOffset, 56);
+
+  assert.equal(chatgpt.targets.contentFades.count, 4, 'finds all 4 contentFade nodes');
+  assert.equal(chatgpt.targets.contentFades.samples.length, 4, 'spec.limit collects contentFades beyond SAMPLE_LIMIT=3');
+  const fadeContainer = chatgpt.targets.contentFades.samples.find(s => s.classes.includes('content-fade-container'));
+  assert.ok(fadeContainer?.pseudos?.after?.hasContent, 'captures non-empty container .content-fade::after');
+  assert.equal(fadeContainer.pseudos.before.hasContent, false, 'treats content: normal as hasContent=false');
+  const normalFade = chatgpt.targets.contentFades.samples.find(s => s.classes.includes('fade-mask_a1'));
+  assert.equal(normalFade.pseudos, undefined, 'omits pseudos when ::before is normal and ::after is none');
+  const extraFade = chatgpt.targets.contentFades.samples.find(s => s.classes.includes('content-fade_extra'));
+  assert.equal(extraFade.style.maxWidth, '100000px', 'does not redact numeric CSS lengths');
+  assert.equal(extraFade.style.zIndex, '2147483647', 'does not redact max z-index integer');
+  assert.equal(extraFade.style.backgroundImage, 'translate3d(0px, 0px, 0px)', 'does not redact translate3d keyword');
+  assert.equal(extraFade.style.boxShadow, '0 0 0 #00000014 [id] [id] [id] url([url])', 'redacts UUID, mixed-id, long hex, and url(...) while keeping 8-digit hex colors');
+  assert.equal(extraFade.style['--sharp-edge-bottom-shadow-placeholder-content'], '[url]', 'redacts URL in placeholder-content custom prop via redactValue');
+
+  assert.equal(chatgpt.targets.threadBottomSiblings.count, 1, 'captures siblings after #thread-bottom');
+  assert.deepEqual(chatgpt.targets.threadBottomSiblings.samples[0].classes, ['thread-bottom-trailing-spacer']);
+
+  assert.equal(chatgpt.targets.dockSiblings.count, 4, 'captures external siblings after #thread-bottom-container');
+  const [outerSpacer, outerDisclaimer, vtUuidShell, vtMixedShell] = chatgpt.targets.dockSiblings.samples;
+  assert.equal(outerSpacer.classes[0], 'dock-outer-spacer');
+  assert.equal(outerSpacer.childCount, 0);
+  assert.equal(outerDisclaimer.classes[0], 'disclaimer-outer-wrap');
+  assert.equal(outerDisclaimer.style.marginTop, '-8px');
+  assert.equal(outerDisclaimer.style.marginBottom, '0px');
+  assert.equal(outerDisclaimer.style.viewTransitionName, 'disclaimer-shell');
+  assert.equal(vtUuidShell.style.viewTransitionName, '[id]', 'redacts UUID in viewTransitionName via redactValue');
+  assert.equal(vtMixedShell.style.viewTransitionName, '[id]', 'redacts mixed-id in viewTransitionName via redactValue');
+
+  assert.equal(chatgpt.targets.disclaimerShells.count, 4, 'disclaimerShells captures disclaimer classes, testids, and view-transition-name styles');
+  assert.equal(chatgpt.targets.disclaimerShells.samples.length, 4);
+
+  assert.deepEqual(chatgpt.bottomOffsets, { dockBottomOffset: 56, composerBottomOffset: 70 });
+
   const mainAnc = chatgpt.targets.composerAncestors.samples.find(s => s.tag === 'main');
   assert.equal(mainAnc?.style['--thread-content-max-width'], '48rem', 'reads --thread-content-max-width on main');
   assert.equal(mainAnc?.style.minHeight, '0px', 'STYLE_KEYS includes minHeight');
@@ -300,8 +437,14 @@ test('structure probe collects pseudo paint/mask, full ancestor depth, siblingsA
   assert.equal(gemini.targets.inputSiblings.count, 1, 'collects siblings after Gemini .input-area-container');
   assert.equal(gemini.targets.inputSiblings.samples[0].tag, 'hallucination-disclaimer');
   assert.equal(gemini.targets.inputSiblings.samples[0].hasInteractive, false);
+  assert.equal(gemini.targets.inputAncestors.count, 6, 'collects Gemini inputAncestors chain');
+  assert.equal(gemini.targets.inputAncestors.samples.length, 6);
+  assert.deepEqual(gemini.bottomOffsets, { dockBottomOffset: 0, composerBottomOffset: 38 });
   assert.equal(gemini.targets.cornerFloats.count, 1, 'captures Gemini corner button while excluding input-area-v2 inner float');
   assert.deepEqual(gemini.targets.cornerFloats.samples[0].classes, ['host-corner-help']);
+
+  const unknown = runProbe('unknown.example');
+  assert.deepEqual(unknown.bottomOffsets, { dockBottomOffset: null, composerBottomOffset: null });
 });
 
 function makePNG(width, height, colorType, pixels) {

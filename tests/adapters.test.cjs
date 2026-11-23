@@ -1253,3 +1253,357 @@ test('v0.4.1 compact composer: composerEmptyHeaders identifies empty wrapper hea
   emptyHeader.append(el('button', { type: 'button' }));
   assert.deepEqual([...adapter.composerEmptyHeaders(composer)], []);
 });
+
+test('v0.4.1 #30: findComposerBackdrops covers depth<=14, fade-mask, container fade layers, adjacent disclaimer wrappers, and strict protection filter', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const parent = el('div', { class: 'composer-parent' }, { rect: { left: 0, right: 1280, top: 52, bottom: 900, width: 1280, height: 848 } });
+  const scroller = el('div', { 'data-prism-test-scroller': '' }, { rect: { left: 0, right: 1280, top: 52, bottom: 720, width: 1280, height: 668 } });
+  const turn = el('div', { 'data-turn-key': 't1' });
+  turn.append(el('div', { 'data-content-search-unit-key': 'c:1:assistant', 'data-markdown-text-style': 'assistant-message' }, { textContent: 'Reply' }));
+  scroller.append(turn);
+
+  // Depth 11 ancestor chain from composer up to #thread-bottom-container.
+  const dockOuter = el('div', { id: 'thread-bottom-container', class: 'content-fade_b9xk' }, { rect: { left: 0, right: 1280, top: 720, bottom: 900, width: 1280, height: 180 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'relative' } });
+  const fadeBtnContainer = el('div', { class: 'content-fade-container content-fade' }, { rect: { left: 0, right: 1280, top: 804, bottom: 900, width: 1280, height: 96 } });
+  fadeBtnContainer.append(el('button', { type: 'button', class: 'scroll-to-bottom-btn', 'aria-label': 'Scroll to bottom' }));
+  const fadeMask = el('div', { class: 'bottom-fade-mask' }, { rect: { left: 0, right: 1280, top: 804, bottom: 900, width: 1280, height: 96 } });
+  fadeMask.append(el('span', { class: 'fade-inner' }));
+  const textOnlyNonDisclaimer = el('div', { class: 'content-fade' }, { textContent: 'Keep me out', rect: { left: 0, right: 1280, top: 700, bottom: 720, width: 1280, height: 20 } });
+  const excludedMenuFade = el('div', { class: 'content-fade', role: 'menu' }, { rect: { left: 100, right: 300, top: 650, bottom: 720, width: 200, height: 70 } });
+  const excludedPopper = el('div', { 'data-radix-popper-content-wrapper': '' }, { rect: { left: 100, right: 300, top: 650, bottom: 720, width: 200, height: 70 } });
+  const nestedMenuFade = el('div', { class: 'content-fade' }, { rect: { left: 100, right: 300, top: 650, bottom: 720, width: 200, height: 70 } });
+  excludedPopper.append(nestedMenuFade);
+  const ownedFade = el('div', { class: 'content-fade', 'data-op-owned': '' }, { rect: { left: 0, right: 1280, top: 720, bottom: 760, width: 1280, height: 40 } });
+
+  let chain = dockOuter;
+  for (let i = 0; i < 9; i++) {
+    const next = el('div', { class: `dock-wrap-${i}` }, { rect: { left: 0, right: 1280, top: 720, bottom: 900, width: 1280, height: 180 } });
+    chain.append(next);
+    chain = next;
+  }
+  const composer = el('div', { class: 'ComposerLayoutRoot_m3kp', 'data-composer-layout': 'single-line' }, { rect: { left: 256, right: 1024, top: 724, bottom: 834, width: 768, height: 110 } });
+  const innerFadeInsideComposer = el('div', { class: 'content-fade' }, { rect: { left: 256, right: 1024, top: 724, bottom: 750, width: 768, height: 26 } });
+  const att = el('div', { class: 'file-tile_p4wt' }, { rect: { left: 260, right: 360, top: 730, bottom: 770, width: 100, height: 40 } });
+  const editor = el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' });
+  composer.append(innerFadeInsideComposer, att, editor);
+  chain.append(composer);
+  dockOuter.append(fadeBtnContainer, fadeMask, textOnlyNonDisclaimer, excludedMenuFade, excludedPopper, ownedFade);
+
+  // Siblings in outerDock.parentElement (.composer-parent)
+  const siblingFadeWrapper = el('div', { class: 'content-fade-outer content-fade' }, { rect: { left: 0, right: 1280, top: 840, bottom: 900, width: 1280, height: 60 } });
+  siblingFadeWrapper.append(el('span', { class: 'utility-dot' }));
+  const vtDisclaimer = el('div', { class: 'notice-shell', style: 'view-transition-name: disclaimer-shell' }, { textContent: 'Offline layout notice.', rect: { left: 0, right: 1280, top: 864, bottom: 900, width: 1280, height: 36 }, style: { display: 'block', visibility: 'visible', opacity: '1', viewTransitionName: 'disclaimer-shell' } });
+  const outerAtt = el('div', { class: 'native-footer-attachment' }, { rect: { left: 260, right: 360, top: 700, bottom: 720, width: 100, height: 20 } });
+  const outerDialog = el('div', { role: 'dialog', class: 'content-fade' }, { rect: { left: 400, right: 800, top: 300, bottom: 500, width: 400, height: 200 } });
+
+  parent.append(scroller, dockOuter, siblingFadeWrapper, vtDisclaimer, outerAtt, outerDialog);
+  main.append(parent);
+  body.append(main);
+
+  const chatgptAdapter = A.forHost('chatgpt', doc);
+  const found = chatgptAdapter.composerBackdropSurfaces(composer);
+  assert.equal(found.includes(dockOuter), true, 'depth>8 ancestor traversal reaches #thread-bottom-container');
+  assert.equal(found.includes(fadeBtnContainer), true, 'collects container .content-fade wrapping scroll-to-bottom button');
+  assert.equal(found.includes(fadeMask), true, 'collects [class*="fade-mask"] container layer');
+  assert.equal(found.includes(siblingFadeWrapper), true, 'collects container .content-fade sibling in outerDock.parentElement');
+  assert.equal(found.includes(vtDisclaimer), true, 'collects view-transition-name disclaimer shell sibling in outerDock.parentElement');
+  assert.equal(found.includes(textOnlyNonDisclaimer), false, 'still excludes text-only non-disclaimer .content-fade with children.length === 0');
+  assert.equal(found.includes(composer), false, 'never collects composer');
+  assert.equal(found.includes(innerFadeInsideComposer), false, 'never collects descendants of composer');
+  assert.equal(found.includes(att), false, 'never collects attachments inside composer');
+  assert.equal(found.includes(outerAtt), false, 'never collects spec.attachments sibling');
+  assert.equal(found.includes(excludedMenuFade), false, 'never collects OVERLAY_EXCLUDED [role="menu"]');
+  assert.equal(found.includes(nestedMenuFade), false, 'never collects nodes inside OVERLAY_EXCLUDED popper');
+  assert.equal(found.includes(outerDialog), false, 'never collects OVERLAY_EXCLUDED [role="dialog"]');
+  assert.equal(found.includes(ownedFade), false, 'never collects extension-owned nodes');
+
+  // Gemini composerCard protection: input-area-v2 wraps .text-input-field and must never be returned as backdrop.
+  {
+    const g = makeDoc('gemini');
+    const gMain = g.el('chat-window');
+    const inputContainer = g.el('input-container', { class: 'input-gradient' }, { rect: { left: 0, right: 1280, top: 760, bottom: 900, width: 1280, height: 140 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'absolute' } });
+    const areaContainer = g.el('div', { class: 'input-area-container' }, { rect: { left: 310, right: 970, top: 780, bottom: 880, width: 660, height: 100 } });
+    const inputAreaCard = g.el('input-area-v2', {}, { rect: { left: 310, right: 970, top: 780, bottom: 880, width: 660, height: 100 } });
+    const textInputField = g.el('div', { class: 'text-input-field' }, { rect: { left: 322, right: 958, top: 788, bottom: 872, width: 636, height: 84 } });
+    textInputField.append(g.el('div', { class: 'ql-editor', contenteditable: 'true', role: 'textbox' }), g.el('button', { type: 'button' }));
+    inputAreaCard.append(textInputField);
+    areaContainer.append(inputAreaCard);
+    inputContainer.append(areaContainer);
+    gMain.append(inputContainer);
+    g.body.append(gMain);
+
+    const gemAdapter = A.forHost('gemini', g.doc);
+    const gemBackdrops = gemAdapter.composerBackdropSurfaces(textInputField);
+    assert.equal(gemBackdrops.includes(inputAreaCard), false, 'never returns composerCard (input-area-v2) as backdrop');
+    assert.equal(gemBackdrops.includes(textInputField), false, 'never returns composer (.text-input-field) as backdrop');
+    assert.equal(gemBackdrops.includes(inputContainer), true, 'still collects outer input-container');
+    assert.equal(gemAdapter.composerScrimSurface(textInputField), inputContainer, 'composerScrimSurface still resolves outer input-container');
+  }
+});
+
+test('v0.4.1 #30: isIndependentMessageScroller distinguishes independent sibling scrollers from sticky/root/owned scrollers', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const parent = el('div', { class: 'composer-parent' });
+  const scroller = el('div', { 'data-prism-test-scroller': '' });
+  const dock = el('div', { id: 'thread-bottom-container' });
+  const composer = el('div', { 'data-composer-layout': 'single-line' });
+  dock.append(composer);
+  parent.append(scroller, dock);
+  body.append(parent);
+
+  assert.equal(A.isIndependentMessageScroller(null, composer, dock), false);
+  assert.equal(A.isIndependentMessageScroller(scroller, null, dock), false);
+  assert.equal(A.isIndependentMessageScroller(scroller, composer, dock), true, 'independent sibling scroller returns true');
+  assert.equal(A.isIndependentMessageScroller(scroller, composer, null), true, 'independent scroller without dock arg returns true');
+  assert.equal(A.isIndependentMessageScroller(doc.body, composer, dock), false, 'body cannot be independent scroller');
+  assert.equal(A.isIndependentMessageScroller(doc.documentElement, composer, dock), false, 'documentElement cannot be independent scroller');
+
+  const ownedScroller = el('div', { 'data-op-owned': '' });
+  assert.equal(A.isIndependentMessageScroller(ownedScroller, composer, dock), false, 'owned node cannot be scroller');
+
+  // Sticky-in-scroller: dock & composer sit inside scroller.
+  scroller.append(dock);
+  assert.equal(A.isIndependentMessageScroller(scroller, composer, dock), false, 'sticky-in-scroller returns false');
+  assert.equal(A.isIndependentMessageScroller(scroller, composer, null), false, 'scroller containing composer returns false even without dock');
+
+  // Dock containing scroller or equal to scroller returns false.
+  const outerDock = el('div', { id: 'outer-dock' });
+  const innerScroller = el('div');
+  const comp2 = el('div');
+  outerDock.append(innerScroller);
+  assert.equal(A.isIndependentMessageScroller(outerDock, comp2, outerDock), false);
+  assert.equal(A.isIndependentMessageScroller(innerScroller, comp2, outerDock), false);
+
+  // Composer containing scroller returns false.
+  const compWrap = el('div');
+  const innerEdScroller = el('div');
+  compWrap.append(innerEdScroller);
+  assert.equal(A.isIndependentMessageScroller(innerEdScroller, compWrap, null), false);
+});
+
+test('v0.4.1 #31: composerBelowSiblings detects external trailing empty spacers, negative-margin & view-transition shells up to 2 levels above dock without oscillation', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const parent = el('div', { class: 'composer-parent' });
+  const scroller = el('div', { 'data-prism-test-scroller': '' });
+  const turn = el('div', { 'data-message-author-role': 'assistant' }, { textContent: 'Assistant turn' });
+  scroller.append(turn);
+
+  const dockOuter = el('div', { class: 'dock-outer' });
+  const dockInner = el('div', { class: 'dock-inner' });
+  const dock = el('div', { id: 'thread-bottom-container' });
+  const form = el('form', { 'data-chatgpt-composer': '' });
+  const composer = el('div', { 'data-composer-layout': 'single-line' });
+  form.append(composer);
+  dock.append(form);
+
+  const innerTrailingEmpty = el('div', { class: 'inner-trailing-empty' });
+  const midTrailingEmpty = el('div', { class: 'mid-trailing-empty' });
+  dockInner.append(dock, innerTrailingEmpty);
+  dockOuter.append(dockInner, midTrailingEmpty);
+
+  const outerEmpty = el('div', { class: 'dock-outer-spacer' }, { rect: { left: 0, right: 1280, top: 830, bottom: 858, width: 1280, height: 28 } });
+  const preMarkedEmpty = el('div', { class: 'pre-marked-empty', 'data-op-composer-empty-sibling': 'true' }, { rect: { left: 0, right: 1280, top: 858, bottom: 858, width: 1280, height: 0 } });
+  const negMarginWrap = el('div', { style: 'margin-top: -8px' }, { textContent: 'Synthetic negative margin footer.', rect: { left: 260, right: 1020, top: 850, bottom: 886, width: 760, height: 36 }, style: { display: 'block', visibility: 'visible', opacity: '1', contentVisibility: 'visible', position: 'relative', marginTop: '-8px' } });
+  const vtAttrShell = el('div', { style: 'view-transition-name: footer-shell' }, { textContent: 'View transition attr notice.', rect: { left: 260, right: 1020, top: 858, bottom: 900, width: 760, height: 42 } });
+  const vtComputedInner = el('span', {}, { textContent: 'View transition computed notice.' });
+  const vtComputedShell = el('div', { class: 'vt-computed-outer' }, { textContent: 'View transition computed notice.', rect: { left: 260, right: 1020, top: 858, bottom: 900, width: 760, height: 42 }, style: { display: 'block', visibility: 'visible', opacity: '1', contentVisibility: 'visible', position: 'relative', viewTransitionName: 'disclaimer-shell' } });
+  vtComputedShell.append(vtComputedInner);
+
+  const wrappedMarkedOuter = el('div', { class: 'wrapped-marked-outer' }, { textContent: 'Already marked inner generic notice.', rect: { left: 260, right: 1020, top: 858, bottom: 894, width: 760, height: 36 } });
+  const wrappedMarkedInner = el('div', { 'data-op-composer-disclaimer': 'true' }, { textContent: 'Already marked inner generic notice.', rect: { left: 260, right: 1020, top: 858, bottom: 858, width: 760, height: 0 } });
+  wrappedMarkedOuter.append(wrappedMarkedInner);
+
+  const explicitOuterDisclaimer = el('div', { class: 'disclaimer_outer' }, { textContent: 'External explicit disclaimer.', rect: { left: 260, right: 1020, top: 858, bottom: 894, width: 760, height: 36 } });
+  const textOuterDisclaimer = el('div', { class: 'outer-ai-note' }, { textContent: 'ChatGPT can make mistakes. Check important info.', rect: { left: 260, right: 1020, top: 858, bottom: 894, width: 760, height: 36 } });
+  const genericOuter = el('div', { class: 'outer-plain-note' }, { textContent: 'Plain trailing external note.', rect: { left: 260, right: 1020, top: 860, bottom: 896, width: 760, height: 36 } });
+
+  // Strictly excluded siblings after dock:
+  const dialogAfter = el('div', { role: 'dialog', style: 'view-transition-name: dlg-shell; margin-top: -8px' }, { textContent: 'Dialog must stay visible', rect: { left: 400, right: 800, top: 300, bottom: 380, width: 400, height: 80 } });
+  const menuAfter = el('div', { role: 'menu' }, { textContent: 'Menu must stay visible', rect: { left: 400, right: 600, top: 300, bottom: 380, width: 200, height: 80 } });
+  const threeButtonsAfter = el('div', {}, { textContent: 'Choose action', rect: { left: 260, right: 1020, top: 850, bottom: 890, width: 760, height: 40 } });
+  threeButtonsAfter.append(el('button', {}, { textContent: 'A' }), el('button', {}, { textContent: 'B' }), el('button', {}, { textContent: 'C' }));
+  const svgAfter = el('div', {}, { textContent: 'Icon bar', rect: { left: 260, right: 1020, top: 850, bottom: 890, width: 760, height: 40 } });
+  svgAfter.append(el('svg', {}));
+  const formAfter = el('div', {}, { textContent: 'Input bar', rect: { left: 260, right: 1020, top: 850, bottom: 890, width: 760, height: 40 } });
+  formAfter.append(el('input', { type: 'text' }));
+  const msgAfter = el('div', {}, { textContent: 'ChatGPT is AI and can make mistakes.', rect: { left: 260, right: 1020, top: 850, bottom: 890, width: 760, height: 40 } });
+  msgAfter.append(el('div', { 'data-message-author-role': 'assistant' }, { textContent: 'ChatGPT is AI and can make mistakes.' }));
+  const detailsAfter = el('details', { id: 'closed-thought-fixture' }, { textContent: 'Collapsed thoughts', rect: { left: 260, right: 1020, top: 860, bottom: 882, width: 760, height: 22 } });
+  const detailsSummary = el('summary', {}, { textContent: 'Collapsed thoughts' });
+  const detailsBody = el('div', { 'data-testid': 'thoughts-content' }, { textContent: 'Only translate after opening.' });
+  detailsAfter.append(detailsSummary, detailsBody);
+  const ownedAfter = el('div', { 'data-op-owned': '' });
+
+  parent.append(
+    scroller,
+    dockOuter,
+    outerEmpty,
+    preMarkedEmpty,
+    negMarginWrap,
+    vtAttrShell,
+    vtComputedShell,
+    wrappedMarkedOuter,
+    explicitOuterDisclaimer,
+    textOuterDisclaimer,
+    genericOuter,
+    dialogAfter,
+    menuAfter,
+    threeButtonsAfter,
+    svgAfter,
+    formAfter,
+    msgAfter,
+    detailsAfter,
+    ownedAfter
+  );
+  main.append(parent);
+  const afterMainEmpty = el('div', { class: 'after-main-empty' });
+  body.append(main, afterMainEmpty);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const res = adapter.composerBelowSiblings(composer, dock);
+  assert.deepEqual([...res.empty], [innerTrailingEmpty, midTrailingEmpty, outerEmpty, preMarkedEmpty]);
+  assert.deepEqual([...res.disclaimers], [negMarginWrap, vtAttrShell, vtComputedShell, wrappedMarkedOuter, explicitOuterDisclaimer, textOuterDisclaimer]);
+  assert.equal(res.disclaimers.includes(genericOuter), false, 'plain non-disclaimer external widget outside dock must stay visible');
+  assert.equal(res.empty.includes(genericOuter), false);
+  assert.equal(res.empty.includes(afterMainEmpty), false, 'stops before main and never touches siblings outside main');
+
+  // Simulate CSS collapsing empty spacers and hiding disclaimers (display: none, 0px height).
+  for (const node of res.empty) {
+    node.setAttribute('data-op-composer-empty-sibling', 'true');
+    node.rect = { left: 0, right: 1280, top: 900, bottom: 900, width: 1280, height: 0 };
+  }
+  for (const node of res.disclaimers) {
+    node.setAttribute('data-op-composer-disclaimer', 'true');
+    node.rect = { left: 260, right: 1020, top: 900, bottom: 900, width: 760, height: 0 };
+  }
+  const origGetStyle = doc.defaultView.getComputedStyle;
+  doc.defaultView.getComputedStyle = n => {
+    const base = origGetStyle(n);
+    if (res.disclaimers.includes(n) || n === wrappedMarkedInner) {
+      return { ...base, display: 'none', visibility: 'visible', opacity: '1', contentVisibility: 'visible' };
+    }
+    return base;
+  };
+
+  // Repeated rescans must keep all empty spacers and disclaimers identically without bounce-back.
+  for (let i = 0; i < 3; i++) {
+    const rescan = adapter.composerBelowSiblings(composer, dock);
+    assert.deepEqual([...rescan.empty], [...res.empty], `rescan #${i + 1} keeps external empty spacers`);
+    assert.deepEqual([...rescan.disclaimers], [...res.disclaimers], `rescan #${i + 1} keeps external disclaimers`);
+  }
+
+  // If a previously empty spacer receives text/interactive content, it drops out cleanly.
+  outerEmpty.textContent = 'Dynamic attachment bar';
+  const afterContent = adapter.composerBelowSiblings(composer, dock);
+  assert.equal(afterContent.empty.includes(outerEmpty), false, 'non-empty spacer is no longer marked empty');
+});
+
+test('v0.4.1 #31: composerBelowSiblings scans dock.parentElement when dock sits directly inside chat-window/main without escaping it', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('gemini');
+  const chatWindow = el('chat-window');
+  const scroller = el('infinite-scroller');
+  const dock = el('input-container', { class: 'input-gradient' });
+  const composer = el('div', { class: 'text-input-field' });
+  dock.append(composer);
+  const trailingEmpty = el('div', { class: 'gemini-outer-spacer' });
+  const vtNotice = el('div', { style: 'view-transition-name: gemini-footer-shell' }, { textContent: 'Gemini custom footer notice.', rect: { left: 260, right: 1020, top: 860, bottom: 896, width: 760, height: 36 } });
+  const outsideChatWindow = el('div', { class: 'outside-chat-window' });
+  chatWindow.append(scroller, dock, trailingEmpty, vtNotice);
+  body.append(chatWindow, outsideChatWindow);
+
+  const adapter = A.forHost('gemini', doc);
+  const res = adapter.composerBelowSiblings(composer, dock);
+  assert.deepEqual([...res.empty], [trailingEmpty]);
+  assert.deepEqual([...res.disclaimers], [vtNotice]);
+  assert.equal(res.empty.includes(outsideChatWindow), false);
+});
+
+test('v0.4.1 #28: composerBelowSiblings collapses hidden-content shells (hidden attrs, display:none, visibility:hidden) while respecting exclusions', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const parent = el('div', { class: 'composer-parent' });
+  const dock = el('div', { id: 'thread-bottom-container' });
+  const form = el('form', { 'data-chatgpt-composer': '' });
+  const composer = el('div', { 'data-composer-layout': 'single-line' });
+  const hiddenInsideDock = el('div', { class: 'inner-hidden-shell' }, { rect: { left: 260, right: 1020, top: 858, bottom: 882, width: 760, height: 24 } });
+  hiddenInsideDock.append(
+    el('svg', { 'aria-hidden': 'true' }),
+    el('a', { href: '#hidden-inner' }, { textContent: 'Hidden inner', style: { display: 'none', visibility: 'visible', opacity: '1', contentVisibility: 'visible' } })
+  );
+  hiddenInsideDock.childNodes = hiddenInsideDock.children;
+  form.append(composer);
+  dock.append(form, hiddenInsideDock);
+
+  const hiddenAttrShell = el('div', { class: 'hidden-attr-shell' }, { textContent: 'Hidden attr text Hidden link', rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  hiddenAttrShell.append(
+    el('span', { hidden: '' }, { textContent: 'Hidden attr text' }),
+    el('a', { href: '#terms', hidden: '' }, { textContent: 'Hidden link' }),
+    el('svg', { 'aria-hidden': 'true' })
+  );
+  hiddenAttrShell.childNodes = hiddenAttrShell.children;
+
+  const cssHiddenShell = el('div', { class: 'css-hidden-shell' }, { textContent: 'CSS hidden text CSS hidden link', rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  const hideStyle = { display: 'none', visibility: 'visible', opacity: '1', contentVisibility: 'visible' };
+  cssHiddenShell.append(
+    el('span', {}, { textContent: 'CSS hidden text', style: hideStyle }),
+    el('a', { href: '#css-hidden' }, { textContent: 'CSS hidden link', style: hideStyle }),
+    el('button', {}, { textContent: 'Hidden btn', style: hideStyle }),
+    el('svg', {}, { style: hideStyle })
+  );
+  cssHiddenShell.childNodes = cssHiddenShell.children;
+
+  const visHiddenShell = el('div', { class: 'vis-hidden-shell' }, { textContent: 'Invisible height shell', rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 }, style: { display: 'block', visibility: 'hidden', opacity: '1', contentVisibility: 'visible', position: 'static' } });
+
+  // Shells that must NEVER collapse into empty:
+  const visibleLinkShell = el('div', { class: 'visible-link-shell' }, { rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  visibleLinkShell.append(el('a', { href: '#live' }, { textContent: '' }));
+  const hiddenInputShell = el('div', { class: 'hidden-input-shell' }, { rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  hiddenInputShell.append(el('input', { type: 'file', hidden: '' }));
+  const hiddenDetailsShell = el('div', { class: 'hidden-details-shell' }, { rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  const closedDetails = el('details', {});
+  closedDetails.append(el('summary', { hidden: '' }, { textContent: 'Hidden summary' }));
+  hiddenDetailsShell.append(closedDetails);
+  const hiddenMsgShell = el('div', { class: 'hidden-msg-shell' }, { rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  hiddenMsgShell.append(el('div', { 'data-message-author-role': 'assistant', hidden: '' }));
+  const hiddenThoughtShell = el('div', { class: 'hidden-thought-shell' }, { rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  hiddenThoughtShell.append(el('div', { 'data-testid': 'thoughts-content', hidden: '' }));
+  const hiddenDialogShell = el('div', { class: 'hidden-dialog-shell' }, { rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  hiddenDialogShell.append(el('div', { role: 'dialog', hidden: '' }));
+
+  parent.append(
+    dock,
+    hiddenAttrShell,
+    cssHiddenShell,
+    visHiddenShell,
+    visibleLinkShell,
+    hiddenInputShell,
+    hiddenDetailsShell,
+    hiddenMsgShell,
+    hiddenThoughtShell,
+    hiddenDialogShell
+  );
+  main.append(parent);
+  body.append(main);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const res = adapter.composerBelowSiblings(composer, dock);
+  assert.deepEqual([...res.empty], [hiddenInsideDock, hiddenAttrShell, cssHiddenShell, visHiddenShell]);
+  assert.deepEqual([...res.disclaimers], []);
+});
+
+test('v0.4.1 review: adapters expose per-host scrim and scroller Alpha fade capability flags', () => {
+  const A = adapters();
+  const chatgpt = A.forHost('chatgpt', {});
+  const gemini = A.forHost('gemini', {});
+  assert.equal(chatgpt.usesOverlayScrim, false);
+  assert.equal(chatgpt.usesScrollerAlphaFade, true);
+  assert.equal(gemini.usesOverlayScrim, true);
+  assert.equal(gemini.usesScrollerAlphaFade, false);
+});

@@ -16,7 +16,7 @@
       primary: ['main', '[role="main"]', '[data-testid="conversation-pane"]', '[data-testid="chat-main"]', '#main-content'],
       editors: ['#prompt-textarea', '[data-testid="prompt-textarea"]', 'textarea[name="prompt-textarea"]', 'main [contenteditable="true"][role="textbox"]', 'main textarea'],
       composers: ['[data-composer-layout]', '#composer-background', '[data-testid="chat-composer"]', '[data-testid="composer"]', '[data-composer-surface]', '.composer-parent'],
-      composerBackdrops: '#thread-bottom-container,#thread-bottom,[class*="content-fade"],.content-fade,[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
+      composerBackdrops: '#thread-bottom-container,#thread-bottom,[class*="content-fade"],.content-fade,[class*="fade-mask"],[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
       codeSurfaces: '[data-testid="code-block"], .code-block-wrapper',
       codeHeaders: '.code-header, [data-testid="code-block-header"]',
       modelTriggers: '[data-testid="model-switcher-dropdown-button"], [data-testid="composer-model-switcher"], button[aria-label*="model" i], button[aria-label*="模型"]',
@@ -56,7 +56,9 @@
       sidebars: ['#stage-slideover-sidebar', '#stage-sidebar', '#app-rail', '[data-testid="app-rail"]', '[data-testid="app-sidebar"]', '[data-testid="history-sidebar"]', '[data-testid="sidebar"]', '[data-testid="sidebar-container"]', '[data-testid="stage-thread-flyout"]', '[data-testid="conversation-history"]', '[data-testid="chat-history"]'],
       sidebarLinks: 'a[href^="/c/"],a[href^="/g/"],a[href^="/project/"]',
       thoughts: '[data-testid="reasoning-content"], [data-testid="thoughts-content"], [data-testid="thinking-content"]',
-      streaming: '[data-testid="stop-button"], [data-is-streaming="true"]'
+      streaming: '[data-testid="stop-button"], [data-is-streaming="true"]',
+      usesOverlayScrim: false,
+      usesScrollerAlphaFade: true
     },
     gemini: {
       users: 'user-query, [data-test-id="user-query"], .user-query-container',
@@ -92,7 +94,9 @@
       sidebars: ['bard-sidenav', 'side-navigation-v2', 'side-navigation', 'mat-sidenav', '[data-test-id="side-nav"]', '[data-test-id="side-navigation"]', '[data-testid="sidebar"]'],
       sidebarLinks: 'a[href^="/app/"]',
       thoughts: 'model-thoughts .thoughts-content, model-thoughts .thought-content, model-thoughts .markdown, [data-test-id="thoughts-content"], [data-test-id="thinking-content"]',
-      streaming: '[data-test-id="stop-button"], [data-test-id="stop-response-button"], .stop-button'
+      streaming: '[data-test-id="stop-button"], [data-test-id="stop-response-button"], .stop-button',
+      usesOverlayScrim: true,
+      usesScrollerAlphaFade: false
     }
   });
 
@@ -100,7 +104,9 @@
     return node && (node.nodeType === 1 ? node : node.parentElement);
   }
   function isOwned(node) {
-    return Boolean(elementOf(node)?.closest('[data-op-owned]'));
+    const el = elementOf(node);
+    if (!el) return false;
+    return typeof el.closest === 'function' ? Boolean(el.closest('[data-op-owned]')) : Boolean(el.hasAttribute?.('data-op-owned'));
   }
   function isVisible(node) {
     if (!node || !node.isConnected || node.closest('[hidden], [aria-hidden="true"]')) return false;
@@ -129,12 +135,40 @@
   // A detached copy excludes our sibling controls without mutating framework-owned text.
   function textOf(element) {
     if (!element) return '';
-    if (!element.querySelector('[data-op-owned],script,style,[hidden],[aria-hidden="true"]')) {
-      return element.textContent || '';
+    const hiddenSelector = '[data-op-owned],script,style,[hidden],[aria-hidden="true"]';
+    if (element.matches?.(hiddenSelector)) return '';
+    if (!element.querySelector?.(hiddenSelector)) return element.textContent || '';
+    if (typeof element.cloneNode === 'function') {
+      const copy = element.cloneNode(true);
+      copy.querySelectorAll(hiddenSelector).forEach(node => node.remove());
+      return copy.textContent || '';
     }
-    const copy = element.cloneNode(true);
-    copy.querySelectorAll('[data-op-owned],script,style,[hidden],[aria-hidden="true"]').forEach(node => node.remove());
-    return copy.textContent || '';
+    const collect = node => {
+      if (!node) return '';
+      if (node.nodeType === 3) return node.nodeValue ?? node.textContent ?? '';
+      if (node !== element && node.matches?.(hiddenSelector)) return '';
+      if (Array.isArray(node.children) && node.children.length) {
+        return node.children.map(collect).filter(Boolean).join('');
+      }
+      return node.textContent || '';
+    };
+    return collect(element);
+  }
+  function hasVisibleText(node) {
+    if (!node || isOwned(node) || !isVisible(node)) return false;
+    if (node.matches?.('script,style,template')) return false;
+    if (node.childNodes?.length) {
+      for (const child of node.childNodes) {
+        if (child.nodeType === 3) {
+          if ((child.nodeValue || '').trim()) return true;
+        } else if (child.nodeType === 1 && hasVisibleText(child)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (node.children?.length && node.children.some(child => hasVisibleText(child))) return true;
+    return Boolean(textOf(node).trim());
   }
   const TURN_NOISE_SELECTOR = '[data-op-owned],script,style,svg,[hidden],[aria-hidden="true"],.sr-only,button,[role="button"],.turn-actions,[data-testid="turn-actions"],.code-header,.code-block-decoration,[data-testid="code-block-header"],[data-test-id="code-block-header"],[data-testid="citation-pill"],.citation-chip,message-actions';
   function cleanTurnText(element, options = {}) {
@@ -233,13 +267,57 @@
   }
   function scrollContainer(element) {
     for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
-      const style = parent.ownerDocument.defaultView.getComputedStyle(parent);
-      if (/(auto|scroll)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight + 1) return parent;
+      const style = parent.ownerDocument?.defaultView?.getComputedStyle?.(parent);
+      if (style && /(auto|scroll)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight + 1) return parent;
     }
-    return element?.ownerDocument.scrollingElement || document.scrollingElement;
+    return element?.ownerDocument?.scrollingElement || global.document?.scrollingElement || null;
   }
   // v0.3.1 #18: live ChatGPT message markers lead; the rest are the v0.3.0 markers.
   const MESSAGE_AREAS = '[data-content-search-unit-key],[data-user-message-bubble],[data-markdown-text-style="assistant-message"],[data-message-author-role],[data-turn="user"],[data-turn="assistant"],article[data-testid^="conversation-turn-"],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response,[data-test-id="model-response"],.model-response-text';
+  const OVERLAY_EXCLUDED = 'dialog,[role="dialog"],[aria-modal="true"],[role="menu"],[role="listbox"],[data-radix-popper-content-wrapper],.mat-mdc-menu-panel';
+  const FADE_LAYER_SELECTOR = '[class*="content-fade"],.content-fade,[class*="fade-mask"]';
+  const INTERACTIVE_CONTROL_SELF = 'a[href],button,[role="button"],[role="link"],input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],details,summary';
+  const INTERACTIVE_DESCENDANT = `${INTERACTIVE_CONTROL_SELF},[tabindex]`;
+  const hasVisibleInteractiveDescendant = node => Boolean(
+    node?.querySelectorAll && [...node.querySelectorAll(INTERACTIVE_DESCENDANT)].some(el => !isOwned(el) && isVisible(el))
+  );
+  const hasViewTransitionName = (node, view = node?.ownerDocument?.defaultView || global) => {
+    if (!node) return false;
+    const computed = view?.getComputedStyle?.(node);
+    if (computed?.viewTransitionName && computed.viewTransitionName !== 'none') return true;
+    if (node.style?.viewTransitionName && node.style.viewTransitionName !== 'none') return true;
+    const styleAttr = node.getAttribute?.('style') || '';
+    return /view-transition-name\s*:\s*(?!none\b)/i.test(styleAttr);
+  };
+  const hasNegativeMarginTop = (node, view = node?.ownerDocument?.defaultView || global) => {
+    if (!node) return false;
+    const computed = view?.getComputedStyle?.(node);
+    if (parseFloat(computed?.marginTop) < 0 || parseFloat(node.style?.marginTop) < 0) return true;
+    const styleAttr = node.getAttribute?.('style') || '';
+    return /(?:^|;)\s*margin-top\s*:\s*-/i.test(styleAttr);
+  };
+  const THOUGHT_AREAS = 'model-thoughts,[data-testid="reasoning-content"],[data-testid="thoughts-content"],[data-testid="thinking-content"],[data-test-id="thoughts-content"],[data-test-id="thinking-content"]';
+  const FORM_FIELD = 'input,textarea,select,[contenteditable],[contenteditable="true"]';
+  const NON_DISCLAIMER_TAGS = 'script,style,template,details,summary,nav,aside,header,article,form,fieldset,table,pre,code';
+  const NON_DISCLAIMER_DESCENDANTS = 'details,summary,nav,aside,header,article,table,pre';
+  const isExcludedTrailingNode = (node, composer = null, dock = null) => Boolean(
+    !node ||
+    isOwned(node) ||
+    (dock && (node === dock || node.contains?.(dock))) ||
+    (composer && (node === composer || node.contains?.(composer) || composer.contains?.(node))) ||
+    node.matches?.(NON_DISCLAIMER_TAGS) ||
+    node.hasAttribute?.('hidden') ||
+    node.matches?.(OVERLAY_EXCLUDED) || node.closest?.(OVERLAY_EXCLUDED) || node.querySelector?.(OVERLAY_EXCLUDED) ||
+    node.matches?.(MESSAGE_AREAS) || node.closest?.(MESSAGE_AREAS) || node.querySelector?.(MESSAGE_AREAS) ||
+    node.matches?.(THOUGHT_AREAS) || node.closest?.(THOUGHT_AREAS) || node.querySelector?.(THOUGHT_AREAS)
+  );
+  const hasExcludedInnerControl = node => Boolean(
+    node.querySelector?.(NON_DISCLAIMER_DESCENDANTS) ||
+    node.matches?.(FORM_FIELD) ||
+    node.querySelector?.(FORM_FIELD)
+  );
+  const DISCLAIMER_SELECTOR = '[class*="disclaimer"], [data-testid*="disclaimer"], [data-test-id*="disclaimer"], hallucination-disclaimer, .composer-hint';
+  const DISCLAIMER_TEXT_RE = /(?:chatgpt|gemini|ai)\s+(?:is\s+ai\s+and\s+)?(?:can|may|might)\s+make\s+mistakes|check\s+important\s+info|double[- ]check\s+(?:its\s+)?responses|可能会犯错|可能会出错|请核查重要信息|内容由\s*ai\s*生成|仅供参考/i;
   function firstVisible(selectors, root, predicate = () => true) {
     for (const selector of selectors) {
       const found = [...root.querySelectorAll(selector)].find(node => !isOwned(node) && isVisible(node) && predicate(node));
@@ -282,14 +360,15 @@
     if (!view?.getComputedStyle) return [];
     const composerRect = composer.getBoundingClientRect();
     if (composerRect.width <= 0 || composerRect.height <= 0) return [];
+    const composerCard = findComposerCard(spec, composer);
     const viewportHeight = view.innerHeight || composer.ownerDocument.documentElement.clientHeight;
     const path = [];
     let boundary = -1;
     // Recognize only the small docking region around a known native editor.
     // Structure and positioning remain stable after its paint is overridden.
-    for (let node = composer.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth++) {
+    for (let node = composer.parentElement, depth = 0; node && depth < 14; node = node.parentElement, depth++) {
       if (node.matches('main,[role="main"],body,html,chat-window,dialog,[role="dialog"],[aria-modal="true"],aside,nav,[role="navigation"]') ||
-          node.querySelector(MESSAGE_AREAS)) break;
+          node.matches(OVERLAY_EXCLUDED) || node.querySelector(MESSAGE_AREAS)) break;
       if (isOwned(node)) break;
       path.push(node);
       const rect = node.getBoundingClientRect();
@@ -305,15 +384,51 @@
     }
     if (boundary < 0) return [];
     const surfaces = path.slice(0, boundary + 1);
-    const hasInteractiveDescendant = node => Boolean(node.querySelector('a[href],button,input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex],[role="button"],[role="link"]'));
+    const outerDock = path[boundary];
+    const isProtectedBackdrop = node => {
+      if (!node || isOwned(node)) return true;
+      if (node === composer || composer.contains?.(node)) return true;
+      if (composerCard && (node === composerCard || composerCard.contains?.(node))) return true;
+      if (node.matches?.(OVERLAY_EXCLUDED) || node.closest?.(OVERLAY_EXCLUDED)) return true;
+      if (node.matches?.(MESSAGE_AREAS) || node.closest?.(MESSAGE_AREAS)) return true;
+      if (spec.attachments && (node.matches?.(spec.attachments) || node.closest?.(spec.attachments))) return true;
+      return false;
+    };
     const isEmptyFadeBox = node =>
       !node.contains(composer) && !composer.contains(node) && !isOwned(node) &&
-      !node.matches('[role="button"],[role="link"],[tabindex],[contenteditable],a[href],button,input,textarea,select,img,picture,svg,video,audio,canvas,iframe') &&
-      !textOf(node).trim() && !hasInteractiveDescendant(node);
-    // Native fade siblings may sit above the shell. Only empty, noninteractive,
-    // full-width absolute decorations or content-fade layers qualify; buttons and attachments do not.
+      !node.matches?.(INTERACTIVE_DESCENDANT) &&
+      !textOf(node).trim() && !node.querySelector?.(INTERACTIVE_DESCENDANT);
+    const isContainerFadeLayer = (node, maxHeight) => {
+      if (!node?.matches?.(FADE_LAYER_SELECTOR)) return false;
+      if (isProtectedBackdrop(node) || node.matches?.(INTERACTIVE_CONTROL_SELF)) return false;
+      if (node.querySelector?.(MESSAGE_AREAS) || node.querySelector?.(OVERLAY_EXCLUDED)) return false;
+      if (spec.attachments && node.querySelector?.(spec.attachments)) return false;
+      const fStyle = view.getComputedStyle(node);
+      if (fStyle && fStyle.display === 'none') return false;
+      const fRect = node.getBoundingClientRect();
+      if (fRect.height > maxHeight) return false;
+      if (isEmptyFadeBox(node)) return true;
+      if (node.contains?.(composer)) return true;
+      if ((node.children?.length || 0) > 0 && !node.matches?.(FORM_FIELD) && !node.querySelector?.(FORM_FIELD)) return true;
+      if (node.matches?.(DISCLAIMER_SELECTOR) || DISCLAIMER_TEXT_RE.test(textOf(node))) return true;
+      return false;
+    };
+    const isAdjacentDisclaimerShell = (node, maxHeight) => {
+      if (isProtectedBackdrop(node) || isExcludedTrailingNode(node, composer) || hasExcludedInnerControl(node) || node.matches?.(INTERACTIVE_CONTROL_SELF)) return false;
+      const sStyle = view.getComputedStyle(node);
+      if (sStyle && (sStyle.display === 'none' || /(auto|scroll)/.test(sStyle.overflowY || ''))) return false;
+      const sRect = node.getBoundingClientRect();
+      if (sRect.height > maxHeight) return false;
+      const txt = textOf(node).trim();
+      if (node.matches?.(DISCLAIMER_SELECTOR) || node.querySelector?.(DISCLAIMER_SELECTOR)) return true;
+      if (txt && txt.length <= 240 && DISCLAIMER_TEXT_RE.test(txt)) return true;
+      return Boolean(hasViewTransitionName(node, view) && sRect.height <= 140 && txt.length > 0 && txt.length <= 240 && !node.querySelector?.('svg'));
+    };
+    // Native fade siblings may sit above the shell, inside dock surfaces, or as adjacent wrappers
+    // in outerDock.parentElement. Protected surfaces (composer/card/attachments/dialogs/menus) are never returned.
     for (const surface of [...surfaces]) {
       const bounds = surface.getBoundingClientRect();
+      const maxHeight = Math.max(bounds.height + 160, viewportHeight * 0.48);
       for (const child of surface.children) {
         if (!child.matches('div,span') || !isEmptyFadeBox(child)) continue;
         const style = view.getComputedStyle(child);
@@ -325,15 +440,28 @@
           surfaces.push(child);
         }
       }
-      for (const fade of surface.querySelectorAll('[class*="content-fade"], .content-fade')) {
-        if (!isEmptyFadeBox(fade)) continue;
-        const fStyle = view.getComputedStyle(fade);
-        if (fStyle.display === 'none') continue;
-        const fRect = fade.getBoundingClientRect();
-        if (fRect.height <= bounds.height + 140) surfaces.push(fade);
+      for (const fade of surface.querySelectorAll(FADE_LAYER_SELECTOR)) {
+        if (isContainerFadeLayer(fade, maxHeight)) surfaces.push(fade);
       }
     }
-    return [...new Set(surfaces)];
+    if (outerDock?.parentElement && !outerDock.parentElement.matches?.('body,html')) {
+      const outerBounds = outerDock.getBoundingClientRect();
+      const outerMaxHeight = Math.max(outerBounds.height + 160, viewportHeight * 0.48);
+      for (const sib of [...(outerDock.parentElement.children || [])]) {
+        if (sib === outerDock || isProtectedBackdrop(sib) || sib.contains?.(composer)) continue;
+        const sibStyle = view.getComputedStyle(sib);
+        if (sibStyle && /(auto|scroll)/.test(sibStyle.overflowY || '')) continue;
+        if (sib.querySelector?.(MESSAGE_AREAS) || sib.querySelector?.(OVERLAY_EXCLUDED)) continue;
+        if (isContainerFadeLayer(sib, outerMaxHeight) || isAdjacentDisclaimerShell(sib, outerMaxHeight)) {
+          surfaces.push(sib);
+        } else if (sib.querySelectorAll) {
+          for (const fade of sib.querySelectorAll(FADE_LAYER_SELECTOR)) {
+            if (isContainerFadeLayer(fade, outerMaxHeight)) surfaces.push(fade);
+          }
+        }
+      }
+    }
+    return [...new Set(surfaces)].filter(node => !isProtectedBackdrop(node));
   }
   function findSidebars(spec, root) {
     const result = [];
@@ -729,6 +857,14 @@
     const sRect = scroller.getBoundingClientRect();
     return dRect.height > 0 && sRect.height > 0 && dRect.top < sRect.bottom - 1 && dRect.bottom > sRect.top + 1;
   }
+  function isIndependentMessageScroller(scroller, composer, dock = null) {
+    if (!scroller || !composer || isOwned(scroller)) return false;
+    const doc = scroller.ownerDocument || composer.ownerDocument || global.document;
+    if (doc && (scroller === doc.scrollingElement || scroller === doc.documentElement || scroller === doc.body)) return false;
+    if (scroller === composer || scroller.contains?.(composer) || composer.contains?.(scroller)) return false;
+    if (dock && (scroller === dock || scroller.contains?.(dock) || dock.contains?.(scroller))) return false;
+    return true;
+  }
   function followingSiblings(node) {
     if (node.nextElementSibling !== undefined) {
       const out = [];
@@ -751,32 +887,33 @@
     const idx = [...children].indexOf(node);
     return idx > 0 ? [...children].slice(0, idx).reverse() : [];
   }
-  const INTERACTIVE_DESCENDANT = 'a[href],button,[role="button"],input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex]';
-  const FORM_FIELD = 'input,textarea,select,[contenteditable],[contenteditable="true"]';
-  const DISCLAIMER_SELECTOR = '[class*="disclaimer"], [data-testid*="disclaimer"], [data-test-id*="disclaimer"], hallucination-disclaimer, .composer-hint';
-  const DISCLAIMER_TEXT_RE = /(?:chatgpt|gemini|ai)\s+(?:is\s+ai\s+and\s+)?(?:can|may|might)\s+make\s+mistakes|check\s+important\s+info|double[- ]check\s+(?:its\s+)?responses|可能会犯错|可能会出错|请核查重要信息|内容由\s*ai\s*生成|仅供参考/i;
-  function isDisclaimerCandidate(node, composer, { allowGenericBelow = false } = {}) {
-    if (!node || isOwned(node)) return false;
-    if (composer && (node === composer || node.contains?.(composer) || composer.contains?.(node))) return false;
-    if (node.matches?.('script,style,template') || node.hasAttribute?.('hidden')) return false;
-    if (node.matches?.(MESSAGE_AREAS) || node.closest?.(MESSAGE_AREAS) || node.querySelector?.(MESSAGE_AREAS)) return false;
-    if (node.matches?.(FORM_FIELD) || node.querySelector?.(FORM_FIELD)) return false;
+  function isDisclaimerCandidate(node, composer, { allowGenericBelow = false, allowShellSignals = false } = {}) {
+    if (isExcludedTrailingNode(node, composer) || hasExcludedInnerControl(node)) return false;
+    const view = node.ownerDocument?.defaultView || global;
     const selfMarked = node.getAttribute?.('data-op-composer-disclaimer') === 'true';
+    const txt = textOf(node).trim();
+    const markedChildren = !selfMarked && node.querySelectorAll ? [...node.querySelectorAll('[data-op-composer-disclaimer="true"]')] : [];
+    const wrapsMarkedDisclaimer = markedChildren.some(child =>
+      !isOwned(child) && !child.closest?.('[hidden], [aria-hidden="true"]') && textOf(child).trim() === txt
+    );
     if (selfMarked) {
       if (!node.isConnected || node.closest?.('[hidden], [aria-hidden="true"]') || node.style?.display === 'none') return false;
       if (node.parentElement && !isVisible(node.parentElement)) return false;
     } else if (!isVisible(node)) {
       return false;
     }
-    const txt = textOf(node).trim();
     if (!txt || txt.length > 240) return false;
     if (node.matches?.('svg,button,[role="button"]') || node.querySelector?.('svg')) return false;
     if ((node.querySelectorAll?.('button,[role="button"]')?.length || 0) > 2) return false;
     if (node.matches?.(DISCLAIMER_SELECTOR) || DISCLAIMER_TEXT_RE.test(txt)) return true;
-    if (!allowGenericBelow) return false;
-    if (selfMarked) return true;
+    if (selfMarked || wrapsMarkedDisclaimer) return true;
+    if (!allowShellSignals && !allowGenericBelow) return false;
     const rect = typeof node.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null;
-    return Boolean(rect && rect.height > 0 && rect.height <= 96);
+    if (allowShellSignals && (hasViewTransitionName(node, view) || hasNegativeMarginTop(node, view))) {
+      return Boolean(rect && rect.height > 0 && rect.height <= 140);
+    }
+    if (allowGenericBelow) return Boolean(rect && rect.height > 0 && rect.height <= 96);
+    return false;
   }
   function outermostDisclaimerWrapper(node, boundary, composer) {
     let current = node;
@@ -785,8 +922,10 @@
       const parent = current.parentElement;
       if (parent.matches?.('main,[role="main"],chat-window,body,html')) break;
       if (isOwned(parent) || (composer && parent.contains?.(composer))) break;
+      if (parent.matches?.(OVERLAY_EXCLUDED) || parent.querySelector?.(OVERLAY_EXCLUDED)) break;
       if (parent.matches?.(MESSAGE_AREAS) || parent.querySelector?.(MESSAGE_AREAS)) break;
       if (parent.matches?.(FORM_FIELD) || parent.querySelector?.(FORM_FIELD) || parent.querySelector?.('svg')) break;
+      if ((parent.querySelectorAll?.('button,[role="button"]')?.length || 0) > 2) break;
       if (textOf(parent).trim() !== targetText) break;
       current = parent;
     }
@@ -804,6 +943,8 @@
       disclaimers.push(target);
     };
     const scanExplicitInside = (container, boundary) => {
+      if (!container || isOwned(container)) return;
+      if (container.matches?.(OVERLAY_EXCLUDED) || container.closest?.(OVERLAY_EXCLUDED) || container.querySelector?.(OVERLAY_EXCLUDED)) return;
       if (isDisclaimerCandidate(container, composer, { allowGenericBelow: false })) {
         pushDisclaimer(container, boundary);
         return;
@@ -818,7 +959,40 @@
         }
       }
     };
-    const view = composer?.ownerDocument?.defaultView || global;
+    const doc = composer?.ownerDocument || dock?.ownerDocument || global.document;
+    const view = doc?.defaultView || global;
+    const rawScroller = lastMessage ? scrollContainer(lastMessage) : null;
+    const scrollerNode = rawScroller && ![doc?.scrollingElement, doc?.documentElement, doc?.body].includes(rawScroller) ? rawScroller : null;
+    const isScrollNode = (node, style) => Boolean(
+      (style && /(auto|scroll)/.test(style.overflowY || '')) ||
+      node.matches?.('infinite-scroller,[data-prism-test-scroller]') ||
+      (scrollerNode && (node === scrollerNode || node.contains?.(scrollerNode)))
+    );
+    const classifyTrailingSibling = (sib, boundary, { insideDock = false } = {}) => {
+      if (isExcludedTrailingNode(sib, composer, dock)) return;
+      const sibStyle = view?.getComputedStyle?.(sib);
+      if (isScrollNode(sib, sibStyle)) return;
+      const selfMarked = sib.getAttribute?.('data-op-composer-disclaimer') === 'true';
+      if (!selfMarked && sibStyle && sibStyle.display === 'none') return;
+      const isPositioned = Boolean(sibStyle && ['absolute', 'fixed'].includes(sibStyle.position));
+      if (
+        !selfMarked &&
+        !isPositioned &&
+        !hasExcludedInnerControl(sib) &&
+        !sib.matches?.(INTERACTIVE_DESCENDANT) &&
+        !sib.querySelector?.('[data-op-composer-disclaimer="true"]') &&
+        !hasVisibleText(sib) &&
+        !hasVisibleInteractiveDescendant(sib)
+      ) {
+        empty.push(sib);
+        return;
+      }
+      if (isDisclaimerCandidate(sib, composer, { allowGenericBelow: insideDock && !isPositioned, allowShellSignals: !isPositioned })) {
+        pushDisclaimer(sib, boundary);
+      } else if (!isPositioned) {
+        scanExplicitInside(sib, boundary);
+      }
+    };
     if (composer && dock && !isOwned(composer) && !isOwned(dock) && dock.contains?.(composer)) {
       const form = composer.closest?.('form');
       const anchor = form && dock.contains(form) && form !== dock ? form : composer;
@@ -826,24 +1000,9 @@
       const seenPreceding = new Set();
       for (let current = anchor; current && current !== dock && dock.contains(current); current = current.parentElement) {
         for (const sib of followingSiblings(current)) {
-          if (!sib || seenFollowing.has(sib) || isOwned(sib)) continue;
+          if (!sib || seenFollowing.has(sib)) continue;
           seenFollowing.add(sib);
-          if (sib.matches?.('script,style,template') || sib.matches?.(MESSAGE_AREAS) || sib.querySelector?.(MESSAGE_AREAS)) continue;
-          if (sib.hasAttribute?.('hidden')) continue;
-          const selfMarked = sib.getAttribute?.('data-op-composer-disclaimer') === 'true';
-          const sibStyle = view?.getComputedStyle?.(sib);
-          if (!selfMarked && sibStyle && sibStyle.display === 'none') continue;
-          const isPositioned = Boolean(sibStyle && ['absolute', 'fixed'].includes(sibStyle.position));
-          const txt = textOf(sib).trim();
-          if (!selfMarked && !isPositioned && !txt && !sib.matches?.(INTERACTIVE_DESCENDANT) && !sib.querySelector?.(INTERACTIVE_DESCENDANT)) {
-            empty.push(sib);
-            continue;
-          }
-          if (isDisclaimerCandidate(sib, composer, { allowGenericBelow: !isPositioned })) {
-            pushDisclaimer(sib, dock);
-          } else if (!isPositioned) {
-            scanExplicitInside(sib, dock);
-          }
+          classifyTrailingSibling(sib, dock, { insideDock: true });
         }
         for (const sib of precedingSiblings(current)) {
           if (!sib || seenPreceding.has(sib) || isOwned(sib)) continue;
@@ -852,9 +1011,23 @@
         }
       }
       if (dock.parentElement && !dock.parentElement.matches?.('body,html')) {
-        for (const sib of [...(dock.parentElement.children || [])]) {
+        for (const sib of precedingSiblings(dock)) {
           if (!sib || sib === dock || sib.contains?.(dock) || sib.contains?.(composer) || isOwned(sib)) continue;
+          if (sib.matches?.(OVERLAY_EXCLUDED) || sib.closest?.(OVERLAY_EXCLUDED) || sib.querySelector?.(OVERLAY_EXCLUDED)) continue;
+          const sibStyle = view?.getComputedStyle?.(sib);
+          if (isScrollNode(sib, sibStyle)) continue;
           scanExplicitInside(sib, dock.parentElement);
+        }
+      }
+      const seenOutsideFollowing = new Set();
+      for (let cur = dock, level = 0; cur && level <= 2; cur = cur.parentElement, level++) {
+        if (level > 0 && cur.matches?.('main,[role="main"],chat-window,body,html')) break;
+        const container = cur.parentElement;
+        if (!container || container.matches?.('body,html')) break;
+        for (const sib of followingSiblings(cur)) {
+          if (!sib || seenOutsideFollowing.has(sib)) continue;
+          seenOutsideFollowing.add(sib);
+          classifyTrailingSibling(sib, container, { insideDock: false });
         }
       }
     }
@@ -866,6 +1039,7 @@
           seenPostThread.add(sib);
           if (dock && (sib === dock || sib.contains?.(dock) || dock.contains?.(sib))) continue;
           if (sib.contains?.(composer) || sib.matches?.(MESSAGE_AREAS) || sib.querySelector?.(MESSAGE_AREAS)) continue;
+          if (sib.matches?.(OVERLAY_EXCLUDED) || sib.closest?.(OVERLAY_EXCLUDED) || sib.querySelector?.(OVERLAY_EXCLUDED)) continue;
           scanExplicitInside(sib, cur.parentElement || primary);
         }
       }
@@ -1141,6 +1315,8 @@
     const messages = () => sortByDocumentOrder([...userTurns(), ...assistantTurns()]);
     return Object.freeze({
       host,
+      usesOverlayScrim: Boolean(spec.usesOverlayScrim),
+      usesScrollerAlphaFade: Boolean(spec.usesScrollerAlphaFade),
       contentWidth: Object.freeze({ native: spec.contentWidth.native, targets: [...spec.contentWidth.targets], composerTargets: [...spec.contentWidth.composerTargets] }),
       userTurns,
       assistantTurns,
@@ -1204,6 +1380,6 @@
     });
   }
   global.ObsidianPrismAdapters = Object.freeze({
-    forHost, contentWidthTarget, dockEdgeMargin, computeDockAvoidance, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, isComposerDockOverlaid, scrollContainer
+    forHost, contentWidthTarget, dockEdgeMargin, computeDockAvoidance, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, isComposerDockOverlaid, isIndependentMessageScroller, scrollContainer
   });
 })(globalThis);
