@@ -1253,3 +1253,133 @@ test('v0.4.1 compact composer: composerEmptyHeaders identifies empty wrapper hea
   emptyHeader.append(el('button', { type: 'button' }));
   assert.deepEqual([...adapter.composerEmptyHeaders(composer)], []);
 });
+
+test('v0.4.1 #30: findComposerBackdrops covers depth<=14, fade-mask, container fade layers, adjacent disclaimer wrappers, and strict protection filter', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const parent = el('div', { class: 'composer-parent' }, { rect: { left: 0, right: 1280, top: 52, bottom: 900, width: 1280, height: 848 } });
+  const scroller = el('div', { 'data-prism-test-scroller': '' }, { rect: { left: 0, right: 1280, top: 52, bottom: 720, width: 1280, height: 668 } });
+  const turn = el('div', { 'data-turn-key': 't1' });
+  turn.append(el('div', { 'data-content-search-unit-key': 'c:1:assistant', 'data-markdown-text-style': 'assistant-message' }, { textContent: 'Reply' }));
+  scroller.append(turn);
+
+  // Depth 11 ancestor chain from composer up to #thread-bottom-container.
+  const dockOuter = el('div', { id: 'thread-bottom-container', class: 'content-fade_b9xk' }, { rect: { left: 0, right: 1280, top: 720, bottom: 900, width: 1280, height: 180 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'relative' } });
+  const fadeBtnContainer = el('div', { class: 'content-fade-container content-fade' }, { rect: { left: 0, right: 1280, top: 804, bottom: 900, width: 1280, height: 96 } });
+  fadeBtnContainer.append(el('button', { type: 'button', class: 'scroll-to-bottom-btn', 'aria-label': 'Scroll to bottom' }));
+  const fadeMask = el('div', { class: 'bottom-fade-mask' }, { rect: { left: 0, right: 1280, top: 804, bottom: 900, width: 1280, height: 96 } });
+  fadeMask.append(el('span', { class: 'fade-inner' }));
+  const textOnlyNonDisclaimer = el('div', { class: 'content-fade' }, { textContent: 'Keep me out', rect: { left: 0, right: 1280, top: 700, bottom: 720, width: 1280, height: 20 } });
+  const excludedMenuFade = el('div', { class: 'content-fade', role: 'menu' }, { rect: { left: 100, right: 300, top: 650, bottom: 720, width: 200, height: 70 } });
+  const excludedPopper = el('div', { 'data-radix-popper-content-wrapper': '' }, { rect: { left: 100, right: 300, top: 650, bottom: 720, width: 200, height: 70 } });
+  const nestedMenuFade = el('div', { class: 'content-fade' }, { rect: { left: 100, right: 300, top: 650, bottom: 720, width: 200, height: 70 } });
+  excludedPopper.append(nestedMenuFade);
+  const ownedFade = el('div', { class: 'content-fade', 'data-op-owned': '' }, { rect: { left: 0, right: 1280, top: 720, bottom: 760, width: 1280, height: 40 } });
+
+  let chain = dockOuter;
+  for (let i = 0; i < 9; i++) {
+    const next = el('div', { class: `dock-wrap-${i}` }, { rect: { left: 0, right: 1280, top: 720, bottom: 900, width: 1280, height: 180 } });
+    chain.append(next);
+    chain = next;
+  }
+  const composer = el('div', { class: 'ComposerLayoutRoot_m3kp', 'data-composer-layout': 'single-line' }, { rect: { left: 256, right: 1024, top: 724, bottom: 834, width: 768, height: 110 } });
+  const innerFadeInsideComposer = el('div', { class: 'content-fade' }, { rect: { left: 256, right: 1024, top: 724, bottom: 750, width: 768, height: 26 } });
+  const att = el('div', { class: 'file-tile_p4wt' }, { rect: { left: 260, right: 360, top: 730, bottom: 770, width: 100, height: 40 } });
+  const editor = el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' });
+  composer.append(innerFadeInsideComposer, att, editor);
+  chain.append(composer);
+  dockOuter.append(fadeBtnContainer, fadeMask, textOnlyNonDisclaimer, excludedMenuFade, excludedPopper, ownedFade);
+
+  // Siblings in outerDock.parentElement (.composer-parent)
+  const siblingFadeWrapper = el('div', { class: 'content-fade-outer content-fade' }, { rect: { left: 0, right: 1280, top: 840, bottom: 900, width: 1280, height: 60 } });
+  siblingFadeWrapper.append(el('span', { class: 'utility-dot' }));
+  const vtDisclaimer = el('div', { class: 'notice-shell', style: 'view-transition-name: disclaimer-shell' }, { textContent: 'Offline layout notice.', rect: { left: 0, right: 1280, top: 864, bottom: 900, width: 1280, height: 36 }, style: { display: 'block', visibility: 'visible', opacity: '1', viewTransitionName: 'disclaimer-shell' } });
+  const outerAtt = el('div', { class: 'native-footer-attachment' }, { rect: { left: 260, right: 360, top: 700, bottom: 720, width: 100, height: 20 } });
+  const outerDialog = el('div', { role: 'dialog', class: 'content-fade' }, { rect: { left: 400, right: 800, top: 300, bottom: 500, width: 400, height: 200 } });
+
+  parent.append(scroller, dockOuter, siblingFadeWrapper, vtDisclaimer, outerAtt, outerDialog);
+  main.append(parent);
+  body.append(main);
+
+  const chatgptAdapter = A.forHost('chatgpt', doc);
+  const found = chatgptAdapter.composerBackdropSurfaces(composer);
+  assert.equal(found.includes(dockOuter), true, 'depth>8 ancestor traversal reaches #thread-bottom-container');
+  assert.equal(found.includes(fadeBtnContainer), true, 'collects container .content-fade wrapping scroll-to-bottom button');
+  assert.equal(found.includes(fadeMask), true, 'collects [class*="fade-mask"] container layer');
+  assert.equal(found.includes(siblingFadeWrapper), true, 'collects container .content-fade sibling in outerDock.parentElement');
+  assert.equal(found.includes(vtDisclaimer), true, 'collects view-transition-name disclaimer shell sibling in outerDock.parentElement');
+  assert.equal(found.includes(textOnlyNonDisclaimer), false, 'still excludes text-only non-disclaimer .content-fade with children.length === 0');
+  assert.equal(found.includes(composer), false, 'never collects composer');
+  assert.equal(found.includes(innerFadeInsideComposer), false, 'never collects descendants of composer');
+  assert.equal(found.includes(att), false, 'never collects attachments inside composer');
+  assert.equal(found.includes(outerAtt), false, 'never collects spec.attachments sibling');
+  assert.equal(found.includes(excludedMenuFade), false, 'never collects OVERLAY_EXCLUDED [role="menu"]');
+  assert.equal(found.includes(nestedMenuFade), false, 'never collects nodes inside OVERLAY_EXCLUDED popper');
+  assert.equal(found.includes(outerDialog), false, 'never collects OVERLAY_EXCLUDED [role="dialog"]');
+  assert.equal(found.includes(ownedFade), false, 'never collects extension-owned nodes');
+
+  // Gemini composerCard protection: input-area-v2 wraps .text-input-field and must never be returned as backdrop.
+  {
+    const g = makeDoc('gemini');
+    const gMain = g.el('chat-window');
+    const inputContainer = g.el('input-container', { class: 'input-gradient' }, { rect: { left: 0, right: 1280, top: 760, bottom: 900, width: 1280, height: 140 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'absolute' } });
+    const areaContainer = g.el('div', { class: 'input-area-container' }, { rect: { left: 310, right: 970, top: 780, bottom: 880, width: 660, height: 100 } });
+    const inputAreaCard = g.el('input-area-v2', {}, { rect: { left: 310, right: 970, top: 780, bottom: 880, width: 660, height: 100 } });
+    const textInputField = g.el('div', { class: 'text-input-field' }, { rect: { left: 322, right: 958, top: 788, bottom: 872, width: 636, height: 84 } });
+    textInputField.append(g.el('div', { class: 'ql-editor', contenteditable: 'true', role: 'textbox' }), g.el('button', { type: 'button' }));
+    inputAreaCard.append(textInputField);
+    areaContainer.append(inputAreaCard);
+    inputContainer.append(areaContainer);
+    gMain.append(inputContainer);
+    g.body.append(gMain);
+
+    const gemAdapter = A.forHost('gemini', g.doc);
+    const gemBackdrops = gemAdapter.composerBackdropSurfaces(textInputField);
+    assert.equal(gemBackdrops.includes(inputAreaCard), false, 'never returns composerCard (input-area-v2) as backdrop');
+    assert.equal(gemBackdrops.includes(textInputField), false, 'never returns composer (.text-input-field) as backdrop');
+    assert.equal(gemBackdrops.includes(inputContainer), true, 'still collects outer input-container');
+    assert.equal(gemAdapter.composerScrimSurface(textInputField), inputContainer, 'composerScrimSurface still resolves outer input-container');
+  }
+});
+
+test('v0.4.1 #30: isIndependentMessageScroller distinguishes independent sibling scrollers from sticky/root/owned scrollers', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const parent = el('div', { class: 'composer-parent' });
+  const scroller = el('div', { 'data-prism-test-scroller': '' });
+  const dock = el('div', { id: 'thread-bottom-container' });
+  const composer = el('div', { 'data-composer-layout': 'single-line' });
+  dock.append(composer);
+  parent.append(scroller, dock);
+  body.append(parent);
+
+  assert.equal(A.isIndependentMessageScroller(null, composer, dock), false);
+  assert.equal(A.isIndependentMessageScroller(scroller, null, dock), false);
+  assert.equal(A.isIndependentMessageScroller(scroller, composer, dock), true, 'independent sibling scroller returns true');
+  assert.equal(A.isIndependentMessageScroller(scroller, composer, null), true, 'independent scroller without dock arg returns true');
+  assert.equal(A.isIndependentMessageScroller(doc.body, composer, dock), false, 'body cannot be independent scroller');
+  assert.equal(A.isIndependentMessageScroller(doc.documentElement, composer, dock), false, 'documentElement cannot be independent scroller');
+
+  const ownedScroller = el('div', { 'data-op-owned': '' });
+  assert.equal(A.isIndependentMessageScroller(ownedScroller, composer, dock), false, 'owned node cannot be scroller');
+
+  // Sticky-in-scroller: dock & composer sit inside scroller.
+  scroller.append(dock);
+  assert.equal(A.isIndependentMessageScroller(scroller, composer, dock), false, 'sticky-in-scroller returns false');
+  assert.equal(A.isIndependentMessageScroller(scroller, composer, null), false, 'scroller containing composer returns false even without dock');
+
+  // Dock containing scroller or equal to scroller returns false.
+  const outerDock = el('div', { id: 'outer-dock' });
+  const innerScroller = el('div');
+  const comp2 = el('div');
+  outerDock.append(innerScroller);
+  assert.equal(A.isIndependentMessageScroller(outerDock, comp2, outerDock), false);
+  assert.equal(A.isIndependentMessageScroller(innerScroller, comp2, outerDock), false);
+
+  // Composer containing scroller returns false.
+  const compWrap = el('div');
+  const innerEdScroller = el('div');
+  compWrap.append(innerEdScroller);
+  assert.equal(A.isIndependentMessageScroller(innerEdScroller, compWrap, null), false);
+});

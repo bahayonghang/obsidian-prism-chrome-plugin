@@ -145,11 +145,16 @@ html[data-op-enabled="true"][data-op-sidebar-compact="true"]:not([data-op-sideba
  * Clear paint rather than hiding generated content or altering footer layout. */
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"],
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])::before,
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])::after {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-composer-backdrop="true"]::after {
+  --sharp-edge-bottom-shadow: none !important;
+  --sharp-edge-bottom-shadow-placeholder-content: none !important;
+  --sharp-edge-top-shadow: none !important;
+  --sharp-edge-top-shadow-placeholder-content: none !important;
   background-color: transparent !important;
   background-image: none !important;
   -webkit-mask-image: none !important;
   mask-image: none !important;
+  box-shadow: none !important;
 }
 
 /* Restyle the whole visual composer, preserving the native editor and buttons.
@@ -545,8 +550,12 @@ html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([
 html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-column="true"] {
   padding-bottom: 24px !important;
 }
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]):has([data-op-composer-scrim="true"]) [data-op-thread-column="true"] {
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]):has([data-op-composer-overlaid="true"]) [data-op-thread-column="true"] {
   padding-bottom: max(24px, var(--op-dock-clearance, 96px)) !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-scroller-fade="true"] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--op-scroller-fade-start, 24px)), transparent calc(100% - var(--op-scroller-fade-end, 0px)), transparent 100%) !important;
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--op-scroller-fade-start, 24px)), transparent calc(100% - var(--op-scroller-fade-end, 0px)), transparent 100%) !important;
 }
 html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-container {
   padding-top: 8px !important;
@@ -613,25 +622,21 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) .native-com
 /* === Blur Composer Scrim (v0.3.1 #22) === */
 /* The scrim host keeps its layout and loses its own paint (this also clears
  * Gemini's near-black input-container.input-gradient, which is the host there).
- * For overlaid docks, ::before stacks below the host's children, carrying ~44%
- * canvas in dark mode (~26% in light mode) plus a backdrop blur, top-feathered
- * by a mask: the horizon glow shows through and scrolled text blurs, while the
- * Composer Surface, disclaimer and controls paint above it unmasked. In-flow
- * docks skip this veil completely so the glow passes through without a band. */
-:where(html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]) {
+ * Only Gemini overlaid docks paint ::before (~44% canvas in dark mode, ~26% in
+ * light mode plus backdrop blur, top-feathered by a mask), while ::after is
+ * always cleared. ChatGPT docks (in-flow and overlaid) stay purely transparent
+ * and use safe Alpha scroller fade on independent scrollers instead. */
+:where(html[data-op-enabled="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]) {
   position: relative;
 }
-html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"] {
-  --op-scrim-feather: 28px;
+html[data-op-enabled="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"] {
+  --op-scrim-feather: 16px;
   isolation: isolate !important;
   background-color: transparent !important;
   background-image: none !important;
 }
-html[data-op-enabled="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"] {
-  --op-scrim-feather: 16px;
-}
 /* Fallback without backdrop-filter: a low-opacity gradient, at most 56% canvas (36% light). */
-html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
+html[data-op-enabled="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
   content: "" !important;
   display: block !important;
   position: absolute !important;
@@ -649,7 +654,7 @@ html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palett
   -webkit-mask-image: none !important;
   mask-image: none !important;
 }
-html[data-op-enabled="true"][data-op-home="false"][data-op-scheme="light"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
+html[data-op-enabled="true"][data-op-host="gemini"][data-op-home="false"][data-op-scheme="light"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
   background-image: linear-gradient(to bottom, transparent 0, color-mix(in srgb, var(--op-canvas) 20%, transparent) var(--op-scrim-feather), color-mix(in srgb, var(--op-canvas) 36%, transparent) 100%) !important;
 }
 /* Review fix P2: dock clearance. A dock that overlays the conversation scroller (Gemini) grows with the
@@ -662,7 +667,7 @@ html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palett
   pointer-events: none !important;
 }
 @supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
-  html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
+  html[data-op-enabled="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
     background-image: none !important;
     background-color: color-mix(in srgb, var(--op-canvas) 44%, transparent) !important;
     -webkit-backdrop-filter: blur(14px) !important;
@@ -670,7 +675,7 @@ html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palett
     -webkit-mask-image: linear-gradient(to bottom, transparent 0, #000 var(--op-scrim-feather)) !important;
     mask-image: linear-gradient(to bottom, transparent 0, #000 var(--op-scrim-feather)) !important;
   }
-  html[data-op-enabled="true"][data-op-home="false"][data-op-scheme="light"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
+  html[data-op-enabled="true"][data-op-host="gemini"][data-op-home="false"][data-op-scheme="light"]:not([data-op-effective-palette="host"]) [data-op-composer-scrim="true"]::before {
     background-image: none !important;
     background-color: color-mix(in srgb, var(--op-canvas) 26%, transparent) !important;
   }
@@ -820,6 +825,9 @@ html[data-op-enabled="true"][data-op-composer="true"][data-op-composer-glow="tru
   box-shadow: inset 0 1px 0 var(--op-glass-specular), 0 0 0 3px color-mix(in srgb, var(--op-accent) 9%, transparent), 0 14px 42px -16px color-mix(in srgb, var(--op-horizon-blue) 32%, var(--op-surface-shadow)), 0 3px 30px -12px color-mix(in srgb, var(--op-horizon-violet) 38%, transparent) !important;
 }
 html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) input-area-v2:has([data-op-composer-surface="true"]) {
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
   padding-top: 0 !important;
   padding-bottom: 0 !important;
   min-height: 0 !important;

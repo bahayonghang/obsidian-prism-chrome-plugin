@@ -251,7 +251,8 @@ test('runtime marks all v0.3.0 surfaces reversibly, respects host palette and co
   assert.equal(e.docEl.getAttribute('data-op-home'), 'false');
   assert.equal(e.codeSurface.getAttribute('data-op-code-surface'), 'true');
   assert.equal(e.codeHeader.getAttribute('data-op-code-header'), 'true');
-  assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(e.addBtn.getAttribute('data-op-composer-add'), 'true');
   assert.equal(e.modelBtn.getAttribute('data-op-model-capsule'), 'true');
   assert.equal(e.gridEl.getAttribute('data-op-composer-grid'), 'true');
@@ -271,6 +272,7 @@ test('runtime marks all v0.3.0 surfaces reversibly, respects host palette and co
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(e.codeSurface.getAttribute('data-op-code-surface'), null);
   assert.equal(e.codeHeader.getAttribute('data-op-code-header'), null);
+  assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(e.addBtn.getAttribute('data-op-composer-add'), null);
   assert.equal(e.modelBtn.getAttribute('data-op-model-capsule'), null);
@@ -283,11 +285,12 @@ test('runtime marks all v0.3.0 surfaces reversibly, respects host palette and co
   assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), null);
   assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'host-orig');
 
-  // Restore prism palette and disable composerRestyle: composer/add/model/toolbar/slot/primary/attachment/chip clear, code/scrim remain.
+  // Restore prism palette and disable composerRestyle: composer/add/model/toolbar/slot/primary/attachment/chip clear, code/dock marks remain.
   await h.schema.callApi(h.api.storage.local, 'set', { [h.schema.STORAGE_KEY]: { ...h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', composerRestyle: false } });
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(e.codeSurface.getAttribute('data-op-code-surface'), 'true');
-  assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(e.addBtn.getAttribute('data-op-composer-add'), null);
   assert.equal(e.modelBtn.getAttribute('data-op-model-capsule'), null);
   assert.equal(e.gridEl.getAttribute('data-op-composer-grid'), null);
@@ -314,6 +317,7 @@ test('runtime marks all v0.3.0 surfaces reversibly, respects host palette and co
   runtime.stop();
   assert.equal(e.docEl.getAttribute('data-op-home'), null);
   assert.equal(e.codeSurface.getAttribute('data-op-code-surface'), null);
+  assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(e.threadCol.getAttribute('data-op-thread-column'), null);
   assert.equal(e.composerCol.getAttribute('data-op-composer-column'), null);
@@ -600,13 +604,14 @@ test('ADR-0002: runtime never reparents composer/model controls, never mutates n
 });
 
 test('runtime suppresses composer scrim and tail spacer in Home State and clears them when returning home', async () => {
-  const ctx = createRuntimeDom({ themeMode: 'dark', palette: 'obsidian', composerRestyle: true }, { isHome: true });
+  const ctx = createRuntimeDom({ themeMode: 'dark', palette: 'obsidian', composerRestyle: true }, { host: 'gemini', isHome: true });
   await new Promise(resolve => setTimeout(resolve, 20));
   const e = Object.fromEntries(ctx.elements);
 
   assert.equal(e.docEl.getAttribute('data-op-home'), 'true');
   assert.equal(e.scrim.getAttribute('data-op-composer-backdrop'), 'true');
   assert.equal(e.scrim.getAttribute('data-op-composer-dock'), null);
+  assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), null);
   assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'true');
@@ -618,6 +623,7 @@ test('runtime suppresses composer scrim and tail spacer in Home State and clears
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(e.docEl.getAttribute('data-op-home'), 'false');
   assert.equal(e.scrim.getAttribute('data-op-composer-dock'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), 'true');
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), 'true');
   assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), 'true');
 
@@ -628,6 +634,7 @@ test('runtime suppresses composer scrim and tail spacer in Home State and clears
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(e.docEl.getAttribute('data-op-home'), 'true');
   assert.equal(e.scrim.getAttribute('data-op-composer-dock'), null);
+  assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), null);
 
@@ -1064,7 +1071,8 @@ test('v0.4.0 handover: same-realm double-injection keeps active marks flicker-fr
   assert.equal(primaryActionBtn.getAttribute('data-op-composer-primary-action'), 'true');
   assert.equal(primary.getAttribute('data-op-main-surface'), 'true');
   assert.equal(scrim.getAttribute('data-op-composer-dock'), 'true');
-  assert.equal(scrim.getAttribute('data-op-composer-scrim'), 'true');
+  assert.equal(scrim.getAttribute('data-op-composer-overlaid'), 'true');
+  assert.equal(scrim.getAttribute('data-op-composer-scrim'), null);
 
   // Spy on removeAttribute / removeProperty during handover to guarantee zero flicker on active marks/vars.
   const flickerEvents = [];
@@ -1114,7 +1122,7 @@ test('v0.4.0 handover: same-realm double-injection keeps active marks flicker-fr
 
   const SURFACE_ATTRS = [
     'data-op-main-surface', 'data-op-thread-column', 'data-op-composer-column', 'data-op-code-surface',
-    'data-op-code-header', 'data-op-composer-dock', 'data-op-composer-scrim', 'data-op-thread-scroller',
+    'data-op-code-header', 'data-op-composer-dock', 'data-op-composer-overlaid', 'data-op-composer-scrim', 'data-op-thread-scroller', 'data-op-scroller-fade',
     'data-op-composer-empty-sibling', 'data-op-composer-disclaimer', 'data-op-thread-spacer',
     'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-header-empty', 'data-op-composer-leading', 'data-op-composer-primary',
     'data-op-composer-trailing', 'data-op-composer-toolbar', 'data-op-composer-add', 'data-op-model-capsule',
@@ -1124,7 +1132,7 @@ test('v0.4.0 handover: same-realm double-injection keeps active marks flicker-fr
   for (const attr of SURFACE_ATTRS) {
     assert.equal(ctx.h.context.document.querySelectorAll(`[${attr}="true"]`).length, 0, `disable after handover leaves zero [${attr}="true"]`);
   }
-  for (const v of ['--op-reading-width', '--op-reading-shift', '--op-dock-clearance', '--op-dock-offset-x', '--op-dock-offset-y']) {
+  for (const v of ['--op-reading-width', '--op-reading-shift', '--op-dock-clearance', '--op-scroller-fade-start', '--op-scroller-fade-end', '--op-dock-offset-x', '--op-dock-offset-y']) {
     assert.equal(docEl.style.getPropertyValue(v), '', `disable after handover clears ${v}`);
   }
   assert.equal(docEl.getAttribute('style'), null, 'disable after handover leaves no style="" residue');
@@ -1139,7 +1147,7 @@ test('v0.4.0 handover: same-realm double-injection keeps active marks flicker-fr
   for (const attr of SURFACE_ATTRS) {
     assert.equal(ctx.h.context.document.querySelectorAll(`[${attr}="true"]`).length, 0, `stop() after handover leaves zero [${attr}="true"]`);
   }
-  for (const v of ['--op-reading-width', '--op-reading-shift', '--op-dock-clearance', '--op-dock-offset-x', '--op-dock-offset-y']) {
+  for (const v of ['--op-reading-width', '--op-reading-shift', '--op-dock-clearance', '--op-scroller-fade-start', '--op-scroller-fade-end', '--op-dock-offset-x', '--op-dock-offset-y']) {
     assert.equal(docEl.style.getPropertyValue(v), '', `stop() after handover clears ${v}`);
   }
   assert.equal(docEl.getAttribute('style'), null, 'stop() after handover leaves no style="" residue');
@@ -1300,4 +1308,138 @@ test('v0.4.1 compact composer: marks empty header wrappers reversibly, detects w
   fakeDoc.querySelectorAll = sel => sel.includes('#stage-slideover-sidebar') ? [outerWrapper] : oldQsa.call(fakeDoc, sel);
   assert.deepEqual(adapters.forHost('chatgpt', fakeDoc).sidebarSurfaces(), [], 'sidebarSurfaces rejects any container wrapping primary or composer');
   fakeDoc.querySelectorAll = oldQsa;
+});
+
+test('v0.4.1 #30: ChatGPT skips data-op-composer-scrim, sets safe Alpha fade only on independent scrollers, and clears cleanly', async () => {
+  const makeScroller = rect => ({
+    nodeType: 1, tagName: 'DIV', isConnected: true, children: [], childNodes: [],
+    attributesMap: new Map(),
+    getAttribute(k) { return this.attributesMap.get(k) ?? null; },
+    setAttribute(k, v) { this.attributesMap.set(k, String(v)); },
+    removeAttribute(k) { this.attributesMap.delete(k); },
+    hasAttribute(k) { return this.attributesMap.has(k); },
+    append(...nodes) { for (const n of nodes) { if (n) { n.parentElement = this; this.children.push(n); } } },
+    contains(t) { return t === this || this.children.some(c => c.contains?.(t)); },
+    getBoundingClientRect() { return rect; }
+  });
+
+  // 1) In-flow independent ChatGPT scroller: gets data-op-scroller-fade, leaves fade vars cleared (CSS 24px/0px defaults).
+  {
+    const styles = new Map();
+    const scroller = makeScroller({ left: 0, top: 52, right: 1280, bottom: 740, width: 1280, height: 688 });
+    const ctx = createRuntimeDom({}, {
+      host: 'chatgpt',
+      useCustomScroller: true,
+      scroller,
+      getComputedStyle: el => styles.get(el) || { position: 'relative', paddingBottom: '0px' }
+    });
+    const e = Object.fromEntries(ctx.elements);
+    reflectInlineStyle(e.docEl);
+    e.scrim.getBoundingClientRect = () => ({ left: 0, top: 740, right: 1280, bottom: 900, width: 1280, height: 160 });
+    ctx.runtime.refresh();
+    await new Promise(resolve => setTimeout(resolve, 190));
+
+    assert.equal(scroller.getAttribute('data-op-scroller-fade'), 'true');
+    assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), null);
+    assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
+    assert.equal(e.docEl.style.getPropertyValue('--op-scroller-fade-start'), '');
+    assert.equal(e.docEl.style.getPropertyValue('--op-scroller-fade-end'), '');
+
+    // Switching to Native Palette clears data-op-scroller-fade.
+    await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'host', themeMode: 'dark' } });
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(scroller.getAttribute('data-op-scroller-fade'), null);
+
+    await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark' } });
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(scroller.getAttribute('data-op-scroller-fade'), 'true');
+    ctx.runtime.stop();
+    assert.equal(scroller.getAttribute('data-op-scroller-fade'), null);
+    assert.equal(e.docEl.getAttribute('style'), null);
+  }
+
+  // 2) Overlaid sibling dock on ChatGPT: sets data-op-composer-overlaid + fade-start/end + clearance, NO data-op-composer-scrim.
+  {
+    const styles = new Map();
+    const scroller = makeScroller({ left: 0, top: 52, right: 1280, bottom: 900, width: 1280, height: 848 });
+    const ctx = createRuntimeDom({}, {
+      host: 'chatgpt',
+      useCustomScroller: true,
+      scroller,
+      getComputedStyle: el => styles.get(el) || { position: 'absolute', paddingBottom: '24px' }
+    });
+    const e = Object.fromEntries(ctx.elements);
+    reflectInlineStyle(e.docEl);
+    e.scrim.getBoundingClientRect = () => ({ left: 0, top: 780, right: 1280, bottom: 900, width: 1280, height: 120 });
+    ctx.runtime.refresh();
+    await new Promise(resolve => setTimeout(resolve, 190));
+
+    assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), 'true');
+    assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null, 'ChatGPT overlaid dock never gets data-op-composer-scrim');
+    assert.equal(scroller.getAttribute('data-op-thread-scroller'), 'true');
+    assert.equal(scroller.getAttribute('data-op-scroller-fade'), 'true');
+    assert.equal(e.docEl.style.getPropertyValue('--op-scroller-fade-start'), '120px');
+    assert.equal(e.docEl.style.getPropertyValue('--op-scroller-fade-end'), '96px');
+    assert.notEqual(e.docEl.style.getPropertyValue('--op-dock-clearance'), '');
+
+    ctx.runtime.stop();
+    assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), null);
+    assert.equal(scroller.getAttribute('data-op-scroller-fade'), null);
+    assert.equal(e.docEl.style.getPropertyValue('--op-scroller-fade-start'), '');
+    assert.equal(e.docEl.style.getPropertyValue('--op-scroller-fade-end'), '');
+    assert.equal(e.docEl.style.getPropertyValue('--op-dock-clearance'), '');
+    assert.equal(e.docEl.getAttribute('style'), null);
+  }
+
+  // 3) ChatGPT sticky-in-scroller: scroller contains composer & dock -> skips data-op-scroller-fade, keeps overlaid clearance!
+  {
+    const styles = new Map();
+    const scroller = makeScroller({ left: 0, top: 52, right: 1280, bottom: 900, width: 1280, height: 848 });
+    const ctx = createRuntimeDom({}, {
+      host: 'chatgpt',
+      useCustomScroller: true,
+      scroller,
+      getComputedStyle: el => styles.get(el) || { position: 'sticky', paddingBottom: '0px' }
+    });
+    const e = Object.fromEntries(ctx.elements);
+    reflectInlineStyle(e.docEl);
+    e.scrim.append(e.composer);
+    scroller.append(e.scrim);
+    e.scrim.getBoundingClientRect = () => ({ left: 0, top: 770, right: 1280, bottom: 900, width: 1280, height: 130 });
+    ctx.runtime.refresh();
+    await new Promise(resolve => setTimeout(resolve, 190));
+
+    assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), 'true');
+    assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
+    assert.equal(scroller.getAttribute('data-op-scroller-fade'), null, 'sticky-in-scroller must skip data-op-scroller-fade');
+    assert.equal(scroller.getAttribute('data-op-thread-scroller'), null, 'sticky dock inside scroller must skip ::after clearance spacer');
+    assert.equal(e.docEl.style.getPropertyValue('--op-dock-clearance'), '138px');
+    assert.equal(e.docEl.style.getPropertyValue('--op-scroller-fade-start'), '');
+    assert.equal(e.docEl.style.getPropertyValue('--op-scroller-fade-end'), '');
+
+    ctx.runtime.stop();
+    assert.equal(e.docEl.style.getPropertyValue('--op-dock-clearance'), '');
+    assert.equal(e.docEl.getAttribute('style'), null);
+  }
+
+  // 4) Gemini overlaid dock: gets BOTH data-op-composer-overlaid and data-op-composer-scrim, never data-op-scroller-fade.
+  {
+    const styles = new Map();
+    const scroller = makeScroller({ left: 0, top: 64, right: 1280, bottom: 900, width: 1280, height: 836 });
+    const ctx = createRuntimeDom({}, {
+      host: 'gemini',
+      useCustomScroller: true,
+      scroller,
+      getComputedStyle: el => styles.get(el) || { position: 'absolute', paddingBottom: '24px' }
+    });
+    const e = Object.fromEntries(ctx.elements);
+    e.scrim.getBoundingClientRect = () => ({ left: 0, top: 760, right: 1280, bottom: 900, width: 1280, height: 140 });
+    ctx.runtime.refresh();
+    await new Promise(resolve => setTimeout(resolve, 190));
+
+    assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), 'true');
+    assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), 'true');
+    assert.equal(scroller.getAttribute('data-op-scroller-fade'), null, 'Gemini never gets data-op-scroller-fade');
+    ctx.runtime.stop();
+  }
 });

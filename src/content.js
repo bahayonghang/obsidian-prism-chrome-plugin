@@ -40,6 +40,11 @@
   let primarySurface = null;
   let dockObserver = null;
   let observedDock = null;
+  let dockScrim = null;
+  let dockScroller = null;
+  let dockOverlaidHost = null;
+  let fadeScroller = null;
+  let fadeDock = null;
   let geometryFrame = null;
   const surfaceMarks = new Map();
   const codes = new Map();
@@ -55,8 +60,10 @@
     'data-op-code-surface',
     'data-op-code-header',
     'data-op-composer-dock',
+    'data-op-composer-overlaid',
     'data-op-composer-scrim',
     'data-op-thread-scroller',
+    'data-op-scroller-fade',
     'data-op-composer-empty-sibling',
     'data-op-composer-disclaimer',
     'data-op-thread-spacer',
@@ -82,6 +89,8 @@
     '--op-reading-width',
     '--op-reading-shift',
     '--op-dock-clearance',
+    '--op-scroller-fade-start',
+    '--op-scroller-fade-end',
     '--op-dock-offset-x',
     '--op-dock-offset-y'
   ]);
@@ -105,7 +114,7 @@
     if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = null;
     if (geometryFrame) cancelAnimationFrame(geometryFrame); geometryFrame = null;
     dockObserver?.disconnect(); dockObserver = null; observedDock = null;
-    dockScrim = dockScroller = null;
+    dockScrim = dockScroller = dockOverlaidHost = fadeScroller = fadeDock = null;
     railSignature = ''; lastEstimate = 0; lastModelLabel = ''; lastAttachments = 0; activeTurn = -1;
     if (permanent) {
       stopped = true;
@@ -726,7 +735,7 @@
     };
     const isNativePalette = Schema.resolvePalette(cfg) === 'host';
     const isHome = !adapter.userTurns().length && !adapter.assistantTurns().length;
-    let nextScrim = null, nextScroller = null, nextObservedDock = null;
+    let dockHost = null, nextScrim = null, nextScroller = null, nextClearanceScroller = null, nextOverlaidDock = null, nextFadeScroller = null, nextFadeDock = null, nextObservedDock = null;
     const nextPrimary = adapter.primarySurface?.() || null;
     add(nextPrimary,'data-op-main-surface');
     for (const element of adapter.threadColumns?.() || []) add(element,'data-op-thread-column');
@@ -736,16 +745,30 @@
       for (const element of adapter.codeSurfaces?.() || []) add(element,'data-op-code-surface');
       for (const element of adapter.codeHeaders?.() || []) add(element,'data-op-code-header');
       if (!isHome) {
-        const dockHost = adapter.composerScrimSurface?.(composer) || null;
+        dockHost = adapter.composerScrimSurface?.(composer) || null;
         add(dockHost, 'data-op-composer-dock');
         const turn = adapter.assistantTurns()[0] || adapter.userTurns()[0];
         const scroller = turn ? adapter.scrollContainer(turn) : null;
         const isOverlaid = dockHost ? Adapters.isComposerDockOverlaid(dockHost, scroller, global) : false;
         if (isOverlaid) {
-          nextScrim = dockHost;
-          add(nextScrim, 'data-op-composer-scrim');
-          nextScroller = overlaidScroller(nextScrim, scroller);
+          nextOverlaidDock = dockHost;
+          add(dockHost, 'data-op-composer-overlaid');
+          if (host === 'gemini') {
+            nextScrim = dockHost;
+            add(nextScrim, 'data-op-composer-scrim');
+          }
+          nextScroller = overlaidScroller(dockHost, scroller);
           add(nextScroller, 'data-op-thread-scroller');
+          if (nextScroller) {
+            nextClearanceScroller = nextScroller;
+          } else if (scroller && ![document.scrollingElement, document.documentElement, document.body].includes(scroller) && !dockHost.contains?.(scroller)) {
+            nextClearanceScroller = scroller;
+          }
+        }
+        if (host === 'chatgpt' && Adapters.isIndependentMessageScroller(scroller, composer, dockHost)) {
+          nextFadeScroller = scroller;
+          nextFadeDock = dockHost;
+          add(scroller, 'data-op-scroller-fade');
         }
         const below = adapter.composerBelowSiblings?.(composer, dockHost);
         for (const element of below?.empty || []) add(element, 'data-op-composer-empty-sibling');
@@ -771,7 +794,7 @@
         for (const element of adapter.composerChips?.(composer) || []) add(element,'data-op-composer-chip');
       }
     }
-    nextObservedDock = nextScrim || composer || null;
+    nextObservedDock = nextScrim || dockHost || composer || null;
     // Backdrops belong to the page canvas, not the input card. Keep their
     // reversible bridge independent of the optional composer restyling.
     for (const element of adapter.composerBackdropSurfaces?.(composer) || []) {
@@ -816,7 +839,8 @@
         dockObserver.observe(observedDock);
       }
     }
-    dockScrim = nextScrim; dockScroller = nextScroller;
+    dockScrim = nextScrim; dockOverlaidHost = nextOverlaidDock; dockScroller = nextClearanceScroller;
+    fadeScroller = nextFadeScroller; fadeDock = nextFadeDock;
     const home = String(isHome);
     if (document.documentElement.getAttribute('data-op-home') !== home) document.documentElement.setAttribute('data-op-home',home);
     document.documentElement.setAttribute('data-op-visibility',document.hidden?'hidden':'visible');
@@ -902,7 +926,6 @@
    * the measured overlap at the scroll end plus a small gap; the ::after changes neither the scroller box nor
    * the dock, so the measurement never feeds back on itself. */
   const DOCK_GAP=8;
-  let dockScrim=null, dockScroller=null;
   function overlaidScroller(scrim, precomputedScroller) {
     if (!scrim) return null;
     let scroller = precomputedScroller;
@@ -916,15 +939,33 @@
   }
   function syncDockClearance() {
     let clearance=0;
-    if (enabled && dockScroller?.isConnected && dockScrim?.isConnected) {
-      const box=dockScroller.getBoundingClientRect(), dock=dockScrim.getBoundingClientRect();
-      const padding=parseFloat(getComputedStyle(dockScroller).paddingBottom)||0;
-      // Only a dock docked over or floating near the scroller's bottom edge covers the end of the thread.
-      if (dock.top < box.bottom && dock.bottom >= box.bottom - 48 && dock.bottom <= box.bottom + 48) {
-        clearance=Math.max(0,Math.ceil(box.bottom - padding - dock.top + DOCK_GAP));
+    if (enabled && dockScroller?.isConnected && dockOverlaidHost?.isConnected) {
+      const box=dockScroller.getBoundingClientRect(), dockRect=dockOverlaidHost.getBoundingClientRect();
+      if (typeof dockScroller.contains==='function' && dockScroller.contains(dockOverlaidHost)) {
+        if (dockRect.height > 0) clearance=Math.max(0,Math.ceil(dockRect.height + DOCK_GAP));
+      } else {
+        const padding=parseFloat(getComputedStyle(dockScroller).paddingBottom)||0;
+        // Only a dock docked over or floating near the scroller's bottom edge covers the end of the thread.
+        if (dockRect.top < box.bottom && dockRect.bottom >= box.bottom - 48 && dockRect.bottom <= box.bottom + 48) {
+          clearance=Math.max(0,Math.ceil(box.bottom - padding - dockRect.top + DOCK_GAP));
+        }
       }
     }
     if (clearance) setRootVar('--op-dock-clearance',clearance+'px'); else clearRootVar('--op-dock-clearance');
+  }
+  function syncScrollerFade() {
+    if (enabled && fadeScroller?.isConnected && fadeDock?.isConnected) {
+      const sRect = fadeScroller.getBoundingClientRect();
+      const dRect = fadeDock.getBoundingClientRect();
+      if (dRect.top < sRect.bottom - 1) {
+        const overlap = Math.max(0, Math.ceil(sRect.bottom - dRect.top));
+        setRootVar('--op-scroller-fade-start', overlap + 'px');
+        setRootVar('--op-scroller-fade-end', Math.max(0, overlap - 24) + 'px');
+        return;
+      }
+    }
+    clearRootVar('--op-scroller-fade-start');
+    clearRootVar('--op-scroller-fade-end');
   }
   function syncDockAvoidance() {
     if (lostOwnership()) return;
@@ -962,11 +1003,11 @@
   }
   function primaryResized() {
     if (lostOwnership() || !enabled || stopped) return;
-    syncReadingWidth(); syncDockClearance(); syncDockAvoidance(); scheduleGeometry();
+    syncReadingWidth(); syncDockClearance(); syncScrollerFade(); syncDockAvoidance(); scheduleGeometry();
   }
   function dockResized() {
     if (lostOwnership() || !enabled || stopped) return;
-    syncDockClearance(); syncDockAvoidance();
+    syncDockClearance(); syncScrollerFade(); syncDockAvoidance();
   }
   function syncAmbient() {
     if (lostOwnership()) return;
@@ -998,13 +1039,13 @@
     if(lostOwnership() || !enabled || stopped || document.hidden || !document.body) return;
     passes++;
     if(route!==location.href) {route=location.href;revision++;resetConversation();}
-    syncSurfaces(); syncReadingWidth(); syncDockClearance(); syncAmbient(); syncCodes(); syncRail(); syncDock(); syncThoughts(); syncDockAvoidance();
+    syncSurfaces(); syncReadingWidth(); syncDockClearance(); syncScrollerFade(); syncAmbient(); syncCodes(); syncRail(); syncDock(); syncThoughts(); syncDockAvoidance();
   }
   function suspend() {
     if (lostOwnership()) return;
     disconnectRuntime();
     clearSurfaceMarks();
-    syncReadingWidth(); syncDockClearance();
+    syncReadingWidth(); syncDockClearance(); syncScrollerFade();
     clearRootVar('--op-dock-offset-x'); clearRootVar('--op-dock-offset-y');
     if (ownsRootAttr()) document.documentElement?.removeAttribute('data-op-instance');
     document.documentElement.removeAttribute('data-op-home');

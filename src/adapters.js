@@ -16,7 +16,7 @@
       primary: ['main', '[role="main"]', '[data-testid="conversation-pane"]', '[data-testid="chat-main"]', '#main-content'],
       editors: ['#prompt-textarea', '[data-testid="prompt-textarea"]', 'textarea[name="prompt-textarea"]', 'main [contenteditable="true"][role="textbox"]', 'main textarea'],
       composers: ['[data-composer-layout]', '#composer-background', '[data-testid="chat-composer"]', '[data-testid="composer"]', '[data-composer-surface]', '.composer-parent'],
-      composerBackdrops: '#thread-bottom-container,#thread-bottom,[class*="content-fade"],.content-fade,[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
+      composerBackdrops: '#thread-bottom-container,#thread-bottom,[class*="content-fade"],.content-fade,[class*="fade-mask"],[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
       codeSurfaces: '[data-testid="code-block"], .code-block-wrapper',
       codeHeaders: '.code-header, [data-testid="code-block-header"]',
       modelTriggers: '[data-testid="model-switcher-dropdown-button"], [data-testid="composer-model-switcher"], button[aria-label*="model" i], button[aria-label*="模型"]',
@@ -100,7 +100,9 @@
     return node && (node.nodeType === 1 ? node : node.parentElement);
   }
   function isOwned(node) {
-    return Boolean(elementOf(node)?.closest('[data-op-owned]'));
+    const el = elementOf(node);
+    if (!el) return false;
+    return typeof el.closest === 'function' ? Boolean(el.closest('[data-op-owned]')) : Boolean(el.hasAttribute?.('data-op-owned'));
   }
   function isVisible(node) {
     if (!node || !node.isConnected || node.closest('[hidden], [aria-hidden="true"]')) return false;
@@ -240,6 +242,13 @@
   }
   // v0.3.1 #18: live ChatGPT message markers lead; the rest are the v0.3.0 markers.
   const MESSAGE_AREAS = '[data-content-search-unit-key],[data-user-message-bubble],[data-markdown-text-style="assistant-message"],[data-message-author-role],[data-turn="user"],[data-turn="assistant"],article[data-testid^="conversation-turn-"],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response,[data-test-id="model-response"],.model-response-text';
+  const OVERLAY_EXCLUDED = 'dialog,[role="dialog"],[aria-modal="true"],[role="menu"],[role="listbox"],[data-radix-popper-content-wrapper],.mat-mdc-menu-panel';
+  const FADE_LAYER_SELECTOR = '[class*="content-fade"],.content-fade,[class*="fade-mask"]';
+  const INTERACTIVE_DESCENDANT = 'a[href],button,[role="button"],input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex]';
+  const INTERACTIVE_CONTROL_SELF = 'button,a[href],input,textarea,select,[role="button"],[role="link"],[contenteditable],[contenteditable="true"],img,picture,svg,video,audio,canvas,iframe';
+  const FORM_FIELD = 'input,textarea,select,[contenteditable],[contenteditable="true"]';
+  const DISCLAIMER_SELECTOR = '[class*="disclaimer"], [data-testid*="disclaimer"], [data-test-id*="disclaimer"], hallucination-disclaimer, .composer-hint';
+  const DISCLAIMER_TEXT_RE = /(?:chatgpt|gemini|ai)\s+(?:is\s+ai\s+and\s+)?(?:can|may|might)\s+make\s+mistakes|check\s+important\s+info|double[- ]check\s+(?:its\s+)?responses|可能会犯错|可能会出错|请核查重要信息|内容由\s*ai\s*生成|仅供参考/i;
   function firstVisible(selectors, root, predicate = () => true) {
     for (const selector of selectors) {
       const found = [...root.querySelectorAll(selector)].find(node => !isOwned(node) && isVisible(node) && predicate(node));
@@ -282,14 +291,15 @@
     if (!view?.getComputedStyle) return [];
     const composerRect = composer.getBoundingClientRect();
     if (composerRect.width <= 0 || composerRect.height <= 0) return [];
+    const composerCard = findComposerCard(spec, composer);
     const viewportHeight = view.innerHeight || composer.ownerDocument.documentElement.clientHeight;
     const path = [];
     let boundary = -1;
     // Recognize only the small docking region around a known native editor.
     // Structure and positioning remain stable after its paint is overridden.
-    for (let node = composer.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth++) {
+    for (let node = composer.parentElement, depth = 0; node && depth < 14; node = node.parentElement, depth++) {
       if (node.matches('main,[role="main"],body,html,chat-window,dialog,[role="dialog"],[aria-modal="true"],aside,nav,[role="navigation"]') ||
-          node.querySelector(MESSAGE_AREAS)) break;
+          node.matches(OVERLAY_EXCLUDED) || node.querySelector(MESSAGE_AREAS)) break;
       if (isOwned(node)) break;
       path.push(node);
       const rect = node.getBoundingClientRect();
@@ -305,15 +315,56 @@
     }
     if (boundary < 0) return [];
     const surfaces = path.slice(0, boundary + 1);
-    const hasInteractiveDescendant = node => Boolean(node.querySelector('a[href],button,input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex],[role="button"],[role="link"]'));
+    const outerDock = path[boundary];
+    const isProtectedBackdrop = node => {
+      if (!node || isOwned(node)) return true;
+      if (node === composer || composer.contains?.(node)) return true;
+      if (composerCard && (node === composerCard || composerCard.contains?.(node))) return true;
+      if (node.matches?.(OVERLAY_EXCLUDED) || node.closest?.(OVERLAY_EXCLUDED)) return true;
+      if (node.matches?.(MESSAGE_AREAS) || node.closest?.(MESSAGE_AREAS)) return true;
+      if (spec.attachments && (node.matches?.(spec.attachments) || node.closest?.(spec.attachments))) return true;
+      return false;
+    };
+    const hasInteractiveDescendant = node => Boolean(node.querySelector(INTERACTIVE_DESCENDANT));
     const isEmptyFadeBox = node =>
       !node.contains(composer) && !composer.contains(node) && !isOwned(node) &&
       !node.matches('[role="button"],[role="link"],[tabindex],[contenteditable],a[href],button,input,textarea,select,img,picture,svg,video,audio,canvas,iframe') &&
       !textOf(node).trim() && !hasInteractiveDescendant(node);
-    // Native fade siblings may sit above the shell. Only empty, noninteractive,
-    // full-width absolute decorations or content-fade layers qualify; buttons and attachments do not.
+    const isContainerFadeLayer = (node, maxHeight) => {
+      if (!node?.matches?.(FADE_LAYER_SELECTOR)) return false;
+      if (isProtectedBackdrop(node) || node.matches?.(INTERACTIVE_CONTROL_SELF)) return false;
+      if (node.querySelector?.(MESSAGE_AREAS) || node.querySelector?.(OVERLAY_EXCLUDED)) return false;
+      if (spec.attachments && node.querySelector?.(spec.attachments)) return false;
+      const fStyle = view.getComputedStyle(node);
+      if (fStyle && fStyle.display === 'none') return false;
+      const fRect = node.getBoundingClientRect();
+      if (fRect.height > maxHeight) return false;
+      if (isEmptyFadeBox(node)) return true;
+      if (node.contains?.(composer)) return true;
+      if ((node.children?.length || 0) > 0 && !node.matches?.(FORM_FIELD) && !node.querySelector?.(FORM_FIELD)) return true;
+      if (node.matches?.(DISCLAIMER_SELECTOR) || DISCLAIMER_TEXT_RE.test(textOf(node))) return true;
+      return false;
+    };
+    const isAdjacentDisclaimerShell = (node, maxHeight) => {
+      if (!node || isProtectedBackdrop(node) || node.contains?.(composer) || node.matches?.(INTERACTIVE_CONTROL_SELF)) return false;
+      if (node.matches?.('script,style,template') || node.hasAttribute?.('hidden')) return false;
+      if (node.querySelector?.(MESSAGE_AREAS) || node.querySelector?.(OVERLAY_EXCLUDED)) return false;
+      if (node.matches?.(FORM_FIELD) || node.querySelector?.(FORM_FIELD)) return false;
+      const sStyle = view.getComputedStyle(node);
+      if (sStyle && (sStyle.display === 'none' || /(auto|scroll)/.test(sStyle.overflowY || ''))) return false;
+      const sRect = node.getBoundingClientRect();
+      if (sRect.height > maxHeight) return false;
+      const txt = textOf(node).trim();
+      if (node.matches?.(DISCLAIMER_SELECTOR) || node.querySelector?.(DISCLAIMER_SELECTOR)) return true;
+      if (txt && txt.length <= 240 && DISCLAIMER_TEXT_RE.test(txt)) return true;
+      const hasVt = node.matches?.('[style*="view-transition-name"]') || Boolean(sStyle?.viewTransitionName && sStyle.viewTransitionName !== 'none');
+      return Boolean(hasVt && sRect.height <= 140 && txt.length > 0 && txt.length <= 240 && !node.querySelector?.('svg'));
+    };
+    // Native fade siblings may sit above the shell, inside dock surfaces, or as adjacent wrappers
+    // in outerDock.parentElement. Protected surfaces (composer/card/attachments/dialogs/menus) are never returned.
     for (const surface of [...surfaces]) {
       const bounds = surface.getBoundingClientRect();
+      const maxHeight = Math.max(bounds.height + 160, viewportHeight * 0.48);
       for (const child of surface.children) {
         if (!child.matches('div,span') || !isEmptyFadeBox(child)) continue;
         const style = view.getComputedStyle(child);
@@ -325,15 +376,28 @@
           surfaces.push(child);
         }
       }
-      for (const fade of surface.querySelectorAll('[class*="content-fade"], .content-fade')) {
-        if (!isEmptyFadeBox(fade)) continue;
-        const fStyle = view.getComputedStyle(fade);
-        if (fStyle.display === 'none') continue;
-        const fRect = fade.getBoundingClientRect();
-        if (fRect.height <= bounds.height + 140) surfaces.push(fade);
+      for (const fade of surface.querySelectorAll(FADE_LAYER_SELECTOR)) {
+        if (isContainerFadeLayer(fade, maxHeight)) surfaces.push(fade);
       }
     }
-    return [...new Set(surfaces)];
+    if (outerDock?.parentElement && !outerDock.parentElement.matches?.('body,html')) {
+      const outerBounds = outerDock.getBoundingClientRect();
+      const outerMaxHeight = Math.max(outerBounds.height + 160, viewportHeight * 0.48);
+      for (const sib of [...(outerDock.parentElement.children || [])]) {
+        if (sib === outerDock || isProtectedBackdrop(sib) || sib.contains?.(composer)) continue;
+        const sibStyle = view.getComputedStyle(sib);
+        if (sibStyle && /(auto|scroll)/.test(sibStyle.overflowY || '')) continue;
+        if (sib.querySelector?.(MESSAGE_AREAS) || sib.querySelector?.(OVERLAY_EXCLUDED)) continue;
+        if (isContainerFadeLayer(sib, outerMaxHeight) || isAdjacentDisclaimerShell(sib, outerMaxHeight)) {
+          surfaces.push(sib);
+        } else if (sib.querySelectorAll) {
+          for (const fade of sib.querySelectorAll(FADE_LAYER_SELECTOR)) {
+            if (isContainerFadeLayer(fade, outerMaxHeight)) surfaces.push(fade);
+          }
+        }
+      }
+    }
+    return [...new Set(surfaces)].filter(node => !isProtectedBackdrop(node));
   }
   function findSidebars(spec, root) {
     const result = [];
@@ -729,6 +793,14 @@
     const sRect = scroller.getBoundingClientRect();
     return dRect.height > 0 && sRect.height > 0 && dRect.top < sRect.bottom - 1 && dRect.bottom > sRect.top + 1;
   }
+  function isIndependentMessageScroller(scroller, composer, dock = null) {
+    if (!scroller || !composer || isOwned(scroller)) return false;
+    const doc = scroller.ownerDocument || composer.ownerDocument || global.document;
+    if (doc && (scroller === doc.scrollingElement || scroller === doc.documentElement || scroller === doc.body)) return false;
+    if (scroller === composer || scroller.contains?.(composer) || composer.contains?.(scroller)) return false;
+    if (dock && (scroller === dock || scroller.contains?.(dock) || dock.contains?.(scroller))) return false;
+    return true;
+  }
   function followingSiblings(node) {
     if (node.nextElementSibling !== undefined) {
       const out = [];
@@ -751,10 +823,6 @@
     const idx = [...children].indexOf(node);
     return idx > 0 ? [...children].slice(0, idx).reverse() : [];
   }
-  const INTERACTIVE_DESCENDANT = 'a[href],button,[role="button"],input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex]';
-  const FORM_FIELD = 'input,textarea,select,[contenteditable],[contenteditable="true"]';
-  const DISCLAIMER_SELECTOR = '[class*="disclaimer"], [data-testid*="disclaimer"], [data-test-id*="disclaimer"], hallucination-disclaimer, .composer-hint';
-  const DISCLAIMER_TEXT_RE = /(?:chatgpt|gemini|ai)\s+(?:is\s+ai\s+and\s+)?(?:can|may|might)\s+make\s+mistakes|check\s+important\s+info|double[- ]check\s+(?:its\s+)?responses|可能会犯错|可能会出错|请核查重要信息|内容由\s*ai\s*生成|仅供参考/i;
   function isDisclaimerCandidate(node, composer, { allowGenericBelow = false } = {}) {
     if (!node || isOwned(node)) return false;
     if (composer && (node === composer || node.contains?.(composer) || composer.contains?.(node))) return false;
@@ -1204,6 +1272,6 @@
     });
   }
   global.ObsidianPrismAdapters = Object.freeze({
-    forHost, contentWidthTarget, dockEdgeMargin, computeDockAvoidance, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, isComposerDockOverlaid, scrollContainer
+    forHost, contentWidthTarget, dockEdgeMargin, computeDockAvoidance, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, isComposerDockOverlaid, isIndependentMessageScroller, scrollContainer
   });
 })(globalThis);
