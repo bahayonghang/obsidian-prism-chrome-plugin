@@ -131,6 +131,23 @@ async function rendersBackdropBlur(page) {
   return edge.ratio < 0.5;
 }
 
+/**
+ * The backdrop blur the scrim declares, read from computed style on the composer's ancestors and their ::before
+ * (no extension markers). Both engines report it even where Playwright's Firefox does not paint it.
+ */
+async function scrimBackdropFilter(page, host) {
+  return page.locator(LIVE_SELECTORS[host].composer).first().evaluate(node => {
+    const supported = CSS.supports('backdrop-filter', 'blur(1px)') || CSS.supports('-webkit-backdrop-filter', 'blur(1px)');
+    for (let el = node.parentElement; el; el = el.parentElement) {
+      for (const style of [getComputedStyle(el, '::before'), getComputedStyle(el)]) {
+        const value = [style.backdropFilter, style.webkitBackdropFilter].find(v => v && v !== 'none');
+        if (value) return { supported, value };
+      }
+    }
+    return { supported, value: 'none' };
+  });
+}
+
 /** A high-contrast text block placed in the side area either behind the scrim (composer middle) or in the open thread. */
 async function textBlockStats(page, host, where) {
   const box = await composerBox(page, host);
@@ -268,12 +285,15 @@ async function checkHostScheme(suite, host, scheme) {
     // 3. Text scrolled behind the scrim is blurred; the controls on top stay crisp and clickable.
     const open = await textBlockStats(page, host, 'open');
     const behind = await textBlockStats(page, host, 'behind');
+    const declared = await scrimBackdropFilter(page, host);
+    assert.ok(declared.supported, `${label}: this engine supports backdrop-filter`);
+    assert.match(declared.value, /blur\(/, `${label}: the scrim layer's computed backdrop-filter is a blur`);
     const blurs = await rendersBackdropBlur(page);
     // With a real backdrop blur detail nearly vanishes; without one the ~45% canvas alone still mutes it.
     assert.ok(behind.variance <= open.variance * (blurs ? 0.15 : 0.35), `${label}: text behind the scrim loses detail (variance ${behind.variance.toFixed(0)} vs ${open.variance.toFixed(0)} in the open thread)`);
     if (blurs) {
       assert.ok(behind.sharpness < open.sharpness * 0.6, `${label}: text behind the scrim is blurred (edge ${behind.sharpness.toFixed(2)} vs ${open.sharpness.toFixed(2)})`);
-    } else console.log(`NOTE ${label}: this engine paints no backdrop-filter blur in screenshots; blur sharpness not verified (variance ${behind.variance.toFixed(0)} vs ${open.variance.toFixed(0)})`);
+    } else console.log(`NOTE ${label}: this engine paints no backdrop-filter blur in screenshots; blur sharpness not verified (variance ${behind.variance.toFixed(0)} vs ${open.variance.toFixed(0)}), computed ${declared.value}`);
     // Default settings: the two-row Composer Surface (#19) is on, on both hosts.
     assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-op-composer')), 'true', `${label}: composerRestyle is on by default`);
     await assertCrispAndClickable(page, host, label);
@@ -328,10 +348,7 @@ async function checkFallback(suite, host) {
   await onLiveFixture(suite, host, { failure: `${host}-scrim-fallback-failure`, initial }, async ({ page, errors }) => {
     await injectExtension(page, { ...suite, styles: patched });
     await scrollToEnd(page, host);
-    assert.equal(await page.locator(LIVE_SELECTORS[host].composer).first().evaluate(node => {
-      for (let el = node; el; el = el.parentElement) if ((getComputedStyle(el, '::before').backdropFilter || 'none') !== 'none' || (getComputedStyle(el).backdropFilter || 'none') !== 'none') return true;
-      return false;
-    }), false, `${label}: the simulated browser applies no backdrop blur`);
+    assert.equal((await scrimBackdropFilter(page, host)).value, 'none', `${label}: the simulated browser applies no backdrop blur`);
     const occlusion = await occlusionColumn(page, host, await canvasColor(page));
     assert.ok(occlusion.max <= 0.6, `${label}: fallback gradient stays at or below ~60% canvas (max alpha ${occlusion.max.toFixed(2)})`);
     assert.ok(occlusion.atCenter >= 0.2, `${label}: fallback still softens the area beside the composer (alpha ${occlusion.atCenter.toFixed(2)})`);
