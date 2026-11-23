@@ -684,6 +684,15 @@ html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="
   margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem) - 40px) / 2 + var(--op-reading-shift, 0px))) !important;
   margin-right: auto !important;
 }
+/* Review fix P3: the composer limiter above is inferred, not probed. If #thread-bottom has no such element,
+ * the probed composer form follows the reading width itself: centred on its column and shifted like the
+ * thread. :has() keeps this rule and the limiter rule mutually exclusive, so nothing is constrained twice. */
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) #thread-bottom:not(:has([class*="--thread-content-max-width"])) form[data-chatgpt-composer] {
+  width: var(--op-reading-width, 48rem) !important;
+  max-width: none !important;
+  margin-left: calc((100% - var(--op-reading-width, 48rem)) / 2 + var(--op-reading-shift, 0px)) !important;
+  margin-right: 0 !important;
+}
 html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(.md-content > *,user-query,.response-footer,hallucination-disclaimer) {
   max-width: var(--op-reading-width, 708px) !important;
   margin-left: max(0px, calc((100% - var(--op-reading-width, 708px)) / 2 + var(--op-reading-shift, 0px))) !important;

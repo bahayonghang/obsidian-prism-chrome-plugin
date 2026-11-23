@@ -28,8 +28,9 @@
        * transcript = 48rem + 2 × 20px padding, probe 2026-11-22). This declaration owns the width
        * limiters: hosts.css repeats them in its static width rules (CSS cannot read it) and
        * tests/content-width.test.cjs fails if the two drift. The runtime reads only `native`.
-       * No geometry search, no per-node marks. */
-      contentWidth: { native: 768, targets: ['[class*="transcriptContent"]'], composerTargets: ['#thread-bottom [class*="--thread-content-max-width"]'] },
+       * No geometry search, no per-node marks. The first composer limiter is inferred (not probed); the
+       * second (review fix P3) sizes the probed composer form only when that limiter is absent. */
+      contentWidth: { native: 768, targets: ['[class*="transcriptContent"]'], composerTargets: ['#thread-bottom [class*="--thread-content-max-width"]', '#thread-bottom:not(:has([class*="--thread-content-max-width"])) form[data-chatgpt-composer]'] },
       threadColumns: '.thread, [data-testid="conversation-thread"], [class*="thread-content"]',
       composerColumns: '.composer-container, [data-testid="composer-container"]',
       // v0.3.1 #19: grid area names the two-row Composer Surface rearranges. Inferred: the probe

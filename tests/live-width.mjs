@@ -71,16 +71,33 @@ async function assertBubbleCap(page, host, preset) {
   assert.ok(result.width <= cap + 1, `${host} ${preset}: User Turn bubble (${result.width}) stays within min(78%, 820px) = ${cap}`);
 }
 
-async function checkHost(suite, host) {
+/**
+ * ChatGPT variant without the inferred composer limiter: the composer column keeps its native 48rem cap from
+ * its own CSS, but no element under #thread-bottom carries the "--thread-content-max-width" class token that
+ * the primary composer width rule targets. The composer must still follow the reading column.
+ */
+async function removeInferredComposerLimiter(page) {
+  const left = await page.evaluate(() => {
+    for (const node of document.querySelectorAll('#thread-bottom [class*="--thread-content-max-width"]')) {
+      node.className = [...node.classList].filter(name => !name.includes('--thread-content-max-width')).join(' ');
+    }
+    return document.querySelectorAll('#thread-bottom [class*="--thread-content-max-width"]').length;
+  });
+  assert.equal(left, 0, 'chatgpt variant: the inferred composer limiter class is absent');
+}
+
+async function checkHost(suite, host, { withoutComposerLimiter = false } = {}) {
   const { engine, artifacts } = suite;
-  await onLiveFixture(suite, host, { failure: `${host}-live-width-failure` }, async ({ page, errors }) => {
+  const variant = withoutComposerLimiter ? ' (no inferred composer limiter)' : '';
+  await onLiveFixture(suite, host, { failure: `${host}-live-width${withoutComposerLimiter ? '-variant' : ''}-failure` }, async ({ page, errors }) => {
+    if (withoutComposerLimiter) await removeInferredComposerLimiter(page);
     // Native widths before the extension exists.
     const native = await measure(page, host);
     await injectExtension(page, suite, { waitFor: '.op-width-toggle' });
     for (const mainWidth of [1280, 1100]) {
       await setMainWidth(page, MAIN_SELECTORS[host], mainWidth);
       await settle(page);
-      const label = `${engine} ${host} @main ${mainWidth}`;
+      const label = `${engine} ${host}${variant} @main ${mainWidth}`;
       const std = await measure(page, host);
       assert.ok(Math.abs(std.paragraph.box - native.paragraph.box) <= 1, `${label}: standard keeps the native paragraph width (${std.paragraph.box} vs ${native.paragraph.box})`);
       assert.ok(Math.abs(std.composer.width - native.composer.width) <= 1, `${label}: standard keeps the native composer width`);
@@ -93,7 +110,7 @@ async function checkHost(suite, host) {
       const full = await measure(page, host);
       if (host === 'gemini') full.longTable = await longTableWidth(page);
       await assertBubbleCap(page, host, 'full');
-      await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-live-width-full-${mainWidth}.png`) });
+      if (!withoutComposerLimiter) await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-live-width-full-${mainWidth}.png`) });
 
       const [p0, p1, p2] = [std, wide, full].map(m => m.paragraph.box);
       assert.ok(p1 - p0 >= MIN_STEP, `${label}: wide paragraph (${p1}) is at least ${MIN_STEP}px wider than standard (${p0})`);
@@ -165,10 +182,11 @@ async function checkHost(suite, host) {
       await assertBubbleCap(page, host, `${preset} narrow`);
     }
     assert.deepEqual(errors, []);
-    console.log(`PASS ${engine} ${host} live fixture: Content Width Presets at main 1280/1100 (midpoint, >=${MIN_STEP}px steps, composer follows, rail clear, native restore, <900px fallback)`);
+    console.log(`PASS ${engine} ${host}${variant} live fixture: Content Width Presets at main 1280/1100 (midpoint, >=${MIN_STEP}px steps, composer follows, rail clear, native restore, <900px fallback)`);
   });
 }
 
 export async function checkLiveWidthPresets(options) {
   for (const host of ['chatgpt', 'gemini']) await checkHost(options, host);
+  await checkHost(options, 'chatgpt', { withoutComposerLimiter: true });
 }
