@@ -44,8 +44,13 @@ v0.3.0 的夹具是按推测的结构手写的，浏览器测试量的是扩展�
 
 - 两行输入框：只改宿主 grid 的列和 areas，不移动、不包装节点（ADR-0002）。适配器只在宿主 grid 的直接子节点用到全部约定的 area 名时才重排（ChatGPT `leading`/`primary`/`trailing`，Gemini `leading-actions`/`text-input`/`trailing-actions`），否则保留原生单行；ChatGPT 的卡片是带底色的 `[data-composer-layout]`。规则在 `styles/hosts.css` 的 `v0.3.1 #19` 块，浏览器测试 `tests/composer-two-row.mjs`。
 
+## 已实现（#22）
+
+- Composer Scrim：在对话状态（非 Home State、非 Native Palette）下，scrim 宿主清除自身绘制并只获得层叠上下文；其 `::before` 在子节点之下绘制约 45% 画布色加 `backdrop-filter: blur(14px)`，顶部用 28px mask 羽化，不画实色底。光晕层的层级和遮罩不变，能从下方连续透出。不支持背景模糊时回退为最高 58% 画布色的渐变。Gemini 的 scrim 宿主就是 `input-container.input-gradient`，近黑色带被清除，布局不变。规则在 `styles/hosts.css` 的 `Blur Composer Scrim (v0.3.1 #22)` 段，浏览器测试 `tests/live-scrim.mjs`。已否决的方案：给滚动容器加 mask（会把 ChatGPT 的 sticky 输入框一起淡化）；在 scrim 里再复制一份光晕（会和背景错位）。
+- 已知交互（未在本票修复）：Gemini 夹具的滚动区底部留白固定为 150px，#19 的两行输入框让 `input-container` 从约 170px 增高到约 238px，最后一条回复的操作栏会被输入框卡片压住。这与 scrim 是否绘制无关。线上 Gemini 是否动态调整留白尚未取证。
+- Playwright 的 Firefox 报告支持 backdrop-filter，但截图里没有模糊；离线只能在 Chromium 中验证模糊效果。
+
 ## 已约定、尚未实现（来自 2026-11-22 的 grill，用户已确认）
 
-- 测试断言用户能看到的结果：#21、#22 各自把断言迁到新夹具上（#18、#19、#20 已完成）。
+- 测试断言用户能看到的结果：#21 把断言迁到新夹具上（#18、#19、#20、#22 已完成）。
 - 宽度：standard 用宿主原生宽度；full 等于可用宽度减去安全边；wide 等于两者的中点，最多 1200px。限宽通过每个站点声明的选择器实现，**运行时不做几何查找、不逐节点打标记**（Gemini 是逐块限宽，逐节点打标记在流式输出时开销太大）。
-- Composer Scrim：改成半透明画布色加背景模糊，不画实色底。已否决的方案：给滚动容器加 mask（会把 ChatGPT 的 sticky 输入框一起淡化）；在 scrim 里再复制一份光晕（会和背景错位）。

@@ -63,8 +63,8 @@ The elevated input card housing the host's native prompt editor, circular add bu
 _Avoid_: Input box, prompt bar, chat form
 
 **Composer Scrim**:
-The edge-feathered backdrop layer behind the Composer Surface that blends into the Prism canvas and ambient atmosphere while preventing scrolled conversation text from bleeding behind floating controls.
-_Avoid_: Footer mask, white slab, transparent overlay
+The top-feathered blur occlusion behind the Composer Surface in an active conversation: a translucent (about 45%) canvas tint with a backdrop blur and no solid base, so the horizon glow shows through continuously while scrolled conversation text blurs behind floating controls. Without backdrop-filter support it falls back to a low-opacity gradient.
+_Avoid_: Footer mask, white slab, solid fade, transparent overlay
 
 **Model Capsule**:
 The host's native model-selector trigger restyled in place as a bordered pill featuring a subtle indicator icon, model name, accented tier label, and dropdown chevron.
