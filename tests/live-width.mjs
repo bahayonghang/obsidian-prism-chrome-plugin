@@ -32,7 +32,7 @@ async function measure(page, host) {
     const rect = selector => { const node = document.querySelector(selector); if (!node) return null; const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, width: r.width }; };
     const out = { composer: rect(s.composer), rail: rect('#op-rail-root'), main: rect(s.main) };
     if (host === 'gemini') {
-      out.blocks = [...document.querySelectorAll(`${s.assistant} > *`)].map(node => ({ tag: node.localName, width: node.getBoundingClientRect().width }));
+      out.blocks = [...document.querySelectorAll(`${s.assistant} > *`)].map(node => { const r = node.getBoundingClientRect(); return { tag: node.localName, width: r.width, left: r.left, right: r.right }; });
       out.userQuery = rect(s.column);
       out.inputArea = rect(s.inputAreaContainer);
       out.footer = rect('.response-footer');
@@ -40,6 +40,21 @@ async function measure(page, host) {
     return out;
   }, { host, s });
   return { paragraph, ...boxes };
+}
+
+/**
+ * A table keeps its intrinsic width (it is not stretched like a paragraph), so its growth shows only when its
+ * content is wide: this fills one cell with a long line, measures the rendered table, and restores the cell.
+ */
+async function longTableWidth(page) {
+  return page.locator(`${LIVE_SELECTORS.gemini.assistant} > table`).evaluate(table => {
+    const cell = table.querySelector('td');
+    const original = cell.innerHTML;
+    cell.textContent = 'Long table cell '.repeat(40);
+    const r = table.getBoundingClientRect();
+    cell.innerHTML = original;
+    return { width: r.width, left: r.left, right: r.right };
+  });
 }
 
 async function assertBubbleCap(page, host, preset) {
@@ -72,9 +87,11 @@ async function checkHost(suite, host) {
       // The Bottom Dock cycle (v0.3.0 contract) drives standard -> wide -> full.
       await cyclePreset(page, 'wide');
       const wide = await measure(page, host);
+      if (host === 'gemini') wide.longTable = await longTableWidth(page);
       await assertBubbleCap(page, host, 'wide');
       await cyclePreset(page, 'full');
       const full = await measure(page, host);
+      if (host === 'gemini') full.longTable = await longTableWidth(page);
       await assertBubbleCap(page, host, 'full');
       await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-live-width-full-${mainWidth}.png`) });
 
@@ -101,8 +118,14 @@ async function checkHost(suite, host) {
             assert.ok(Math.abs(block.width - base.block) > 0.5 && Math.abs(block.width - base.inputArea) > 0.5, `${label} ${name}: no ${block.tag} block left at ${base.block}/${base.inputArea}px (got ${block.width})`);
             if (['p', 'h1', 'h2', 'h3', 'h4', 'ul', 'ol', 'blockquote', 'code-block'].includes(block.tag)) {
               assert.ok(Math.abs(block.width - m.paragraph.box) <= 0.5, `${label} ${name}: ${block.tag} grows with the paragraph (${block.width} vs ${m.paragraph.box})`);
+            } else if (block.tag === 'table') {
+              // Tables stay intrinsic (a short table is not stretched) but never leave the reading column.
+              assert.ok(block.left >= m.paragraph.left - 0.5 && block.right <= m.paragraph.right + 0.5, `${label} ${name}: a short table stays inside the reading column (${block.left}-${block.right} vs ${m.paragraph.left}-${m.paragraph.right})`);
             }
           }
+          assert.ok(m.blocks.some(block => block.tag === 'table'), `${label} ${name}: the reply has a table`);
+          const table = m.longTable;
+          assert.ok(Math.abs(table.width - m.paragraph.box) <= 0.5 && Math.abs(table.left - m.paragraph.left) <= 0.5, `${label} ${name}: a table with wide content grows to the reading column (${table.width} at ${table.left} vs ${m.paragraph.box} at ${m.paragraph.left})`);
           assert.ok(Math.abs(m.userQuery.width - m.paragraph.box) <= 0.5, `${label} ${name}: User Turn follows the column (${m.userQuery.width})`);
           assert.ok(Math.abs(m.footer.width - m.paragraph.box) <= 0.5, `${label} ${name}: response footer follows the column (${m.footer.width})`);
           assert.ok(Math.abs((m.inputArea.width - base.inputArea) - (m.paragraph.box - base.block)) <= 0.5, `${label} ${name}: input area grows with the column (${m.inputArea.width})`);
