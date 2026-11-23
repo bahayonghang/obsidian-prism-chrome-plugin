@@ -144,17 +144,62 @@ async function cardSnapshot(page, host, { geometry = false } = {}) {
   }, geometry);
 }
 
+function contrastRatio(foregroundValue, backgroundValue) {
+  const parse = value => {
+    const srgb = value.startsWith('color(srgb ');
+    if (!srgb && !/^rgba?\(/.test(value)) return null;
+    const numbers = value.match(/-?\d*\.?\d+/g)?.map(Number);
+    if (!numbers || numbers.length < 3 || (numbers.length > 3 && numbers[3] !== 1)) return null;
+    return numbers.slice(0, 3).map(number => number / (srgb ? 1 : value.includes('%') ? 100 : 255));
+  };
+  const fg = parse(foregroundValue), bg = parse(backgroundValue);
+  assert.ok(fg && bg, `expected opaque sRGB colors, got ${JSON.stringify({ foregroundValue, backgroundValue })}`);
+  const lum = rgb => rgb.map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const a = lum(fg), b = lum(bg);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
 async function assertTwoRow(page, host, label) {
+  const s = LIVE_SELECTORS[host];
   const geometry = await controlGeometry(page, CARD[host], controlsOf(host));
   const { container, controls } = geometry;
   const { editor, add, model, attachment } = controls;
   const trailing = controls[TRAILING[host]];
   assert.ok(editor && add && model && attachment && trailing, `${label}: editor, +, Model Capsule, trailing control and attachment exist`);
-  const card = await page.locator(CARD[host]).evaluate(node => {
+  const visual = await page.locator(CARD[host]).evaluate((node, sels) => {
     const style = getComputedStyle(node);
-    return { background: style.backgroundColor, border: parseFloat(style.borderTopWidth), left: parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft) };
-  });
+    const modelNode = node.querySelector(sels.model);
+    const before = modelNode ? getComputedStyle(modelNode, '::before') : null;
+    const tierNode = modelNode?.querySelector('.model-tier, .mode-tier') || (modelNode?.hasAttribute('data-selected-reasoning-effort') ? modelNode.querySelector('span') : null);
+    const primaryNode = node.querySelector(sels.trailing);
+    const attachmentNode = node.querySelector(sels.attachment);
+    const dictateNode = sels.dictate ? node.querySelector(sels.dictate) : null;
+    const read = (el, props) => el ? Object.fromEntries(props.map(p => [p, getComputedStyle(el)[p]])) : null;
+    return {
+      card: {
+        background: style.backgroundColor,
+        border: parseFloat(style.borderTopWidth),
+        borderTopWidth: style.borderTopWidth,
+        outlineStyle: style.outlineStyle,
+        borderRadius: style.borderRadius,
+        left: parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft)
+      },
+      model: modelNode ? {
+        color: getComputedStyle(modelNode).color,
+        before: { content: before.content, width: before.width, height: before.height, borderRadius: before.borderRadius, clipPath: before.clipPath, backgroundColor: before.backgroundColor },
+        tier: read(tierNode, ['color', 'fontWeight'])
+      } : null,
+      primary: read(primaryNode, ['backgroundColor', 'color', 'borderRadius', 'width', 'height']),
+      attachment: read(attachmentNode, ['borderRadius', 'borderTopWidth', 'backgroundColor', 'color']),
+      dictate: read(dictateNode, ['backgroundColor', 'borderTopWidth', 'borderTopColor'])
+    };
+  }, { model: s.model, trailing: s[TRAILING[host]], attachment: s.attachment, dictate: s.dictate || null });
+
+  const { card } = visual;
   assert.ok(card.border > 0 && card.background !== 'rgba(0, 0, 0, 0)', `${label}: the measured card is the painted, bordered Composer Surface (${card.background}, ${card.border}px)`);
+  assert.equal(card.borderTopWidth, '1px', `${label}: composer card has a crisp 1px border`);
+  assert.equal(card.outlineStyle, 'none', `${label}: composer card has no second outline`);
+  assert.equal(card.borderRadius, '16px', `${label}: composer card uses balanced 16px radius`);
   for (const [name, control] of Object.entries({ add, model, trailing })) {
     assert.ok(editor.bottom <= control.top + 0.5, `${label}: editor (bottom ${editor.bottom}) sits above the toolbar ${name} (top ${control.top})`);
   }
@@ -162,10 +207,36 @@ async function assertTwoRow(page, host, label) {
   assert.ok(Math.abs(editor.width - container.innerWidth) <= 8, `${label}: editor width ${editor.width} spans the card inner width ${container.innerWidth} (±8px)`);
   assert.ok(Math.abs(editor.left - card.left) <= 8, `${label}: editor starts at the card inner edge (${editor.left} vs ${card.left})`);
   assert.ok(add.left < model.left, `${label}: + (${add.left}) is left of the Model Capsule (${model.left})`);
+  assert.ok(model.left - add.right <= 24, `${label}: Model Capsule (left ${model.left}) sits immediately right of + (right ${add.right})`);
+  assert.ok(model.right < container.width * 0.55, `${label}: Model Capsule (right ${model.right}) stays in the left half of card (${container.width})`);
   assert.ok(model.right <= trailing.left + 0.5, `${label}: Model Capsule (right ${model.right}) is left of ${TRAILING[host]} (left ${trailing.left})`);
+  if (controls.dictate) {
+    assert.ok(model.right < controls.dictate.left && controls.dictate.right <= trailing.left + 0.5, `${label}: dictate stays on the right ahead of ${TRAILING[host]}`);
+    assert.equal(visual.dictate.backgroundColor, 'rgba(0, 0, 0, 0)', `${label}: secondary dictate icon uses clean transparent background`);
+  }
   assert.ok(Math.abs(add.centerY - model.centerY) <= 10 && Math.abs(model.centerY - trailing.centerY) <= 10, `${label}: +, Model Capsule and ${TRAILING[host]} share the toolbar row`);
   assert.ok(add.left - card.left <= 8, `${label}: + leads the toolbar row at the left edge (${add.left})`);
   assert.ok(container.width - trailing.right <= card.left + 8, `${label}: ${TRAILING[host]} trails at the right edge (${trailing.right} of ${container.width})`);
+
+  assert.equal(visual.model.before.content, '""', `${label}: Model Capsule renders CSS ::before star`);
+  assert.equal(visual.model.before.width, '11px', `${label}: star width is 11px`);
+  assert.equal(visual.model.before.height, '11px', `${label}: star height is 11px`);
+  assert.notEqual(visual.model.before.borderRadius, '50%', `${label}: star is not a round dot`);
+  assert.match(visual.model.before.clipPath, /^polygon\(/, `${label}: Model Capsule ::before renders 4-pointed star polygon clip-path`);
+  assert.notEqual(visual.model.before.backgroundColor, visual.model.color, `${label}: star accent differs from capsule text`);
+  if (visual.model.tier) {
+    assert.equal(visual.model.tier.color, visual.model.before.backgroundColor, `${label}: star and tier share --op-accent`);
+    assert.notEqual(visual.model.tier.color, visual.model.color, `${label}: tier accent differs from base capsule text`);
+    assert.ok(Number(visual.model.tier.fontWeight) >= 600, `${label}: tier label is semibold`);
+  }
+
+  assert.equal(visual.attachment.borderRadius, '12px', `${label}: attachment preview renders as compact rounded-square card`);
+  assert.equal(visual.attachment.borderTopWidth, '1px', `${label}: attachment card carries 1px border`);
+
+  assert.ok(Math.abs(trailing.width - 34) <= 1 && Math.abs(trailing.height - 34) <= 1, `${label}: primary action is 34px circle (${trailing.width}x${trailing.height})`);
+  assert.ok(parseFloat(visual.primary.borderRadius) >= 999, `${label}: primary action is circular`);
+  const ratio = contrastRatio(visual.primary.color, visual.primary.backgroundColor);
+  assert.ok(ratio >= 4.5, `${label}: primary action icon contrast >= 4.5:1 (got ${ratio.toFixed(2)}:1)`);
   return geometry;
 }
 
@@ -243,14 +314,18 @@ export async function checkTwoRowComposer(suite) {
 
       await injectExtension(page, suite);
 
-      for (const theme of ['dark', 'light']) {
-        const label = `${engine} ${host} ${theme}`;
-        await patchConfig(page, { themeMode: theme });
-        await page.waitForFunction(theme => document.documentElement.getAttribute('data-op-scheme') === theme, theme);
+      for (const [theme, palette] of [['dark', 'warm'], ['dark', 'obsidian'], ['light', 'alabaster'], ['light', 'crystal']]) {
+        const label = `${engine} ${host} ${theme} (${palette})`;
+        const paletteKey = theme === 'dark' ? 'palette' : 'lightPreset';
+        await patchConfig(page, { themeMode: theme, [paletteKey]: palette });
+        await page.waitForFunction(([t, p]) =>
+          document.documentElement.getAttribute('data-op-scheme') === t &&
+          document.documentElement.getAttribute('data-op-effective-palette') === p,
+          [theme, palette]);
         await waitForShape(page, host, 'two-row', label);
         await assertTwoRow(page, host, label);
         await assertHostNodesUnchanged(page, label);
-        if (theme === 'dark') {
+        if (palette === 'obsidian') {
           // caret: 'initial' keeps Playwright from leaving an empty style attribute on the native editor.
           await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-two-row-composer.png`), caret: 'initial' });
           assert.deepEqual(await exerciseComposer(page, host, label), nativeBehaviour, `${label}: input, IME, Enter/Shift+Enter, model menu and upload match native`);
@@ -263,15 +338,15 @@ export async function checkTwoRowComposer(suite) {
           }
           await assertHostNodesUnchanged(page, `${label} after interaction`);
         }
-        // composerRestyle off and Native Palette restore the native single-row grid with no residue.
-        const paletteKey = theme === 'dark' ? 'palette' : 'lightPreset';
-        const restored = theme === 'dark' ? 'obsidian' : 'crystal';
-        for (const [name, off, on] of [['composerRestyle off', { composerRestyle: false }, { composerRestyle: true }], ['Native Palette', { [paletteKey]: 'host' }, { [paletteKey]: restored }]]) {
-          await patchConfig(page, off);
-          await waitForShape(page, host, 'single-row', `${label} ${name}`);
-          assert.deepEqual(await cardSnapshot(page, host), await stripGeometry(nativeSnapshot), `${label} ${name}: native grid restored without attribute or layout residue`);
-          await patchConfig(page, on);
-          await waitForShape(page, host, 'two-row', `${label} ${name} back on`);
+        if (palette === 'obsidian' || palette === 'crystal') {
+          // composerRestyle off and Native Palette restore the native single-row grid with no residue.
+          for (const [name, off, on] of [['composerRestyle off', { composerRestyle: false }, { composerRestyle: true }], ['Native Palette', { [paletteKey]: 'host' }, { [paletteKey]: palette }]]) {
+            await patchConfig(page, off);
+            await waitForShape(page, host, 'single-row', `${label} ${name}`);
+            assert.deepEqual(await cardSnapshot(page, host), await stripGeometry(nativeSnapshot), `${label} ${name}: native grid restored without attribute or layout residue`);
+            await patchConfig(page, on);
+            await waitForShape(page, host, 'two-row', `${label} ${name} back on`);
+          }
         }
       }
 

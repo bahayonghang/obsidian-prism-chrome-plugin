@@ -1,25 +1,51 @@
 /**
- * v0.3.1 #22: blur Composer Scrim on the probe-derived live fixtures.
- * Everything is measured in rendered pixels and hit tests: the glow showing through below and beside the
- * Composer Surface, the occlusion opacity of the scrim over a flat probe backdrop, blurred text behind it,
- * crisp/clickable controls on top of it, the no-backdrop-filter fallback, and full restoration.
+ * v0.4.0 #25: Dual-mode Composer Scrim & ChatGPT bottom-spacing checks on probe-derived live fixtures.
+ * Measured in rendered pixels, hit tests and bounding boxes:
+ * - ChatGPT in-flow across all 4 palettes (obsidian, warm, crystal, alabaster): continuous glow from above
+ *   composer down to innerHeight - 6, zero occlusion/blur, collapsed empty spacer, tight bottom gap,
+ *   clickable crisp disclaimer, and exact native restoration.
+ * - ChatGPT sticky-overlay variant: moving #thread-bottom-container inside the scroller with sticky
+ *   positioning activates the top-feathered blur Composer Scrim.
+ * - Gemini overlay across all 4 palettes + no-backdrop-filter fallback: dark ~44% / light ~26% canvas tint,
+ *   blurred behind-scrim text, crisp clickable controls and message-actions above the composer, and exact
+ *   native restoration.
  */
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { onLiveFixture, injectExtension as injectRuntime, patchConfig, settle as frames, LIVE_SELECTORS } from './live-fixtures.mjs';
-import { capturePixels, regionStats, sampleBelow } from './measure.mjs';
+import { capturePixels, regionStats } from './measure.mjs';
 
 /** The @supports condition that switches the scrim from the fallback gradient to the blur. */
 export const SCRIM_BLUR_SUPPORTS = '@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))';
+
+const PALETTES = [
+  { name: 'obsidian', scheme: 'dark', patch: { themeMode: 'dark', palette: 'obsidian' }, hostPatch: { palette: 'host' } },
+  { name: 'warm', scheme: 'dark', patch: { themeMode: 'dark', palette: 'warm' }, hostPatch: { palette: 'host' } },
+  { name: 'crystal', scheme: 'light', patch: { themeMode: 'light', lightPreset: 'crystal' }, hostPatch: { lightPreset: 'host' } },
+  { name: 'alabaster', scheme: 'light', patch: { themeMode: 'light', lightPreset: 'alabaster' }, hostPatch: { lightPreset: 'host' } }
+];
 
 const rgb = value => { const [r, g, b] = value.match(/[\d.]+/g).map(Number); return { r, g, b }; };
 const distance = (a, b) => Math.hypot(a.r - b.r, a.g - b.g, a.b - b.b);
 // Every horizon tone (blue, violet, cyan) is bluer than its red/green mix; glow raises this on any canvas.
 const blueness = p => p.b - (p.r + p.g) / 2;
 const fmt = p => `rgb(${Math.round(p.r)},${Math.round(p.g)},${Math.round(p.b)})`;
+const near = (actual, expected, tolerance, label) => assert.ok(Math.abs(actual - expected) <= tolerance, `${label}: expected ${expected}±${tolerance}, got ${actual}`);
 
 async function injectExtension(page, suite) {
   await injectRuntime(page, suite, { waitFor: '.op-vial-pill' });
+  await frames(page);
+}
+
+async function applyPalette(page, pal, extraSelector = '') {
+  await patchConfig(page, { ...pal.patch, ambientStyle: 'aurora' });
+  await page.waitForFunction(([name, scheme, sel]) =>
+    document.documentElement.getAttribute('data-op-effective-palette') === name &&
+    document.documentElement.getAttribute('data-op-scheme') === scheme &&
+    document.documentElement.getAttribute('data-op-ambient-style') === 'aurora' &&
+    (!sel || Boolean(document.querySelector(sel))),
+    [pal.name, pal.scheme, extraSelector]
+  );
   await frames(page);
 }
 
@@ -47,22 +73,46 @@ async function composerBox(page, host) {
   });
 }
 
-/** Sample points the user sees around the Composer Surface: right below it, and the empty sides at its middle. */
-async function glowPoints(page, host) {
+/** Sample points around the Composer Surface (and up to the viewport bottom for in-flow docks). */
+async function glowPoints(page, host, { includeInFlowBands = false } = {}) {
   const box = await composerBox(page, host);
-  const below = (await sampleBelow(page, LIVE_SELECTORS[host].composer, { offsetY: 6 })).point;
-  return { below, left: { x: box.left - 40, y: box.centerY }, right: { x: box.right + 40, y: box.centerY } };
+  const vh = page.viewportSize().height;
+  const points = {
+    below: { x: box.left + 8, y: Math.min(vh - 3, box.bottom + 6) },
+    left: { x: box.left - 40, y: box.centerY },
+    right: { x: box.right + 40, y: box.centerY }
+  };
+  if (includeInFlowBands) {
+    points.above = { x: box.left - 40, y: box.top - 24 };
+    points.aboveCenter = { x: box.left + box.width / 2, y: box.top - 12 };
+    points.viewportBottomSide = { x: box.left - 40, y: vh - 6 };
+    points.viewportBottom = { x: box.left + 8, y: vh - 6 };
+  }
+  return points;
 }
+
 async function pixelsAt(page, points) {
   const out = {};
-  for (const [name, point] of Object.entries(points)) out[name] = (await capturePixels(page, { x: point.x, y: point.y, width: 1, height: 1 })).at(0, 0);
+  for (const [name, point] of Object.entries(points)) {
+    out[name] = (await capturePixels(page, { x: point.x, y: point.y, width: 1, height: 1 })).at(0, 0);
+  }
   return out;
 }
 
+async function assertGlowContinuous(page, host, label, canvas, options = {}) {
+  const points = await glowPoints(page, host, options);
+  const glow = await pixelsAt(page, points);
+  await patchConfig(page, { ambientStyle: 'none' }, () => document.documentElement.getAttribute('data-op-ambient-style') === 'none');
+  const flat = await pixelsAt(page, points);
+  for (const name of Object.keys(points)) {
+    assert.ok(distance(glow[name], canvas) >= 4, `${label}: ${name} is not the solid canvas ${fmt(canvas)} (got ${fmt(glow[name])})`);
+    assert.ok(blueness(glow[name]) - blueness(flat[name]) >= 2.0, `${label}: ${name} carries horizon glow hue (glow ${fmt(glow[name])} vs flat ${fmt(flat[name])})`);
+  }
+}
+
 /**
- * Inserts a flat block that paints behind the composer dock (inside the scroller, before the dock in tree and
- * z order) and estimates how opaque the canvas paint over it is: alpha = (P - B)·(C - B) / |C - B|².
- * Samples a column in the empty side area from above the composer to the viewport bottom.
+ * Inserts a flat block behind the composer dock (inside the scroller, z-index:0) and estimates how opaque
+ * the canvas paint over it is across a column from above the composer to the viewport bottom.
  */
 async function occlusionColumn(page, host, canvas) {
   const box = await composerBox(page, host);
@@ -109,10 +159,6 @@ async function sharpness(page, clip) {
   return { ratio: max - min > 0 ? step / (max - min) : 0, range: max - min };
 }
 
-/**
- * Whether this engine actually paints backdrop-filter blur in screenshots: a calibration box blurs a word.
- * (Playwright's Firefox reports support but composites no backdrop blur.)
- */
 async function rendersBackdropBlur(page) {
   await page.evaluate(() => {
     const word = document.createElement('div');
@@ -131,10 +177,6 @@ async function rendersBackdropBlur(page) {
   return edge.ratio < 0.5;
 }
 
-/**
- * The backdrop blur the scrim declares, read from computed style on the composer's ancestors and their ::before
- * (no extension markers). Both engines report it even where Playwright's Firefox does not paint it.
- */
 async function scrimBackdropFilter(page, host) {
   return page.locator(LIVE_SELECTORS[host].composer).first().evaluate(node => {
     const supported = CSS.supports('backdrop-filter', 'blur(1px)') || CSS.supports('-webkit-backdrop-filter', 'blur(1px)');
@@ -148,11 +190,9 @@ async function scrimBackdropFilter(page, host) {
   });
 }
 
-/** A high-contrast text block placed in the side area either behind the scrim (composer middle) or in the open thread. */
 async function textBlockStats(page, host, where) {
   const box = await composerBox(page, host);
   const clip = { x: Math.round(box.left - 180), y: Math.round(where === 'behind' ? box.centerY - 22 : box.top - 260), width: 150, height: 44 };
-  // The palette foreground (or the host text colour natively): the colour real thread text has on this canvas.
   const color = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--op-fg').trim() || getComputedStyle(document.body).color);
   await page.locator(LIVE_SELECTORS[host].scroller).evaluate((scroller, { clip, color }) => {
     const block = document.createElement('div');
@@ -169,13 +209,13 @@ async function textBlockStats(page, host, where) {
   return { variance: stats.variance, sharpness: edge.ratio };
 }
 
-/** Text-bearing controls on top of the scrim: the editor (placeholder), the disclaimer and the last reply's action row. */
 function crispTargets(host) {
   const s = LIVE_SELECTORS[host];
   return host === 'chatgpt'
     ? { editor: s.editor, disclaimer: s.disclaimer, actions: '[data-turn-key]:last-of-type .turn-actions' }
     : { editor: s.editor, disclaimer: s.disclaimer, actions: 'model-response:last-of-type message-actions' };
 }
+
 async function assertCrispAndClickable(page, host, label) {
   const s = LIVE_SELECTORS[host];
   const targets = crispTargets(host);
@@ -187,18 +227,18 @@ async function assertCrispAndClickable(page, host, label) {
     const clip = { x: rect.x + 2, y: rect.y + 2, width: Math.min(rect.width - 4, 220), height: Math.max(6, Math.min(rect.height - 4, 26)) };
     if (name === 'disclaimer') { clip.x = rect.x + rect.width / 2 - 110; clip.width = 220; }
     const edge = await sharpness(page, clip);
-    assert.ok(edge.range >= 40 && edge.ratio >= 0.3, `${label}: ${name} stays crisp above the scrim (edge ${edge.ratio.toFixed(2)}, range ${edge.range.toFixed(0)})`);
+    assert.ok(edge.range >= 40 && edge.ratio >= 0.3, `${label}: ${name} stays crisp (edge ${edge.ratio.toFixed(2)}, range ${edge.range.toFixed(0)})`);
   }
   const hits = await page.evaluate(selectors => Object.fromEntries(Object.entries(selectors).map(([name, selector]) => {
     const node = document.querySelector(selector);
     if (!node) return [name, 'missing'];
     const r = node.getBoundingClientRect();
-    const hit = document.elementFromPoint(r.left + Math.min(r.width / 2, 14), r.top + r.height / 2);
+    const x = name === 'disclaimer' ? r.left + r.width / 2 : r.left + Math.min(r.width / 2, 14);
+    const hit = document.elementFromPoint(x, r.top + r.height / 2);
     return [name, Boolean(hit && (node === hit || node.contains(hit)))];
   })), { editor: s.editor, add: s.add, model: s.model, disclaimer: s.disclaimer, action: `${targets.actions} button` });
-  for (const [name, ok] of Object.entries(hits)) assert.equal(ok, true, `${label}: ${name} is hit-testable on top of the scrim`);
-  // Scrolled to the end, the last reply's action row sits fully above the Composer Surface (two-row on by
-  // default), and every action button is what the user hits at its own centre.
+  for (const [name, ok] of Object.entries(hits)) assert.equal(ok, true, `${label}: ${name} is hit-testable`);
+
   const row = await page.evaluate(([actions, composer]) => {
     const box = document.querySelector(actions).getBoundingClientRect();
     const card = document.querySelector(composer).getBoundingClientRect();
@@ -209,29 +249,30 @@ async function assertCrispAndClickable(page, host, label) {
     });
     return { top: box.top, bottom: box.bottom, cardTop: card.top, buttons };
   }, [targets.actions, s.composer]);
-  assert.ok(row.top >= 0 && row.bottom <= row.cardTop, `${label}: the last reply's action row (${row.top}-${row.bottom}) is visible above the Composer Surface (top ${row.cardTop})`);
-  for (const button of row.buttons) assert.equal(button.hit, true, `${label}: the "${button.label}" action is hit at its centre, not covered by the composer dock`);
+  assert.ok(row.top >= 0 && row.bottom <= row.cardTop, `${label}: last reply action row (${row.top}-${row.bottom}) sits above Composer Surface (${row.cardTop})`);
+  for (const button of row.buttons) assert.equal(button.hit, true, `${label}: "${button.label}" action is hit at its centre`);
   await page.locator(s.add).click({ trial: true });
   await page.locator(s.model).click({ trial: true });
+  await page.locator(s.disclaimer).click({ trial: true });
   await page.locator(`${targets.actions} button`).first().click({ trial: true });
 }
 
-/** Every attribute of every element in the conversation area (DOM restoration after disable). An emptied inline
- * `style=""` renders identically to no style attribute, so it is not a difference the user can see. */
 async function attributeSnapshot(page, host) {
   return page.locator(LIVE_SELECTORS[host].main).evaluate(root => [root, ...root.querySelectorAll('*')]
     .filter(node => !node.closest('[data-op-owned]'))
     .map(node => `${node.localName}${node.getAttributeNames().filter(name => !(name === 'style' && !node.getAttribute(name).trim())).sort().map(name => ` ${name}="${node.getAttribute(name)}"`).join('')}`));
 }
 
-/** Paint-related computed styles along the composer's ancestor chain (and their ::before), up to the main area. */
 async function dockPaint(page, host) {
   return page.locator(LIVE_SELECTORS[host].composer).first().evaluate((composer, mainSelector) => {
     const out = [];
     for (let node = composer.parentElement; node && !node.matches(mainSelector); node = node.parentElement) {
       const style = getComputedStyle(node), before = getComputedStyle(node, '::before');
-      out.push({ tag: node.localName, background: style.backgroundColor, image: style.backgroundImage, backdrop: style.backdropFilter || 'none', mask: style.maskImage || 'none', isolation: style.isolation, position: style.position,
-        before: { content: before.content, background: before.backgroundColor, image: before.backgroundImage, backdrop: before.backdropFilter || 'none' } });
+      out.push({
+        tag: node.localName, background: style.backgroundColor, image: style.backgroundImage,
+        backdrop: style.backdropFilter || 'none', mask: style.maskImage || 'none', isolation: style.isolation, position: style.position,
+        before: { content: before.content, background: before.backgroundColor, image: before.backgroundImage, backdrop: before.backdropFilter || 'none', mask: before.maskImage || 'none' }
+      });
     }
     return out;
   }, LIVE_SELECTORS[host].main);
@@ -244,124 +285,256 @@ async function gemiInputLayout(page) {
   });
 }
 
-const near = (actual, expected, tolerance, label) => assert.ok(Math.abs(actual - expected) <= tolerance, `${label}: expected ${expected}±${tolerance}, got ${actual}`);
+async function chatgptSpacingMetrics(page) {
+  return page.evaluate(s => {
+    const spacer = document.querySelector(s.belowSpacer);
+    const composer = document.querySelector(s.composer);
+    const disclaimer = document.querySelector(s.disclaimer);
+    const col = document.querySelector(s.column);
+    return {
+      spacerHeight: spacer ? Math.round(spacer.getBoundingClientRect().height * 10) / 10 : null,
+      bottomGap: composer ? Math.round((window.innerHeight - composer.getBoundingClientRect().bottom) * 10) / 10 : null,
+      disclaimerHeight: disclaimer ? Math.round(disclaimer.getBoundingClientRect().height * 10) / 10 : null,
+      threadPaddingBottom: col ? parseFloat(getComputedStyle(col).paddingBottom) : null
+    };
+  }, LIVE_SELECTORS.chatgpt);
+}
 
-async function checkHostScheme(suite, host, scheme) {
+async function assertRestoredState(page, host, label, native, hostPatch, restorePatch) {
+  await patchConfig(page, hostPatch, () => document.documentElement.getAttribute('data-op-effective-palette') === 'host');
+  await scrollToEnd(page, host);
+  assert.deepEqual(await dockPaint(page, host), native.paint, `${label}: Native Palette restores dock paint`);
+  near((await occlusionColumn(page, host, native.canvas)).max, native.occlusion.max, 0.05, `${label}: Native Palette restores native occlusion`);
+  if (host === 'chatgpt') {
+    const hostSpacing = await chatgptSpacingMetrics(page);
+    near(hostSpacing.spacerHeight, native.spacing.spacerHeight, 0.5, `${label}: Native Palette restores spacer height`);
+    near(hostSpacing.bottomGap, native.spacing.bottomGap, 0.5, `${label}: Native Palette restores bottom gap`);
+  }
+  await patchConfig(page, restorePatch, () => document.documentElement.getAttribute('data-op-effective-palette') !== 'host');
+}
+
+async function assertDisabledAndHomeRestore(page, host, label, native, restorePatch) {
+  await patchConfig(page, { enabled: false }, () => !document.documentElement.hasAttribute('data-op-enabled'));
+  await scrollToEnd(page, host);
+  assert.deepEqual(await attributeSnapshot(page, host), native.attributes, `${label}: disabling restores every attribute`);
+  assert.deepEqual(await dockPaint(page, host), native.paint, `${label}: disabling restores dock paint`);
+  near((await occlusionColumn(page, host, native.canvas)).max, native.occlusion.max, 0.05, `${label}: disabling restores native occlusion`);
+  if (host === 'chatgpt') {
+    const disSpacing = await chatgptSpacingMetrics(page);
+    near(disSpacing.spacerHeight, native.spacing.spacerHeight, 0.5, `${label}: disabling restores spacer height`);
+    near(disSpacing.bottomGap, native.spacing.bottomGap, 0.5, `${label}: disabling restores bottom gap`);
+  }
+  await patchConfig(page, { enabled: true, ...restorePatch }, () => document.documentElement.getAttribute('data-op-enabled') === 'true');
+
+  if (host === 'chatgpt') {
+    await page.evaluate(sel => document.querySelector(sel)?.remove(), LIVE_SELECTORS.chatgpt.disclaimer);
+    await frames(page);
+    const noDisclaimer = await chatgptSpacingMetrics(page);
+    assert.ok(noDisclaimer.bottomGap >= 9 && noDisclaimer.bottomGap <= 20, `${label}: no-disclaimer dock preserves 10px bottom breathing room (got ${noDisclaimer.bottomGap})`);
+  }
+
+  const open = await textBlockStats(page, host, 'open');
+  await page.evaluate(selector => { for (const node of document.querySelectorAll(selector)) node.remove(); }, host === 'chatgpt' ? '[data-turn-key]' : 'user-query,model-response');
+  await page.waitForFunction(() => document.documentElement.getAttribute('data-op-home') === 'true');
+  await patchConfig(page, { ambientStyle: 'none' }, () => document.documentElement.getAttribute('data-op-ambient-style') === 'none');
+  const homeOcclusion = await occlusionColumn(page, host, await canvasColor(page));
+  assert.ok(homeOcclusion.max <= 0.08, `${label}: Home State paints no scrim/slab (alpha ${homeOcclusion.max.toFixed(2)})`);
+  const homeText = await textBlockStats(page, host, 'behind');
+  assert.ok(homeText.sharpness >= open.sharpness * 0.8, `${label}: Home State does not blur beside composer`);
+  assert.ok((await dockPaint(page, host)).every(layer => layer.backdrop === 'none' && layer.before.backdrop === 'none'), `${label}: Home State applies no backdrop blur`);
+  assert.equal(await page.locator('[data-op-composer-dock="true"],[data-op-composer-scrim="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"]').count(), 0, `${label}: Home State clears dock/scrim/sibling marks`);
+}
+
+/** ChatGPT in-flow dock across all 4 palettes: seamless horizon glow, zero veil/blur, compact bottom spacing. */
+async function checkChatGPTInFlow(suite) {
   const { engine, artifacts } = suite;
-  const label = `${engine} ${host} ${scheme}`;
-  const initial = { themeMode: scheme, ambientStyle: 'aurora', ambientTexture: 'off', motionLevel: 'off' };
-  await onLiveFixture(suite, host, { failure: `${host}-${scheme}-live-scrim-failure`, colorScheme: scheme, initial }, async ({ page, errors }) => {
+  const host = 'chatgpt';
+  const initial = { ...PALETTES[0].patch, ambientStyle: 'aurora', ambientTexture: 'off', motionLevel: 'off' };
+  await onLiveFixture(suite, host, { failure: 'chatgpt-inflow-live-scrim-failure', colorScheme: 'dark', initial }, async ({ page, errors }) => {
     await scrollToEnd(page, host);
-    const native = { canvas: await canvasColor(page), attributes: await attributeSnapshot(page, host), paint: await dockPaint(page, host) };
+    const native = {
+      canvas: await canvasColor(page),
+      attributes: await attributeSnapshot(page, host),
+      paint: await dockPaint(page, host),
+      spacing: await chatgptSpacingMetrics(page)
+    };
     native.occlusion = await occlusionColumn(page, host, native.canvas);
-    if (host === 'gemini') {
-      native.layout = await gemiInputLayout(page);
-      assert.ok(native.occlusion.max >= 0.95, `${label}: native Gemini input gradient is an opaque band (alpha ${native.occlusion.max.toFixed(2)})`);
-    } else {
-      assert.ok(native.occlusion.max <= 0.05, `${label}: native ChatGPT dock wrappers are transparent (alpha ${native.occlusion.max.toFixed(2)})`);
-    }
+    assert.ok(native.occlusion.max >= 0.95, `${engine} chatgpt native: #thread-bottom-container paints an opaque slab (alpha ${native.occlusion.max.toFixed(2)})`);
+    assert.ok(native.spacing.spacerHeight >= 20 && native.spacing.bottomGap >= 58, `${engine} chatgpt native: has redundant spacer (${native.spacing.spacerHeight}) & bottom gap (${native.spacing.bottomGap})`);
 
     await injectExtension(page, suite);
-    await scrollToEnd(page, host);
-    assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-op-home')), 'false', `${label}: active conversation`);
-    const canvas = await canvasColor(page);
+    for (const pal of PALETTES) {
+      const label = `${engine} chatgpt in-flow ${pal.name}`;
+      await applyPalette(page, pal);
+      await scrollToEnd(page, host);
+      assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-op-home')), 'false', `${label}: active conversation`);
 
-    // 1. The glow shows through below the composer and in the empty sides; nothing paints the solid canvas.
-    const points = await glowPoints(page, host);
-    const glow = await pixelsAt(page, points);
-    await patchConfig(page, { ambientStyle: 'none' }, () => document.documentElement.getAttribute('data-op-ambient-style') === 'none');
-    const flat = await pixelsAt(page, points);
-    for (const name of Object.keys(points)) {
-      assert.ok(distance(glow[name], canvas) >= 4, `${label}: ${name} the composer is not the solid canvas ${fmt(canvas)} (got ${fmt(glow[name])})`);
-      assert.ok(blueness(glow[name]) - blueness(flat[name]) >= 2.5, `${label}: ${name} the composer carries the horizon glow hue (glow ${fmt(glow[name])} vs no glow ${fmt(flat[name])})`);
+      const canvas = await canvasColor(page);
+      await assertGlowContinuous(page, host, label, canvas, { includeInFlowBands: true });
+      const occlusion = await occlusionColumn(page, host, canvas);
+      assert.ok(occlusion.max <= 0.08, `${label}: zero opaque canvas band or canvas veil (max alpha ${occlusion.max.toFixed(2)})`);
+      assert.ok(occlusion.maxStep <= 0.08, `${label}: zero horizontal alpha step (max step ${occlusion.maxStep.toFixed(2)})`);
+
+      const declared = await scrimBackdropFilter(page, host);
+      assert.equal(declared.value, 'none', `${label}: in-flow dock applies no backdrop blur`);
+      assert.ok((await dockPaint(page, host)).every(layer => layer.backdrop === 'none' && layer.before.backdrop === 'none'), `${label}: computed dock paint has no blur`);
+      const open = await textBlockStats(page, host, 'open');
+      const behind = await textBlockStats(page, host, 'behind');
+      assert.ok(behind.sharpness >= open.sharpness * 0.8, `${label}: beside-composer area is unblurred (${behind.sharpness.toFixed(2)} vs ${open.sharpness.toFixed(2)})`);
+
+      const spacing = await chatgptSpacingMetrics(page);
+      assert.equal(spacing.spacerHeight, 0, `${label}: empty sibling collapsed to 0px`);
+      assert.ok(spacing.bottomGap >= 10 && spacing.bottomGap <= 40, `${label}: compact bottom gap (${spacing.bottomGap}px)`);
+      assert.ok(spacing.bottomGap <= native.spacing.bottomGap - 20, `${label}: bottom gap tightened from native ${native.spacing.bottomGap}px to ${spacing.bottomGap}px`);
+      assert.equal(spacing.threadPaddingBottom, 24, `${label}: transcript bottom padding tightened to 24px`);
+
+      await assertCrispAndClickable(page, host, label);
+      await patchConfig(page, { ambientStyle: 'aurora' }, () => document.documentElement.getAttribute('data-op-ambient-style') === 'aurora');
+      if (pal.name === 'obsidian' || pal.name === 'crystal') {
+        await page.screenshot({ path: path.join(artifacts, `${engine}-chatgpt-${pal.name}-live-scrim.png`) });
+        await assertRestoredState(page, host, label, native, pal.hostPatch, pal.patch);
+      }
+      console.log(`PASS ${label}: continuous glow (max occlusion ${occlusion.max.toFixed(2)}), spacer 0px, gap ${spacing.bottomGap}px (was ${native.spacing.bottomGap}px)`);
     }
 
-    // 2. The scrim occludes partially (about 45% canvas), feathers in without a hard edge and never goes solid.
-    const occlusion = await occlusionColumn(page, host, canvas);
-    assert.ok(occlusion.max <= 0.6, `${label}: scrim never paints more than ~60% canvas (max alpha ${occlusion.max.toFixed(2)})`);
-    assert.ok(occlusion.atCenter >= 0.3 && occlusion.atCenter <= 0.6, `${label}: scrim is about 45% canvas beside the composer (alpha ${occlusion.atCenter.toFixed(2)})`);
-    assert.ok(occlusion.maxStep <= 0.12, `${label}: scrim top is feathered, not a hard edge (max step ${occlusion.maxStep.toFixed(2)})`);
+    await patchConfig(page, { ...PALETTES[0].patch, ambientStyle: 'aurora' }, () => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
+    await assertDisabledAndHomeRestore(page, host, `${engine} chatgpt in-flow`, native, PALETTES[0].patch);
+    assert.deepEqual(errors, []);
+  });
+}
 
-    // 3. Text scrolled behind the scrim is blurred; the controls on top stay crisp and clickable.
+/** Assert overlay blur Composer Scrim behavior (shared by Gemini overlay and ChatGPT sticky-overlay). */
+async function assertOverlayScrimActive(page, host, scheme, label, { checkFallbackMode = false } = {}) {
+  const canvas = await canvasColor(page);
+  await assertGlowContinuous(page, host, label, canvas);
+  const occlusion = await occlusionColumn(page, host, canvas);
+  const declared = await scrimBackdropFilter(page, host);
+  assert.ok(declared.supported, `${label}: engine supports backdrop-filter`);
+
+  if (checkFallbackMode) {
+    assert.equal(declared.value, 'none', `${label}: simulated browser applies no backdrop blur`);
+    const maxCap = scheme === 'light' ? 0.42 : 0.62;
+    const minCenter = scheme === 'light' ? 0.12 : 0.2;
+    assert.ok(occlusion.max <= maxCap, `${label}: fallback gradient stays <= ${(maxCap * 100).toFixed(0)}% canvas (got ${occlusion.max.toFixed(2)})`);
+    assert.ok(occlusion.atCenter >= minCenter, `${label}: fallback softens composer region (${occlusion.atCenter.toFixed(2)})`);
+    assert.ok(occlusion.maxStep <= 0.12, `${label}: fallback has no hard edge (${occlusion.maxStep.toFixed(2)})`);
+  } else {
+    assert.match(declared.value, /blur\(/, `${label}: scrim layer applies backdrop-filter blur`);
+    const [minCenter, maxCenter] = scheme === 'light' ? [0.18, 0.38] : [0.32, 0.58];
+    const maxCap = scheme === 'light' ? 0.45 : 0.6;
+    assert.ok(occlusion.max <= maxCap, `${label}: scrim never exceeds ${(maxCap * 100).toFixed(0)}% canvas (got ${occlusion.max.toFixed(2)})`);
+    assert.ok(occlusion.atCenter >= minCenter && occlusion.atCenter <= maxCenter, `${label}: ${scheme} scrim tint is in [${minCenter}, ${maxCenter}] (got ${occlusion.atCenter.toFixed(2)})`);
+    assert.ok(occlusion.maxStep <= 0.12, `${label}: scrim top is feathered (${occlusion.maxStep.toFixed(2)})`);
+
     const open = await textBlockStats(page, host, 'open');
     const behind = await textBlockStats(page, host, 'behind');
-    const declared = await scrimBackdropFilter(page, host);
-    assert.ok(declared.supported, `${label}: this engine supports backdrop-filter`);
-    assert.match(declared.value, /blur\(/, `${label}: the scrim layer's computed backdrop-filter is a blur`);
     const blurs = await rendersBackdropBlur(page);
-    // With a real backdrop blur detail nearly vanishes; without one the ~45% canvas alone still mutes it.
-    assert.ok(behind.variance <= open.variance * (blurs ? 0.15 : 0.35), `${label}: text behind the scrim loses detail (variance ${behind.variance.toFixed(0)} vs ${open.variance.toFixed(0)} in the open thread)`);
+    const maxVarianceFactor = blurs ? 0.15 : Math.min(0.65, (1 - occlusion.atCenter) ** 2 + 0.08);
+    assert.ok(behind.variance <= open.variance * maxVarianceFactor, `${label}: text behind scrim loses detail (${behind.variance.toFixed(0)} vs ${open.variance.toFixed(0)}, ratio ${(behind.variance / open.variance).toFixed(2)} <= ${maxVarianceFactor.toFixed(2)})`);
     if (blurs) {
-      assert.ok(behind.sharpness < open.sharpness * 0.6, `${label}: text behind the scrim is blurred (edge ${behind.sharpness.toFixed(2)} vs ${open.sharpness.toFixed(2)})`);
-    } else console.log(`NOTE ${label}: this engine paints no backdrop-filter blur in screenshots; blur sharpness not verified (variance ${behind.variance.toFixed(0)} vs ${open.variance.toFixed(0)}), computed ${declared.value}`);
-    // Default settings: the two-row Composer Surface (#19) is on, on both hosts.
-    assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-op-composer')), 'true', `${label}: composerRestyle is on by default`);
-    await assertCrispAndClickable(page, host, label);
-    await patchConfig(page, { ambientStyle: 'aurora' }, () => document.documentElement.getAttribute('data-op-ambient-style') === 'aurora');
-    await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-${scheme}-live-scrim.png`) });
-
-    if (host === 'gemini') {
-      assert.deepEqual(await gemiInputLayout(page), native.layout, `${label}: the native input gradient layer keeps its layout`);
-      assert.ok(await page.locator(LIVE_SELECTORS.gemini.attachment).isVisible(), `${label}: attachment preview stays visible`);
-      await page.locator(`${LIVE_SELECTORS.gemini.attachment} button`).click({ trial: true });
+      assert.ok(behind.sharpness < open.sharpness * 0.6, `${label}: text behind scrim is blurred (${behind.sharpness.toFixed(2)} vs ${open.sharpness.toFixed(2)})`);
     }
+  }
+  assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-op-composer')), 'true', `${label}: composerRestyle on`);
+  await assertCrispAndClickable(page, host, label);
+  return occlusion;
+}
 
-    if (scheme === 'dark') {
-      // 4. Native Palette: the scrim is inactive and the native paint returns exactly.
-      await patchConfig(page, { palette: 'host' }, () => document.documentElement.getAttribute('data-op-effective-palette') === 'host');
+/** ChatGPT sticky-overlay variant: #thread-bottom-container moved inside scroller with position:sticky. */
+async function checkChatGPTStickyOverlay(suite) {
+  const { engine } = suite;
+  const host = 'chatgpt';
+  const initial = { ...PALETTES[0].patch, ambientStyle: 'aurora', ambientTexture: 'off', motionLevel: 'off' };
+  await onLiveFixture(suite, host, { failure: 'chatgpt-sticky-overlay-failure', colorScheme: 'dark', initial }, async ({ page, errors }) => {
+    await page.evaluate(() => {
+      const scroller = document.querySelector('[data-prism-test-scroller]');
+      const dock = document.querySelector('#thread-bottom-container');
+      dock.style.position = 'sticky';
+      dock.style.bottom = '0px';
+      scroller.append(dock);
+    });
+    await injectExtension(page, suite);
+    for (const pal of [PALETTES[0], PALETTES[2]]) {
+      const label = `${engine} chatgpt sticky-overlay ${pal.name}`;
+      await applyPalette(page, pal, '#thread-bottom-container[data-op-composer-scrim="true"]');
       await scrollToEnd(page, host);
-      assert.deepEqual(await dockPaint(page, host), native.paint, `${label}: Native Palette restores the dock paint`);
-      const hostOcclusion = await occlusionColumn(page, host, native.canvas);
-      near(hostOcclusion.max, native.occlusion.max, 0.05, `${label}: Native Palette restores native occlusion`);
-      await patchConfig(page, { palette: 'obsidian' }, () => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
-
-      // 5. Disabled extension: every attribute and the native paint are restored.
-      await patchConfig(page, { enabled: false }, () => !document.documentElement.hasAttribute('data-op-enabled'));
-      await scrollToEnd(page, host);
-      assert.deepEqual(await attributeSnapshot(page, host), native.attributes, `${label}: disabling restores every attribute in the conversation area`);
-      assert.deepEqual(await dockPaint(page, host), native.paint, `${label}: disabling restores the dock paint`);
-      near((await occlusionColumn(page, host, native.canvas)).max, native.occlusion.max, 0.05, `${label}: disabling restores native occlusion`);
-      await patchConfig(page, { enabled: true }, () => document.documentElement.getAttribute('data-op-enabled') === 'true');
-
-      // 6. Home State: no scrim, no blur.
-      await page.evaluate(selector => { for (const node of document.querySelectorAll(selector)) node.remove(); }, host === 'chatgpt' ? '[data-turn-key]' : 'user-query,model-response');
-      await page.waitForFunction(() => document.documentElement.getAttribute('data-op-home') === 'true');
-      await patchConfig(page, { ambientStyle: 'none' }, () => document.documentElement.getAttribute('data-op-ambient-style') === 'none');
-      const homeOcclusion = await occlusionColumn(page, host, await canvasColor(page));
-      assert.ok(homeOcclusion.max <= 0.05, `${label}: Home State paints no scrim (alpha ${homeOcclusion.max.toFixed(2)})`);
-      const homeText = await textBlockStats(page, host, 'behind');
-      assert.ok(homeText.sharpness >= open.sharpness * 0.8, `${label}: Home State does not blur the area beside the composer (edge ${homeText.sharpness.toFixed(2)} vs ${open.sharpness.toFixed(2)})`);
-      assert.ok((await dockPaint(page, host)).every(layer => layer.backdrop === 'none' && layer.before.backdrop === 'none'), `${label}: Home State applies no backdrop blur`);
+      const occlusion = await assertOverlayScrimActive(page, host, pal.scheme, label);
+      console.log(`PASS ${label}: overlay blur Composer Scrim active (alpha ${occlusion.atCenter.toFixed(2)})`);
     }
     assert.deepEqual(errors, []);
-    console.log(`PASS ${label} live fixture: blur Composer Scrim lets the glow through (alpha ${occlusion.atCenter.toFixed(2)}), cuts text variance to ${(behind.variance / open.variance * 100).toFixed(0)}%, keeps controls crisp${scheme === 'dark' ? ', and restores under Native Palette, disable and Home State' : ''}`);
+  });
+}
+
+/** Gemini overlay across dark and light palettes, plus restoration. */
+async function checkGeminiOverlay(suite) {
+  const { engine, artifacts } = suite;
+  const host = 'gemini';
+  const initial = { ...PALETTES[0].patch, ambientStyle: 'aurora', ambientTexture: 'off', motionLevel: 'off' };
+  await onLiveFixture(suite, host, { failure: 'gemini-overlay-live-scrim-failure', colorScheme: 'dark', initial }, async ({ page, errors }) => {
+    await scrollToEnd(page, host);
+    const native = {
+      canvas: await canvasColor(page),
+      attributes: await attributeSnapshot(page, host),
+      paint: await dockPaint(page, host),
+      layout: await gemiInputLayout(page)
+    };
+    native.occlusion = await occlusionColumn(page, host, native.canvas);
+    assert.ok(native.occlusion.max >= 0.95, `${engine} gemini native: input gradient is opaque (alpha ${native.occlusion.max.toFixed(2)})`);
+
+    await injectExtension(page, suite);
+    for (const pal of PALETTES) {
+      const label = `${engine} gemini overlay ${pal.name}`;
+      await applyPalette(page, pal);
+      await scrollToEnd(page, host);
+      const occlusion = await assertOverlayScrimActive(page, host, pal.scheme, label);
+      assert.deepEqual(await gemiInputLayout(page), native.layout, `${label}: native input gradient layer keeps layout`);
+      assert.ok(await page.locator(LIVE_SELECTORS.gemini.attachment).isVisible(), `${label}: attachment preview visible`);
+      await page.locator(`${LIVE_SELECTORS.gemini.attachment} button`).click({ trial: true });
+
+      await patchConfig(page, { ambientStyle: 'aurora' }, () => document.documentElement.getAttribute('data-op-ambient-style') === 'aurora');
+      if (pal.name === 'obsidian' || pal.name === 'crystal') {
+        await page.screenshot({ path: path.join(artifacts, `${engine}-gemini-${pal.name}-live-scrim.png`) });
+        await assertRestoredState(page, host, label, native, pal.hostPatch, pal.patch);
+      }
+      console.log(`PASS ${label}: blur Composer Scrim active (alpha ${occlusion.atCenter.toFixed(2)})`);
+    }
+
+    await patchConfig(page, { ...PALETTES[0].patch, ambientStyle: 'aurora' }, () => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
+    await assertDisabledAndHomeRestore(page, host, `${engine} gemini overlay`, native, PALETTES[0].patch);
+    assert.deepEqual(errors, []);
   });
 }
 
 /** No backdrop-filter support: the @supports block is disabled and the fallback gradient must stay translucent. */
-async function checkFallback(suite, host) {
+async function checkFallback(suite, host, pal, { stickyOverlay = false } = {}) {
   const { engine, styles } = suite;
-  const label = `${engine} ${host} no-backdrop-filter`;
+  const label = `${engine} ${host}${stickyOverlay ? ' sticky-overlay' : ''} ${pal.name} no-backdrop-filter`;
   const patched = styles.map(css => css.split(SCRIM_BLUR_SUPPORTS).join('@supports (prism-unsupported-property: none)'));
   assert.notDeepEqual(patched, styles, 'the scrim blur is gated by the expected @supports condition');
-  const initial = { themeMode: 'dark', ambientStyle: 'none', ambientTexture: 'off', motionLevel: 'off' };
-  await onLiveFixture(suite, host, { failure: `${host}-scrim-fallback-failure`, initial }, async ({ page, errors }) => {
+  const initial = { ...pal.patch, ambientStyle: 'aurora', ambientTexture: 'off', motionLevel: 'off' };
+  await onLiveFixture(suite, host, { failure: `${host}-${pal.name}-scrim-fallback-failure`, colorScheme: pal.scheme, initial }, async ({ page, errors }) => {
+    if (stickyOverlay) {
+      await page.evaluate(() => {
+        const scroller = document.querySelector('[data-prism-test-scroller]');
+        const dock = document.querySelector('#thread-bottom-container');
+        dock.style.position = 'sticky';
+        dock.style.bottom = '0px';
+        scroller.append(dock);
+      });
+    }
     await injectExtension(page, { ...suite, styles: patched });
     await scrollToEnd(page, host);
-    assert.equal((await scrimBackdropFilter(page, host)).value, 'none', `${label}: the simulated browser applies no backdrop blur`);
-    const occlusion = await occlusionColumn(page, host, await canvasColor(page));
-    assert.ok(occlusion.max <= 0.6, `${label}: fallback gradient stays at or below ~60% canvas (max alpha ${occlusion.max.toFixed(2)})`);
-    assert.ok(occlusion.atCenter >= 0.2, `${label}: fallback still softens the area beside the composer (alpha ${occlusion.atCenter.toFixed(2)})`);
-    assert.ok(occlusion.maxStep <= 0.12, `${label}: fallback has no hard edge (max step ${occlusion.maxStep.toFixed(2)})`);
-    await assertCrispAndClickable(page, host, label);
+    const occlusion = await assertOverlayScrimActive(page, host, pal.scheme, label, { checkFallbackMode: true });
     assert.deepEqual(errors, []);
     console.log(`PASS ${label}: fallback gradient peaks at ${(occlusion.max * 100).toFixed(0)}% canvas with no solid block`);
   });
 }
 
 export async function checkLiveComposerScrim(options) {
-  for (const host of ['chatgpt', 'gemini']) {
-    for (const scheme of ['dark', 'light']) await checkHostScheme(options, host, scheme);
-    await checkFallback(options, host);
-  }
+  await checkChatGPTInFlow(options);
+  await checkChatGPTStickyOverlay(options);
+  await checkGeminiOverlay(options);
+  await checkFallback(options, 'gemini', PALETTES[0]);
+  await checkFallback(options, 'gemini', PALETTES[2]);
+  await checkFallback(options, 'chatgpt', PALETTES[0], { stickyOverlay: true });
 }

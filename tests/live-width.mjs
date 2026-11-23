@@ -31,6 +31,10 @@ async function measure(page, host) {
   const boxes = await page.evaluate(({ host, s }) => {
     const rect = selector => { const node = document.querySelector(selector); if (!node) return null; const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, width: r.width }; };
     const out = { composer: rect(s.composer), rail: rect('#op-rail-root'), main: rect(s.main) };
+    if (host === 'chatgpt') {
+      out.transcriptColumn = rect(s.column);
+      out.composerColumn = rect(s.composerColumn);
+    }
     if (host === 'gemini') {
       out.blocks = [...document.querySelectorAll(`${s.assistant} > *`)].map(node => { const r = node.getBoundingClientRect(); return { tag: node.localName, width: r.width, left: r.left, right: r.right }; });
       out.userQuery = rect(s.column);
@@ -86,18 +90,51 @@ async function removeInferredComposerLimiter(page) {
   assert.equal(left, 0, 'chatgpt variant: the inferred composer limiter class is absent');
 }
 
-async function checkHost(suite, host, { withoutComposerLimiter = false } = {}) {
+async function unwrapComposerFormInDom(page) {
+  await page.addStyleTag({ content: '#thread-bottom > form[data-chatgpt-composer]{max-width:var(--thread-content-max-width,48rem);margin-inline:auto}' });
+  const unwrapped = await page.evaluate(() => {
+    const col = document.querySelector('#thread-bottom > .composer-column');
+    if (!col) return false;
+    col.replaceWith(...col.childNodes);
+    return Boolean(document.querySelector('#thread-bottom > form[data-chatgpt-composer]')) && !document.querySelector('.composer-column');
+  });
+  assert.equal(unwrapped, true, 'chatgpt variant: form[data-chatgpt-composer] is directly under #thread-bottom');
+}
+
+async function nestComposerWrapperInDom(page) {
+  const nested = await page.evaluate(() => {
+    const col = document.querySelector('#thread-bottom > .composer-column');
+    if (!col) return false;
+    const shell = document.createElement('div');
+    shell.className = 'nested-dock-shell';
+    col.before(shell);
+    shell.append(col);
+    return Boolean(document.querySelector('#thread-bottom > .nested-dock-shell > .composer-column > form[data-chatgpt-composer]'));
+  });
+  assert.equal(nested, true, 'chatgpt variant: .composer-column is nested inside an intermediate wrapper under #thread-bottom');
+}
+
+async function checkHost(suite, host, { withoutComposerLimiter = false, unwrapComposerForm = false, nestComposerWrapper = false } = {}) {
   const { engine, artifacts } = suite;
-  const variant = withoutComposerLimiter ? ' (no inferred composer limiter)' : '';
-  await onLiveFixture(suite, host, { failure: `${host}-live-width${withoutComposerLimiter ? '-variant' : ''}-failure` }, async ({ page, errors }) => {
+  const variant = withoutComposerLimiter ? ' (no inferred composer limiter)' : unwrapComposerForm ? ' (direct form under #thread-bottom)' : nestComposerWrapper ? ' (nested wrapper under #thread-bottom)' : '';
+  const failureTag = withoutComposerLimiter ? '-variant' : unwrapComposerForm ? '-direct-form' : nestComposerWrapper ? '-nested-wrapper' : '';
+  await onLiveFixture(suite, host, { failure: `${host}-live-width${failureTag}-failure` }, async ({ page, errors }) => {
     if (withoutComposerLimiter) await removeInferredComposerLimiter(page);
+    if (unwrapComposerForm) await unwrapComposerFormInDom(page);
+    if (nestComposerWrapper) await nestComposerWrapperInDom(page);
     // Native widths before the extension exists.
     const native = await measure(page, host);
     await injectExtension(page, suite, { waitFor: '.op-width-toggle' });
-    for (const mainWidth of [1280, 1100]) {
-      await setMainWidth(page, MAIN_SELECTORS[host], mainWidth);
+    const sizes = [
+      { key: 'vp1707', label: 'viewport 1707', minStep: MIN_STEP, apply: () => page.setViewportSize({ width: 1707, height: 900 }) },
+      { key: 'vp1280', label: 'viewport 1280', minStep: 70, apply: () => page.setViewportSize({ width: 1280, height: 900 }) },
+      { key: 'main1280', label: 'main 1280', minStep: MIN_STEP, apply: () => setMainWidth(page, MAIN_SELECTORS[host], 1280) },
+      { key: 'main1100', label: 'main 1100', minStep: MIN_STEP, apply: () => setMainWidth(page, MAIN_SELECTORS[host], 1100) }
+    ];
+    for (const size of sizes) {
+      await size.apply();
       await settle(page);
-      const label = `${engine} ${host}${variant} @main ${mainWidth}`;
+      const label = `${engine} ${host}${variant} @${size.label}`;
       const std = await measure(page, host);
       assert.ok(Math.abs(std.paragraph.box - native.paragraph.box) <= 1, `${label}: standard keeps the native paragraph width (${std.paragraph.box} vs ${native.paragraph.box})`);
       assert.ok(Math.abs(std.composer.width - native.composer.width) <= 1, `${label}: standard keeps the native composer width`);
@@ -110,18 +147,30 @@ async function checkHost(suite, host, { withoutComposerLimiter = false } = {}) {
       const full = await measure(page, host);
       if (host === 'gemini') full.longTable = await longTableWidth(page);
       await assertBubbleCap(page, host, 'full');
-      if (!withoutComposerLimiter) await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-live-width-full-${mainWidth}.png`) });
+      if (!withoutComposerLimiter && !unwrapComposerForm && !nestComposerWrapper && ['vp1707', 'main1280', 'main1100'].includes(size.key)) {
+        await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-live-width-full-${size.key}.png`) });
+      }
 
       const [p0, p1, p2] = [std, wide, full].map(m => m.paragraph.box);
-      assert.ok(p1 - p0 >= MIN_STEP, `${label}: wide paragraph (${p1}) is at least ${MIN_STEP}px wider than standard (${p0})`);
-      assert.ok(p2 - p1 >= MIN_STEP, `${label}: full paragraph (${p2}) is at least ${MIN_STEP}px wider than wide (${p1})`);
+      assert.ok(p1 - p0 >= size.minStep, `${label}: wide paragraph (${p1}) is at least ${size.minStep}px wider than standard (${p0})`);
+      assert.ok(p2 - p1 >= size.minStep, `${label}: full paragraph (${p2}) is at least ${size.minStep}px wider than wide (${p1})`);
       assert.ok(Math.abs(p1 - (p0 + p2) / 2) <= MIDPOINT_TOLERANCE, `${label}: wide paragraph (${p1}) is the midpoint of standard and full (${(p0 + p2) / 2}) within ${MIDPOINT_TOLERANCE}px`);
       assert.ok(p1 <= WIDE_CAP, `${label}: wide paragraph (${p1}) is at most ${WIDE_CAP}px`);
       assert.ok(wide.paragraph.text > p1 * 0.8 && full.paragraph.text > p2 * 0.8, `${label}: the long paragraph's lines actually fill the wider column`);
-      // The Composer Surface follows the column.
+      // The Composer Surface (and ChatGPT .composer-column when present) follows the column.
       for (const [name, m] of [['wide', wide], ['full', full]]) {
         const grow = m.paragraph.box - p0, composerGrow = m.composer.width - std.composer.width;
-        assert.ok(Math.abs(composerGrow - grow) <= 2, `${label} ${name}: composer grows with the column (composer +${composerGrow}, paragraph +${grow})`);
+        assert.ok(Math.abs(composerGrow - grow) <= 2, `${label} ${name}: ComposerLayoutRoot grows with the column (composer +${composerGrow}, paragraph +${grow})`);
+        if (host === 'chatgpt') {
+          assert.ok(Math.abs(m.composer.width - m.paragraph.box) <= 2, `${label} ${name}: ComposerLayoutRoot width (${m.composer.width}) matches paragraph (${m.paragraph.box})`);
+          assert.ok(Math.abs(m.composer.left - m.paragraph.left) <= 2, `${label} ${name}: ComposerLayoutRoot left (${m.composer.left}) aligns with paragraph (${m.paragraph.left})`);
+          if (m.composerColumn) {
+            const colGrow = m.composerColumn.width - std.composerColumn.width;
+            assert.ok(Math.abs(colGrow - grow) <= 2, `${label} ${name}: .composer-column grows with the column (column +${colGrow}, paragraph +${grow})`);
+            assert.ok(Math.abs(m.composerColumn.width - m.transcriptColumn.width) <= 2, `${label} ${name}: .composer-column (${m.composerColumn.width}) matches transcript column (${m.transcriptColumn.width})`);
+            assert.ok(Math.abs(m.composerColumn.left - m.transcriptColumn.left) <= 2, `${label} ${name}: .composer-column left (${m.composerColumn.left}) aligns with transcript column (${m.transcriptColumn.left})`);
+          }
+        }
       }
       // Full: neither the body nor the composer overlaps the Conversation Rail; both stay inside the main area.
       assert.ok(full.rail, `${label}: the Conversation Rail is shown`);
@@ -182,11 +231,13 @@ async function checkHost(suite, host, { withoutComposerLimiter = false } = {}) {
       await assertBubbleCap(page, host, `${preset} narrow`);
     }
     assert.deepEqual(errors, []);
-    console.log(`PASS ${engine} ${host}${variant} live fixture: Content Width Presets at main 1280/1100 (midpoint, >=${MIN_STEP}px steps, composer follows, rail clear, native restore, <900px fallback)`);
+    console.log(`PASS ${engine} ${host}${variant} live fixture: Content Width Presets at viewport 1707/1280 and main 1280/1100 (midpoint, composer/column sync, rail clear, native restore, <900px fallback)`);
   });
 }
 
 export async function checkLiveWidthPresets(options) {
   for (const host of ['chatgpt', 'gemini']) await checkHost(options, host);
   await checkHost(options, 'chatgpt', { withoutComposerLimiter: true });
+  await checkHost(options, 'chatgpt', { unwrapComposerForm: true });
+  await checkHost(options, 'chatgpt', { nestComposerWrapper: true });
 }

@@ -16,6 +16,8 @@ export const LIVE_SELECTORS = {
     assistant: '[data-markdown-text-style="assistant-message"]',
     paragraph: '[data-markdown-text-style="assistant-message"] > p',
     userBubble: '[data-user-message-bubble="true"]',
+    bottomDock: '#thread-bottom-container',
+    composerColumn: '.composer-column',
     composerForm: 'form[data-chatgpt-composer]',
     composer: '[data-composer-layout]',
     composerGrid: '[data-composer-layout] [class*="composerGrid"]',
@@ -25,7 +27,9 @@ export const LIVE_SELECTORS = {
     dictate: 'button[aria-label="Dictate"]',
     voice: 'button[aria-label="Start Voice"]',
     attachment: '[class*="composerGrid"] [class*="file-tile"]',
-    disclaimer: '#thread-bottom [class*="disclaimer"]'
+    belowSpacer: '.composer-below-spacer',
+    disclaimer: '#thread-bottom [class*="disclaimer"]',
+    cornerFloat: '.host-corner-help'
   },
   gemini: {
     main: MAIN_SELECTORS.gemini,
@@ -44,7 +48,8 @@ export const LIVE_SELECTORS = {
     mic: 'button[aria-label="Microphone"]',
     attachment: '.text-input-field .file-preview-chip',
     footer: 'model-response message-actions',
-    disclaimer: 'hallucination-disclaimer'
+    disclaimer: 'hallucination-disclaimer',
+    cornerFloat: '.host-corner-help'
   }
 };
 
@@ -116,6 +121,16 @@ async function assertNativeWidths(page, host, mainWidth) {
     const column = await page.locator(s.column).evaluate(node => node.getBoundingClientRect().width);
     near(column, base.column, 0.5, `${label} transcript column`);
     near(paragraph.box, base.paragraph, 0.5, `${label} paragraph box`);
+    const composerCol = await page.locator(s.composerColumn).evaluate(node => ({
+      width: node.getBoundingClientRect().width,
+      hasLiteralToken: [...node.classList].some(token => token.includes('--thread-content-max-width')),
+      inheritedVar: getComputedStyle(node).getPropertyValue('--thread-content-max-width').trim()
+    }));
+    assert.equal(composerCol.hasLiteralToken, false, `${label}: composer column has no literal --thread-content-max-width class token`);
+    assert.equal(composerCol.inheritedVar, base.threadVariable, `${label}: composer column inherits ${base.threadVariable}`);
+    near(composerCol.width, base.column, 0.5, `${label} composer column`);
+    const composerWidth = await page.locator(s.composer).evaluate(node => node.getBoundingClientRect().width);
+    near(composerWidth, base.paragraph, 0.5, `${label} composer`);
   } else {
     near(paragraph.box, base.block, 0.5, `${label} paragraph box`);
     const blocks = await page.locator(`${s.assistant} > *`).evaluateAll(nodes => nodes.map(node => ({ tag: node.localName, width: node.getBoundingClientRect().width })));
@@ -166,11 +181,59 @@ async function assertNativeBelowComposer(page, host) {
     const { r, g, b, a } = below.pixel;
     assert.ok(a === 255 && Math.max(r, g, b) <= 32, `gemini: native paint below the composer is opaque near-black, got rgba(${r},${g},${b},${a})`);
   } else {
-    const page_bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-    const [r, g, b] = page_bg.match(/\d+/g).map(Number);
-    const pixel = below.pixel;
-    assert.ok(Math.abs(pixel.r - r) <= 2 && Math.abs(pixel.g - g) <= 2 && Math.abs(pixel.b - b) <= 2, `chatgpt: native composer wrappers are transparent (page ${page_bg}, sampled rgb(${pixel.r},${pixel.g},${pixel.b}))`);
+    const dock = await page.evaluate(({ bottomDock, scroller, composer, belowSpacer }) => {
+      const dockNode = document.querySelector(bottomDock);
+      const scrollerNode = document.querySelector(scroller);
+      const composerNode = document.querySelector(composer);
+      const spacerNode = document.querySelector(belowSpacer);
+      const dockStyle = getComputedStyle(dockNode);
+      const before = getComputedStyle(dockNode, '::before');
+      const dockRect = dockNode.getBoundingClientRect();
+      const scrollerRect = scrollerNode.getBoundingClientRect();
+      const composerRect = composerNode.getBoundingClientRect();
+      const spacerRect = spacerNode?.getBoundingClientRect();
+      return {
+        position: dockStyle.position,
+        backgroundColor: dockStyle.backgroundColor,
+        dockTop: dockRect.top,
+        scrollerBottom: scrollerRect.bottom,
+        beforeContent: before.content,
+        beforeImage: before.backgroundImage,
+        beforeMask: before.maskImage || 'none',
+        beforeWebkitMask: before.webkitMaskImage || 'none',
+        bottomGap: window.innerHeight - composerRect.bottom,
+        spacerHeight: spacerRect ? spacerRect.height : 0
+      };
+    }, { bottomDock: s.bottomDock, scroller: s.scroller, composer: s.composer, belowSpacer: s.belowSpacer });
+    assert.equal(dock.position, 'relative', 'chatgpt: bottom dock sits in normal flex flow');
+    assert.ok(dock.dockTop >= dock.scrollerBottom - 1, `chatgpt: bottom dock (${dock.dockTop}) follows scroller (${dock.scrollerBottom})`);
+    assert.ok(dock.backgroundColor && !/rgba\(0, 0, 0, 0\)|transparent/.test(dock.backgroundColor), `chatgpt: bottom dock paints an opaque backdrop (${dock.backgroundColor})`);
+    assert.ok(dock.beforeContent && dock.beforeContent !== 'none', 'chatgpt: bottom dock paints a ::before fade');
+    assert.match(dock.beforeImage, /linear-gradient/, 'chatgpt: bottom dock ::before paints a gradient');
+    assert.ok(/linear-gradient/.test(dock.beforeMask) || /linear-gradient/.test(dock.beforeWebkitMask), 'chatgpt: bottom dock ::before carries a fade mask');
+    assert.ok(dock.bottomGap >= 58, `chatgpt: native bottom gap below ComposerLayoutRoot is >= 58px, got ${dock.bottomGap}`);
+    assert.ok(dock.spacerHeight >= 20, `chatgpt: native spacer below composer form is visible (${dock.spacerHeight}px)`);
+    const { r, g, b, a } = below.pixel;
+    const [er, eg, eb] = dock.backgroundColor.match(/\d+/g).map(Number);
+    assert.ok(a === 255 && Math.abs(r - er) <= 2 && Math.abs(g - eg) <= 2 && Math.abs(b - eb) <= 2, `chatgpt: below-composer pixel matches opaque dock surface (${dock.backgroundColor}, got rgba(${r},${g},${b},${a}))`);
   }
+  const corner = await page.locator(s.cornerFloat).evaluate(node => {
+    const style = getComputedStyle(node);
+    const r = node.getBoundingClientRect();
+    return {
+      position: style.position,
+      display: style.display,
+      visibility: style.visibility,
+      opacity: parseFloat(style.opacity),
+      width: r.width,
+      height: r.height,
+      rightGap: window.innerWidth - r.right,
+      bottomGap: window.innerHeight - r.bottom
+    };
+  });
+  assert.equal(corner.position, 'fixed', `${host}: corner float button uses fixed positioning`);
+  assert.ok(corner.display !== 'none' && corner.visibility === 'visible' && corner.opacity > 0 && corner.width > 0 && corner.height > 0, `${host}: corner float button is visible`);
+  assert.ok(corner.rightGap >= 0 && corner.rightGap <= 64 && corner.bottomGap >= 0 && corner.bottomGap <= 64, `${host}: corner float button sits in bottom-right corner`);
 }
 
 async function assertNativeHeadings(page, host) {
@@ -206,6 +269,7 @@ async function assertProbePrivacy(page, host, probeSource) {
     return { texts: [...texts], ids: [...ids] };
   });
   assert.ok(secrets.texts.some(text => text.includes(canary)), 'canary draft was typed into the native editor');
+  assert.ok(secrets.texts.includes('Help and shortcuts'), `${host}: corner float aria-label is included in privacy checks`);
   assert.ok(secrets.ids.length >= 3, `${host}: fixture carries session/message ids to redact`);
   const result = await page.evaluate(source => (0, eval)(source), probeSource);
   const json = JSON.stringify(result);
@@ -223,13 +287,39 @@ async function assertProbePrivacy(page, host, probeSource) {
     assert.ok(result.targets.composerGrids.samples.some(sample => sample.style.gridTemplateColumns.startsWith('36px ')), 'chatgpt: probe sees the 36px composer grid');
     assert.equal(first('composerLayout').data['data-composer-layout'], 'single-line');
     assert.equal(result.targets.legacyTurns.count, 0, 'chatgpt: no legacy turn markers in the live fixture');
+    assert.equal(result.targets.composerAncestors.samples.length, 6, 'chatgpt: composerAncestors captures full depth 6');
+    const dockSample = result.targets.composerAncestors.samples.find(sample => sample.classes.includes('content-fade_b9xk'));
+    assert.ok(dockSample, 'chatgpt: composerAncestors captures #thread-bottom-container');
+    assert.equal(dockSample.style.position, 'relative');
+    assert.ok(!/rgba\(0, 0, 0, 0\)|transparent/.test(dockSample.style.backgroundColor), 'chatgpt: bottom dock reports opaque background');
+    assert.equal(dockSample.pseudos?.before?.hasContent, true, 'chatgpt: bottom dock ::before pseudo is captured');
+    assert.match(dockSample.pseudos.before.backgroundImage, /linear-gradient/);
+    assert.ok(/linear-gradient/.test(dockSample.pseudos.before.maskImage || '') || /linear-gradient/.test(dockSample.pseudos.before.webkitMaskImage || ''), 'chatgpt: bottom dock ::before mask is captured');
+    const colSample = result.targets.composerAncestors.samples.find(sample => sample.classes.includes('composer-column'));
+    assert.ok(colSample, 'chatgpt: composerAncestors captures .composer-column');
+    assert.equal(colSample.classes.some(token => token.includes('--thread-content-max-width')), false);
+    assert.equal(colSample.style['--thread-content-max-width'], '48rem');
+    const mainSample = result.targets.composerAncestors.samples.find(sample => sample.tag === 'main');
+    assert.equal(mainSample?.style['--thread-content-max-width'], '48rem', 'chatgpt: main ancestor defines --thread-content-max-width');
+    assert.equal(result.targets.composerSiblings.count, 2, 'chatgpt: composerSiblings captures spacer and disclaimer');
+    const [spacer, disclaimer] = result.targets.composerSiblings.samples;
+    assert.ok(spacer.classes.includes('composer-below-spacer') && spacer.childCount === 0 && spacer.hasInteractive === false && spacer.rect.height >= 20, 'chatgpt: empty below-composer spacer captured');
+    assert.ok(disclaimer.classes.includes('disclaimer_v7rk') && disclaimer.hasInteractive === false && disclaimer.style.minHeight === '44px' && disclaimer.rect.height >= 44, 'chatgpt: disclaimer sibling captured');
+    assert.equal(result.targets.cornerFloats.count, 1, 'chatgpt: cornerFloats captures the host corner help button');
+    assert.ok(result.targets.cornerFloats.samples[0].classes.includes('host-corner-help') && result.targets.cornerFloats.samples[0].style.position === 'fixed' && result.targets.cornerFloats.samples[0].hasAriaLabel === true);
   } else {
     assert.equal(first('markdownBlocks').style.maxWidth, '708px');
     assert.equal(normalize(first('textInputField').style.gridTemplateAreas), NATIVE_BASELINES.gemini.gridAreas);
     assert.equal(first('inputContainer').style.position, 'absolute');
+    assert.equal(first('inputContainer').style.minHeight, '133px');
     const weights = Object.fromEntries(result.targets.headings.samples.map(sample => [sample.tag, Number(sample.style.fontWeight)]));
     assert.equal(weights.h2, 380);
     assert.equal(weights.h3, 470);
+    assert.equal(result.targets.inputSiblings.count, 1, 'gemini: inputSiblings captures disclaimer');
+    assert.equal(result.targets.inputSiblings.samples[0].tag, 'hallucination-disclaimer');
+    assert.equal(result.targets.inputSiblings.samples[0].hasInteractive, false);
+    assert.equal(result.targets.cornerFloats.count, 1, 'gemini: cornerFloats captures the host corner help button');
+    assert.ok(result.targets.cornerFloats.samples[0].classes.includes('host-corner-help') && result.targets.cornerFloats.samples[0].style.position === 'fixed' && result.targets.cornerFloats.samples[0].hasAriaLabel === true);
   }
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
   await page.keyboard.press('Backspace');

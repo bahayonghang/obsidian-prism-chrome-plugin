@@ -195,13 +195,18 @@ function matchCompound(node, compound) {
       if (!m || !node.classList.contains(m[1])) return false;
       rest = rest.slice(m[0].length);
     } else if (rest.startsWith('[')) {
-      const m = rest.match(/^\[([a-zA-Z0-9_:-]+)(?:(\^=|\*=|\$=|=)"([^"]*)")?\]/);
+      const m = rest.match(/^\[([a-zA-Z0-9_:-]+)(?:(\^=|\*=|\$=|=)"([^"]*)")?(?:\s+([iIsS]))?\]/);
       if (!m) return false;
-      const val = node.getAttribute(m[1]);
-      if (m[2] === '=' && val !== m[3]) return false;
-      if (m[2] === '^=' && (!val || !val.startsWith(m[3]))) return false;
-      if (m[2] === '$=' && (!val || !val.endsWith(m[3]))) return false;
-      if (m[2] === '*=' && (!val || !val.includes(m[3]))) return false;
+      let val = node.getAttribute(m[1]);
+      let target = m[3];
+      if (m[4] && m[4].toLowerCase() === 'i') {
+        if (val !== null) val = val.toLowerCase();
+        if (target !== undefined) target = target.toLowerCase();
+      }
+      if (m[2] === '=' && val !== target) return false;
+      if (m[2] === '^=' && (!val || !val.startsWith(target))) return false;
+      if (m[2] === '$=' && (!val || !val.endsWith(target))) return false;
+      if (m[2] === '*=' && (!val || !val.includes(target))) return false;
       if (!m[2] && val === null) return false;
       rest = rest.slice(m[0].length);
     } else {
@@ -211,9 +216,31 @@ function matchCompound(node, compound) {
   return true;
 }
 
+function splitCombinators(sel) {
+  const tokens = [];
+  let current = '', depth = 0, quote = '';
+  for (const ch of String(sel || '').trim()) {
+    if (quote) {
+      current += ch;
+      if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; current += ch; continue; }
+    if (ch === '(' || ch === '[') depth++;
+    else if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1);
+    if (/\s/.test(ch) && depth === 0) {
+      if (current) { tokens.push(current); current = ''; }
+      continue;
+    }
+    current += ch;
+  }
+  if (current) tokens.push(current);
+  return tokens;
+}
+
 function matchesAny(node, selectorList) {
   for (const sel of splitSelectors(selectorList)) {
-    const tokens = sel.trim().split(/\s+/);
+    const tokens = splitCombinators(sel);
     if (tokens.length === 1) {
       if (matchCompound(node, tokens[0])) return true;
     } else if (tokens.length === 2 && tokens[1] && matchCompound(node, tokens[1])) {
@@ -646,4 +673,487 @@ test('ChatGPT adapter sorts mixed turns in DOM order, recognizes zh .sr-only fal
   assert.deepEqual([...adapter.assistantTurns()], [t2, t3]);
   assert.deepEqual([...adapter.threadTailSpacers()], [tailSpacer]);
   assert.equal(adapter.composerAddTrigger(composer), iconAddBtn);
+});
+
+test('v0.4.0 #26: ChatGPT adapter resolves composerGrid.trailing, modelCapsuleSlot, composerPrimaryAction, and composerAttachments across named and positional grids', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const composer = el('div', { 'data-composer-layout': 'single-line' });
+  const grid = el('div', { class: 'composerGrid_h2vs' }, { style: { display: 'grid', visibility: 'visible', opacity: '1', contentVisibility: 'visible' } });
+  const header = el('div', { class: 'composer-header' }, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridRowStart: 'header', gridColumnStart: 'header' } });
+  const tile = el('div', { class: 'file-tile_p4wt' }, { textContent: 'notes.pdf', rect: { left: 20, right: 160, top: 10, bottom: 44, width: 140, height: 34 } });
+  const removeBtn = el('button', { type: 'button', 'aria-label': 'Remove file' }, { textContent: '×' });
+  tile.append(removeBtn);
+  header.append(tile);
+
+  const leading = el('div', { class: 'composer-leading' }, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridRowStart: 'leading', gridColumnStart: 'leading' } });
+  const addBtn = el('button', { type: 'button', 'aria-label': 'Add files and more' }, { textContent: '+' });
+  leading.append(addBtn);
+
+  const primary = el('div', { class: 'composer-primary' }, { style: { display: 'block', visibility: 'visible', opacity: '1', gridRowStart: 'primary', gridColumnStart: 'primary' } });
+  const editor = el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' });
+  primary.append(editor);
+
+  const trailing = el('div', { class: 'composer-trailing' }, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridRowStart: 'trailing', gridColumnStart: 'trailing' } });
+  const modelBtn = el('button', { type: 'button', 'aria-label': 'Select ChatGPT model', 'data-selected-reasoning-effort': 'high' }, { textContent: 'High' });
+  const dictateBtn = el('button', { type: 'button', 'aria-label': 'Dictate' });
+  const voiceBtn = el('button', { type: 'button', 'aria-label': 'Start Voice' });
+  trailing.append(modelBtn, dictateBtn, voiceBtn);
+
+  grid.append(header, leading, primary, trailing);
+  composer.append(grid);
+  const turnAttachment = el('div', { class: 'file-tile_p4wt' }, { textContent: 'turn-only.pdf', rect: { left: 20, right: 160, top: 10, bottom: 44, width: 140, height: 34 } });
+  main.append(turnAttachment, composer);
+  body.append(main);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const resolvedGrid = adapter.composerGrid(composer);
+  assert.equal(resolvedGrid.element, grid);
+  assert.equal(resolvedGrid.slots, null);
+  assert.equal(resolvedGrid.trailing, trailing);
+  assert.equal(adapter.modelCapsuleSlot(resolvedGrid.trailing, modelBtn), modelBtn);
+  assert.deepEqual([...adapter.composerAttachments(composer)], [tile]);
+  assert.equal(adapter.composerPrimaryAction(composer), voiceBtn);
+
+  // Exclude dictate (English & Chinese) and prefer send button over voice button when both exist.
+  const sendBtn = el('button', { type: 'button', 'data-testid': 'send-button', 'aria-label': 'Send prompt' });
+  trailing.append(sendBtn);
+  assert.equal(adapter.composerPrimaryAction(composer), sendBtn);
+
+  sendBtn.style.display = 'none';
+  voiceBtn.style.display = 'none';
+  const zhDictate = el('button', { type: 'button', 'aria-label': '听写' });
+  trailing.append(zhDictate);
+  assert.equal(adapter.composerPrimaryAction(composer), null, 'never falls back to dictate, model, add, or attachment remove buttons');
+
+  // Positional grid (unnamed children) returns trailing === slots.trailing.
+  for (const child of [header, leading, primary, trailing]) {
+    child.style.gridRowStart = 'auto';
+    child.style.gridColumnStart = 'auto';
+  }
+  const positional = adapter.composerGrid(composer);
+  assert.equal(positional.element, grid);
+  assert.equal(positional.slots.trailing, trailing);
+  assert.equal(positional.trailing, trailing);
+
+  // Outside modelTrigger returns null slot.
+  const externalModel = el('button', { type: 'button', 'aria-label': 'Select ChatGPT model' });
+  main.append(externalModel);
+  assert.equal(adapter.modelCapsuleSlot(trailing, externalModel), null);
+});
+
+test('v0.4.0 #26: Gemini adapter resolves bard-mode-switcher capsule slot, trailing microphone fallback, and uploader-file-preview attachments', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('gemini');
+  const chatWindow = el('chat-window');
+  const inputArea = el('input-area-v2');
+  const grid = el('div', { class: 'text-input-field' }, { style: { display: 'grid', visibility: 'visible', opacity: '1', contentVisibility: 'visible' } });
+
+  const fileRow = el('div', { class: 'file-preview-container' }, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridRowStart: 'file-preview', gridColumnStart: 'file-preview' } });
+  const preview = el('uploader-file-preview', { class: 'file-preview-chip' }, { textContent: 'brief.pdf', rect: { left: 20, right: 160, top: 10, bottom: 44, width: 140, height: 34 } });
+  preview.append(el('button', { type: 'button', 'aria-label': 'Remove file' }, { textContent: '×' }));
+  fileRow.append(preview);
+
+  const leading = el('div', { class: 'leading-actions-wrapper' }, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridRowStart: 'leading-actions', gridColumnStart: 'leading-actions' } });
+  const addBtn = el('button', { type: 'button', 'data-test-id': 'upload-file-button', 'aria-label': 'Open upload file menu' });
+  leading.append(addBtn);
+
+  const textWrap = el('div', { class: 'text-input-field_textarea-wrapper' }, { style: { display: 'block', visibility: 'visible', opacity: '1', gridRowStart: 'text-input', gridColumnStart: 'text-input' } });
+  const editor = el('div', { class: 'ql-editor', contenteditable: 'true', role: 'textbox' });
+  textWrap.append(editor);
+
+  const trailing = el('div', { class: 'trailing-actions-wrapper' }, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridRowStart: 'trailing-actions', gridColumnStart: 'trailing-actions' } });
+  const switcher = el('bard-mode-switcher');
+  const modelBtn = el('button', { type: 'button', 'aria-label': 'Open mode picker, currently Neon High' }, { textContent: 'Neon High' });
+  switcher.append(modelBtn);
+  const chip = el('button', { type: 'button', class: 'toolbox-drawer-item-button' }, { textContent: 'Deep Research' });
+  // Unlabeled / localized fallback button inside trailing still resolves as primary action when not model/chip/dictate.
+  const idleMicFallback = el('button', { type: 'button', 'aria-label': 'Use audio input' });
+  trailing.append(switcher, chip, idleMicFallback);
+
+  grid.append(fileRow, leading, textWrap, trailing);
+  inputArea.append(grid);
+  chatWindow.append(inputArea);
+  body.append(chatWindow);
+
+  const adapter = A.forHost('gemini', doc);
+  const resolvedGrid = adapter.composerGrid(inputArea);
+  assert.equal(resolvedGrid.element, grid);
+  assert.equal(resolvedGrid.slots, null);
+  assert.equal(resolvedGrid.trailing, trailing);
+  assert.equal(adapter.modelCapsuleSlot(resolvedGrid.trailing, modelBtn), switcher);
+  assert.deepEqual([...adapter.composerAttachments(inputArea)], [preview]);
+  assert.equal(adapter.composerPrimaryAction(inputArea), idleMicFallback);
+
+  const sendBtn = el('button', { type: 'button', 'data-test-id': 'send-button', 'aria-label': 'Send message' });
+  trailing.append(sendBtn);
+  assert.equal(adapter.composerPrimaryAction(inputArea), sendBtn);
+  assert.equal(adapter.composerCardSurface(grid), inputArea, 'Gemini composerCardSurface resolves enclosing input-area-v2');
+});
+
+test('primaryAction tier priority: Send beats Voice and Microphone even when Send precedes them in DOM order', () => {
+  const A = adapters();
+
+  // ChatGPT: [sendBtn, voiceBtn, micBtn] in DOM order -> Send must win over Voice & Microphone.
+  {
+    const { doc, body, el } = makeDoc('chatgpt');
+    const composer = el('div', { 'data-composer-layout': 'single-line' });
+    const grid = el('div', {}, { style: { display: 'grid', visibility: 'visible', opacity: '1' } });
+    const leading = el('div', {}, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridColumnStart: 'leading' } });
+    const primary = el('div', {}, { style: { display: 'block', visibility: 'visible', opacity: '1', gridColumnStart: 'primary' } });
+    primary.append(el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' }));
+    const trailing = el('div', {}, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridColumnStart: 'trailing' } });
+    const sendBtn = el('button', { type: 'button', 'data-testid': 'send-button', 'aria-label': 'Send prompt' });
+    const voiceBtn = el('button', { type: 'button', 'data-testid': 'composer-speech-button', 'aria-label': 'Start Voice' });
+    const micBtn = el('button', { type: 'button', 'aria-label': 'Microphone' });
+    trailing.append(sendBtn, voiceBtn, micBtn);
+    grid.append(leading, primary, trailing);
+    composer.append(grid);
+    body.append(composer);
+
+    const adapter = A.forHost('chatgpt', doc);
+    assert.equal(adapter.composerCardSurface(composer), composer);
+    assert.equal(adapter.composerPrimaryAction(composer), sendBtn, 'ChatGPT Tier 1 Send beats later Tier 2 Voice and Tier 3 Microphone');
+    sendBtn.style.display = 'none';
+    assert.equal(adapter.composerPrimaryAction(composer), voiceBtn, 'ChatGPT Tier 2 Voice beats later Tier 3 Microphone');
+    voiceBtn.style.display = 'none';
+    assert.equal(adapter.composerPrimaryAction(composer), micBtn, 'ChatGPT falls back to Tier 3 Microphone when Send/Voice hidden');
+  }
+
+  // Gemini: [sendBtn, micBtn] in DOM order -> Send must win over Microphone.
+  {
+    const { doc, body, el } = makeDoc('gemini');
+    const inputArea = el('input-area-v2');
+    const grid = el('div', { class: 'text-input-field' }, { style: { display: 'grid', visibility: 'visible', opacity: '1' } });
+    const leading = el('div', {}, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridColumnStart: 'leading-actions' } });
+    const textWrap = el('div', {}, { style: { display: 'block', visibility: 'visible', opacity: '1', gridColumnStart: 'text-input' } });
+    textWrap.append(el('div', { class: 'ql-editor', contenteditable: 'true', role: 'textbox' }));
+    const trailing = el('div', {}, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridColumnStart: 'trailing-actions' } });
+    const sendBtn = el('button', { type: 'button', 'data-test-id': 'send-button', 'aria-label': 'Send message' });
+    const micBtn = el('button', { type: 'button', 'aria-label': 'Microphone' });
+    trailing.append(sendBtn, micBtn);
+    grid.append(leading, textWrap, trailing);
+    inputArea.append(grid);
+    body.append(inputArea);
+
+    const adapter = A.forHost('gemini', doc);
+    assert.equal(adapter.composerCardSurface(grid), inputArea);
+    assert.equal(adapter.composerPrimaryAction(inputArea), sendBtn, 'Gemini Tier 1 Send beats later Tier 3 Microphone');
+    sendBtn.style.display = 'none';
+    assert.equal(adapter.composerPrimaryAction(inputArea), micBtn, 'Gemini falls back to Tier 3 Microphone when Send hidden');
+  }
+
+  assert.deepEqual(JSON.parse(JSON.stringify(A.dockEdgeMargin(1280))), { right: 20, bottom: 18 });
+  assert.deepEqual(JSON.parse(JSON.stringify(A.dockEdgeMargin(700))), { right: 10, bottom: 10 });
+});
+
+test('ChatGPT live dock detection covers #thread-bottom-container, .content-fade, transcriptContent and .composer-column', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const parent = el('div', { class: 'composer-parent' });
+  const scroller = el('div', { 'data-prism-test-scroller': '' }, { rect: { left: 0, right: 1280, top: 52, bottom: 720, width: 1280, height: 668 }, style: { display: 'block', visibility: 'visible', opacity: '1', overflowY: 'auto' } });
+  const transcript = el('div', { class: 'flex flex-col transcriptContent_q8xz' });
+  const turn = el('div', { 'data-turn-key': 't1' });
+  turn.append(el('div', { 'data-content-search-unit-key': 'c:1:assistant', 'data-markdown-text-style': 'assistant-message' }, { textContent: 'Hello' }));
+  transcript.append(turn);
+  scroller.append(transcript);
+
+  const dockOuter = el('div', { id: 'thread-bottom-container', class: 'content-fade_b9xk' }, { rect: { left: 0, right: 1280, top: 720, bottom: 900, width: 1280, height: 180 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'relative' } });
+  const fadeSibling = el('div', { class: 'content-fade' }, { rect: { left: 0, right: 1280, top: 696, bottom: 720, width: 1280, height: 24 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'sticky', pointerEvents: 'auto' } });
+  const nonEmptyFade = el('div', { class: 'content-fade' }, { textContent: 'Keep me out', rect: { left: 0, right: 1280, top: 700, bottom: 720, width: 1280, height: 20 } });
+  const dockInner = el('div', { id: 'thread-bottom' }, { rect: { left: 0, right: 1280, top: 720, bottom: 900, width: 1280, height: 180 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'static' } });
+  const col = el('div', { class: 'composer-column' }, { rect: { left: 236, right: 1044, top: 724, bottom: 894, width: 808, height: 170 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'static' } });
+  const form = el('form', { 'data-chatgpt-composer': '' }, { rect: { left: 256, right: 1024, top: 724, bottom: 834, width: 768, height: 110 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'static' } });
+  const composer = el('div', { class: 'ComposerLayoutRoot_m3kp', 'data-composer-layout': 'single-line' }, { rect: { left: 256, right: 1024, top: 724, bottom: 834, width: 768, height: 110 } });
+  const editor = el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' });
+  const addBtn = el('button', { type: 'button', 'aria-label': 'Add files and more' });
+  composer.append(editor, addBtn);
+  form.append(composer);
+  col.append(form);
+  dockInner.append(col);
+  dockOuter.append(fadeSibling, nonEmptyFade, dockInner);
+  parent.append(scroller, dockOuter);
+  main.append(parent);
+  body.append(main);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const backdrops = adapter.composerBackdropSurfaces(composer);
+  assert.equal(backdrops.includes(dockOuter), true, 'collects #thread-bottom-container');
+  assert.equal(backdrops.includes(dockInner), true, 'collects #thread-bottom');
+  assert.equal(backdrops.includes(fadeSibling), true, 'collects empty non-interactive .content-fade sibling in dock subtree');
+  assert.equal(backdrops.includes(nonEmptyFade), false, 'never collects text-bearing .content-fade sibling');
+  assert.equal(adapter.composerScrimSurface(composer), dockOuter);
+  assert.deepEqual([...adapter.threadColumns()], [transcript]);
+  assert.equal(adapter.composerColumns(composer).includes(col), true);
+
+  // Also test generic unnamed in-flow dock wrapper under .composer-parent without matching class/id.
+  dockOuter.setAttribute('id', 'unnamed-dock');
+  dockOuter.setAttribute('class', 'plain-box');
+  assert.equal(adapter.composerBackdropSurfaces(composer).includes(dockOuter), true, 'nearBottomInFlowDock collects unnamed in-flow dock under .composer-parent');
+  assert.equal(adapter.composerScrimSurface(composer), dockOuter);
+});
+
+test('isComposerDockOverlaid distinguishes in-flow flex siblings from overlaid and sticky-in-scroller docks', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const view = doc.defaultView;
+  assert.equal(A.isComposerDockOverlaid(null, null, view), false);
+
+  const scroller = el('div', {}, { rect: { left: 0, right: 1280, top: 52, bottom: 720, width: 1280, height: 668 } });
+  const inFlowDock = el('div', {}, { rect: { left: 0, right: 1280, top: 720, bottom: 900, width: 1280, height: 180 }, style: { position: 'relative' } });
+  const stickySiblingDock = el('div', {}, { rect: { left: 0, right: 1280, top: 720, bottom: 900, width: 1280, height: 180 }, style: { position: 'sticky' } });
+  const overlaidSiblingDock = el('div', {}, { rect: { left: 0, right: 1280, top: 760, bottom: 900, width: 1280, height: 140 }, style: { position: 'absolute' } });
+  body.append(scroller, inFlowDock, stickySiblingDock, overlaidSiblingDock);
+
+  // Headless DOM without getComputedStyle falls back to true for unit test compatibility.
+  assert.equal(A.isComposerDockOverlaid(inFlowDock, scroller, {}), true);
+  // In-flow sibling docks (even position: sticky when not overlapping scroller) are not overlaid.
+  assert.equal(A.isComposerDockOverlaid(inFlowDock, scroller, view), false);
+  assert.equal(A.isComposerDockOverlaid(stickySiblingDock, scroller, view), false);
+  // Overlaid sibling dock overlaps scroller vertically.
+  const overlayScroller = el('div', {}, { rect: { left: 0, right: 1280, top: 52, bottom: 900, width: 1280, height: 848 } });
+  body.append(overlayScroller);
+  assert.equal(A.isComposerDockOverlaid(overlaidSiblingDock, overlayScroller, view), true);
+  // Non-overlapping sibling (even with position: absolute) is not overlaid.
+  assert.equal(A.isComposerDockOverlaid(overlaidSiblingDock, scroller, view), false);
+
+  // Dock inside scroller: sticky/fixed/absolute overlays scrolled content, relative does not.
+  const stickyChild = el('div', {}, { style: { position: 'sticky' } });
+  const relChild = el('div', {}, { style: { position: 'relative' } });
+  scroller.append(stickyChild, relChild);
+  assert.equal(A.isComposerDockOverlaid(stickyChild, scroller, view), true);
+  assert.equal(A.isComposerDockOverlaid(relChild, scroller, view), false);
+
+  // Dock containing scroller is never overlaid.
+  assert.equal(A.isComposerDockOverlaid(body, scroller, view), false);
+
+  // Document-level or missing scroller checks sticky/fixed/absolute positioning.
+  assert.equal(A.isComposerDockOverlaid(overlaidSiblingDock, doc.documentElement, view), true);
+  assert.equal(A.isComposerDockOverlaid(inFlowDock, doc.documentElement, view), false);
+  assert.equal(A.isComposerDockOverlaid(overlaidSiblingDock, null, view), true);
+  assert.equal(A.isComposerDockOverlaid(inFlowDock, null, view), false);
+});
+
+test('composerBelowSiblings separates empty spacers from visible disclaimers below the form inside dock', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const dock = el('div', { id: 'thread-bottom-container' });
+  const col = el('div', { class: 'composer-column' });
+  const preAttachment = el('div', { class: 'pre-form-attachment' }, { textContent: 'sample.txt', rect: { left: 260, right: 400, top: 700, bottom: 720, width: 140, height: 20 } });
+  const form = el('form', { 'data-chatgpt-composer': '' });
+  const composer = el('div', { 'data-composer-layout': 'single-line' });
+  form.append(composer);
+
+  const emptySpacer = el('div', { class: 'composer-below-spacer' }, { rect: { left: 260, right: 1020, top: 834, bottom: 858, width: 760, height: 24 } });
+  const nestedEmpty = el('div', { class: 'empty-wrap' });
+  nestedEmpty.append(el('div', {}));
+  const disclaimer = el('div', { class: 'disclaimer_v7rk' }, { textContent: 'Offline disclaimer. ', rect: { left: 260, right: 1020, top: 858, bottom: 900, width: 760, height: 42 } });
+  disclaimer.append(el('a', { href: '#prefs' }, { textContent: 'Cookie Preferences' }));
+  const hiddenDisclaimer = el('div', { class: 'disclaimer_hidden', hidden: '' }, { textContent: 'Hidden notice', rect: { left: 260, right: 1020, top: 858, bottom: 890, width: 760, height: 32 } });
+  const inputSibling = el('div', { class: 'disclaimer_input' }, { textContent: 'Input row', rect: { left: 260, right: 1020, top: 858, bottom: 890, width: 760, height: 32 } });
+  inputSibling.append(el('input', { type: 'text' }));
+  const tallSibling = el('div', {}, { textContent: 'Tall non-disclaimer panel', rect: { left: 260, right: 1020, top: 858, bottom: 990, width: 760, height: 132 } });
+
+  col.append(preAttachment, form, emptySpacer, nestedEmpty, disclaimer, hiddenDisclaimer, inputSibling, tallSibling);
+  const dockLevelDisclaimer = el('div', { class: 'composer-hint' }, { textContent: 'Dock level hint', rect: { left: 260, right: 1020, top: 890, bottom: 900, width: 760, height: 10 } });
+  const outsideSibling = el('div', { class: 'outside-after-dock' });
+  dock.append(col, dockLevelDisclaimer);
+  body.append(dock, outsideSibling);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const res = adapter.composerBelowSiblings(composer, dock);
+  assert.deepEqual([...res.empty], [emptySpacer, nestedEmpty]);
+  assert.deepEqual([...res.disclaimers], [disclaimer, dockLevelDisclaimer]);
+});
+
+test('v0.4.0 #27: computeDockAvoidance computes idempotent zero-overlap shifts across corner floats, composer, tall rail, and tiny viewports', () => {
+  const A = adapters();
+  const plain = value => JSON.parse(JSON.stringify(value));
+  const avoid = args => plain(A.computeDockAvoidance(args));
+  const dockSize = { width: 220, height: 38 };
+  const viewport = { width: 1707, height: 900 };
+
+  // 1. Default clear: zero offset.
+  const clear = avoid({
+    viewport,
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 400, right: 1300, top: 730, bottom: 870, width: 900, height: 140 },
+    railRect: { left: 1659, right: 1695, top: 288, bottom: 420, width: 36, height: 132 },
+    cornerObstacles: []
+  });
+  assert.deepEqual(clear, { offsetX: 0, offsetY: 0 });
+
+  // 2. Corner floating button at right:16 bottom:16 (32x32) shifts dock left when space permits.
+  const cornerBtn = { left: 1659, right: 1691, top: 852, bottom: 884, width: 32, height: 32 };
+  const cornerLeft = avoid({
+    viewport,
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 500, right: 1300, top: 730, bottom: 870, width: 800, height: 140 },
+    railRect: null,
+    cornerObstacles: [cornerBtn]
+  });
+  // baseBox.right = 1687; cornerBtn.left - 10 = 1649 -> offsetX = 38, offsetY = 0
+  assert.deepEqual(cornerLeft, { offsetX: 38, offsetY: 0 });
+
+  // 3. If left-shift collides with composer, dock moves above composer/corner safely.
+  const blockedLeft = avoid({
+    viewport,
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 1200, right: 1460, top: 840, bottom: 890, width: 260, height: 50 },
+    railRect: null,
+    cornerObstacles: [cornerBtn]
+  });
+  assert.equal(blockedLeft.offsetX, 0);
+  assert.ok(882 - blockedLeft.offsetY <= 840 - 10, 'dock sits at least 10px above composer');
+
+  // When only corner blocks left-shift (wide corner bar) while above-corner is clear of composer:
+  const cornerUp = avoid({
+    viewport,
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 400, right: 1300, top: 730, bottom: 870, width: 900, height: 140 },
+    railRect: null,
+    cornerObstacles: [{ left: 1450, right: 1691, top: 852, bottom: 884, width: 241, height: 32 }]
+  });
+  assert.deepEqual(cornerUp, { offsetX: 0, offsetY: 40 });
+
+  // 4. Wide/full composer collision at bottom-right moves dock cleanly above composerRect.
+  const aboveComposer = avoid({
+    viewport,
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 280, right: 1651, top: 740, bottom: 874, width: 1371, height: 134 },
+    railRect: { left: 1659, right: 1695, top: 288, bottom: 420, width: 36, height: 132 },
+    cornerObstacles: [cornerBtn]
+  });
+  assert.equal(aboveComposer.offsetX, 0);
+  // baseBox.bottom = 882; composer.top - 10 = 730 -> offsetY = 152
+  assert.equal(aboveComposer.offsetY, 152);
+
+  // 5. Composer + tall rail simultaneous avoidance: shifts up above composer AND left of rail.
+  const tallRail = { left: 1659, right: 1695, top: 288, bottom: 720, width: 36, height: 432 };
+  const clearBoth = avoid({
+    viewport,
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 280, right: 1651, top: 730, bottom: 874, width: 1371, height: 144 },
+    railRect: tallRail,
+    cornerObstacles: [cornerBtn]
+  });
+  // baseBox.right = 1687; rail.left - 10 = 1649 -> offsetX = 38; baseBox.bottom = 882; composer.top - 10 = 720 -> offsetY = 162
+  assert.deepEqual(clearBoth, { offsetX: 38, offsetY: 162 });
+
+  // 6. Narrow 820px viewport clamping: dock stays inside [8..812, 8..892] and clears composer + tall rail.
+  const narrow = avoid({
+    viewport: { width: 820, height: 900 },
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 280, right: 800, top: 725, bottom: 874, width: 520, height: 149 },
+    railRect: { left: 772, right: 808, top: 288, bottom: 720, width: 36, height: 432 },
+    cornerObstacles: [{ left: 772, right: 804, top: 852, bottom: 884, width: 32, height: 32 }]
+  });
+  const narrowBox = {
+    left: 820 - 20 - dockSize.width - narrow.offsetX,
+    right: 820 - 20 - narrow.offsetX,
+    top: 900 - 18 - dockSize.height - narrow.offsetY,
+    bottom: 900 - 18 - narrow.offsetY
+  };
+  assert.ok(narrowBox.left >= 8 && narrowBox.right <= 812 && narrowBox.top >= 8 && narrowBox.bottom <= 892, 'stays within 8px viewport margin');
+  assert.ok(narrowBox.bottom <= 725 - 10, 'clears composer top by 10px');
+  assert.ok(narrowBox.right <= 772 - 10, 'clears rail left by 10px');
+
+  // 7. Tiny viewport fallback minimizes weighted overlap area (composer & corner 10x, rail 4x) within [0..maxX, 0..maxY].
+  const tiny = avoid({
+    viewport: { width: 320, height: 220 },
+    dockSize: { width: 220, height: 38 },
+    baseRight: 10,
+    baseBottom: 10,
+    composerRect: { left: 20, right: 300, top: 90, bottom: 205, width: 280, height: 115 },
+    railRect: { left: 278, right: 314, top: 60, bottom: 160, width: 36, height: 100 },
+    cornerObstacles: [{ left: 272, right: 304, top: 172, bottom: 204, width: 32, height: 32 }]
+  });
+  const tinyBox = {
+    left: 320 - 10 - 220 - tiny.offsetX,
+    right: 320 - 10 - tiny.offsetX,
+    top: 220 - 10 - 38 - tiny.offsetY,
+    bottom: 220 - 10 - tiny.offsetY
+  };
+  assert.ok(tinyBox.left >= 8 && tinyBox.top >= 8 && tinyBox.bottom <= 90, 'tiny fallback picks unobstructed region above composer');
+  assert.ok(tinyBox.right <= 278, 'tiny fallback clears rail rather than overlapping composer');
+
+  // 8. Idempotency: repeated evaluations with fixed inputs always yield identical offsets.
+  const first = avoid({
+    viewport: { width: 1280, height: 900 },
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 320, right: 1150, top: 735, bottom: 874, width: 830, height: 139 },
+    railRect: { left: 1232, right: 1268, top: 288, bottom: 710, width: 36, height: 422 },
+    cornerObstacles: [{ left: 1232, right: 1264, top: 852, bottom: 884, width: 32, height: 32 }]
+  });
+  const second = avoid({
+    viewport: { width: 1280, height: 900 },
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 320, right: 1150, top: 735, bottom: 874, width: 830, height: 139 },
+    railRect: { left: 1232, right: 1268, top: 288, bottom: 710, width: 36, height: 422 },
+    cornerObstacles: [{ left: 1232, right: 1264, top: 852, bottom: 884, width: 32, height: 32 }]
+  });
+  assert.deepEqual(second, first);
+});
+
+test('v0.4.0 #27: cornerFloatingObstacles finds small corner buttons/wrappers and excludes main, composer, dialogs, nav, and owned nodes', () => {
+  const A = adapters();
+  const plain = value => JSON.parse(JSON.stringify(value));
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', {}, { rect: { left: 260, right: 1280, top: 0, bottom: 900, width: 1020, height: 900 } });
+  const backdrop = el('div', { 'data-op-composer-backdrop': 'true' }, { rect: { left: 260, right: 1280, top: 720, bottom: 900, width: 1020, height: 180 } });
+  const composer = el('div', { 'data-composer-layout': 'single-line' }, { rect: { left: 320, right: 1220, top: 740, bottom: 860, width: 900, height: 120 } });
+  const sendBtn = el('button', { type: 'button', 'aria-label': 'Send' }, { rect: { left: 1170, right: 1206, top: 810, bottom: 846, width: 36, height: 36 }, style: { display: 'inline-flex', visibility: 'visible', opacity: '1', position: 'fixed' } });
+  const backdropBtn = el('button', { type: 'button', 'aria-label': 'Scroll down' }, { rect: { left: 1180, right: 1212, top: 850, bottom: 882, width: 32, height: 32 }, style: { display: 'inline-flex', visibility: 'visible', opacity: '1', position: 'fixed' } });
+  composer.append(sendBtn);
+  backdrop.append(composer, backdropBtn);
+  main.append(backdrop);
+
+  const nav = el('nav', {}, { rect: { left: 0, right: 260, top: 0, bottom: 900, width: 260, height: 900 } });
+  const navFixed = el('a', { href: '#help' }, { rect: { left: 1100, right: 1140, top: 850, bottom: 882, width: 40, height: 32 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'fixed' } });
+  nav.append(navFixed);
+
+  const dialog = el('div', { role: 'dialog' }, { rect: { left: 950, right: 1260, top: 700, bottom: 880, width: 310, height: 180 } });
+  const dialogBtn = el('button', { type: 'button' }, { rect: { left: 1200, right: 1240, top: 840, bottom: 872, width: 40, height: 32 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'fixed' } });
+  dialog.append(dialogBtn);
+
+  const owned = el('aside', { id: 'op-bottom-dock', 'data-op-owned': '' }, { rect: { left: 1000, right: 1260, top: 844, bottom: 882, width: 260, height: 38 }, style: { display: 'flex', visibility: 'visible', opacity: '1', position: 'fixed' } });
+  owned.append(el('button', { type: 'button' }, { rect: { left: 1150, right: 1260, top: 844, bottom: 882, width: 110, height: 38 }, style: { display: 'flex', visibility: 'visible', opacity: '1', position: 'fixed' } }));
+
+  // Valid fixed corner help button + a nested button inside an absolute wrapper (deduped) + an oversized container containing main.
+  const helpBtn = el('button', { type: 'button', class: 'host-corner-help' }, { rect: { left: 1232, right: 1264, top: 852, bottom: 884, width: 32, height: 32 }, style: { display: 'inline-flex', visibility: 'visible', opacity: '1', position: 'fixed' } });
+  const feedbackWrap = el('div', { class: 'corner-wrap' }, { rect: { left: 1180, right: 1220, top: 852, bottom: 884, width: 40, height: 32 }, style: { display: 'flex', visibility: 'visible', opacity: '1', position: 'absolute' } });
+  feedbackWrap.append(
+    el('button', { type: 'button' }, { rect: { left: 1182, right: 1200, top: 854, bottom: 882, width: 18, height: 28 }, style: { display: 'inline-flex', visibility: 'visible', opacity: '1', position: 'static' } }),
+    el('a', { href: '#info' }, { rect: { left: 1202, right: 1218, top: 854, bottom: 882, width: 16, height: 28 }, style: { display: 'inline-flex', visibility: 'visible', opacity: '1', position: 'static' } })
+  );
+  // Outside bottom-right zone (top-left) should be ignored.
+  const topLeftBtn = el('button', { type: 'button' }, { rect: { left: 20, right: 52, top: 20, bottom: 52, width: 32, height: 32 }, style: { display: 'inline-flex', visibility: 'visible', opacity: '1', position: 'fixed' } });
+
+  body.append(nav, main, dialog, owned, helpBtn, feedbackWrap, topLeftBtn);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const found = plain(adapter.cornerFloatingObstacles(composer));
+  assert.equal(found.length, 2, 'detects the fixed help button and deduplicated absolute feedback wrapper');
+  assert.deepEqual(found[0], { left: 1232, right: 1264, top: 852, bottom: 884, width: 32, height: 32 });
+  assert.deepEqual(found[1], { left: 1180, right: 1220, top: 852, bottom: 884, width: 40, height: 32 });
 });

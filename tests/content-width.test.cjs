@@ -17,8 +17,14 @@ test('each site declares its native reading width and the elements that actually
   // Probe 2026-11-22: ChatGPT text column 48rem (808px transcript = 48rem + 2 × 20px); Gemini blocks 708px.
   assert.equal(chatgpt.native, 768);
   assert.equal(gemini.native, 708);
-  assert.ok(chatgpt.targets.includes('[class*="transcriptContent"]'), 'ChatGPT: the transcript container carrying --thread-content-max-width');
-  assert.ok(chatgpt.composerTargets.length >= 1, 'ChatGPT: the composer column follows the reading width');
+  assert.deepEqual(chatgpt.targets, ['main', '[class*="transcriptContent"]'], 'ChatGPT: bridges --thread-content-max-width on main and sizes transcriptContent');
+  assert.deepEqual(chatgpt.composerTargets, [
+    '#thread-bottom-container',
+    '#thread-bottom',
+    '#thread-bottom [class*="--thread-content-max-width"]',
+    '#thread-bottom :has(> form[data-chatgpt-composer])',
+    '#thread-bottom > form[data-chatgpt-composer]'
+  ], 'ChatGPT: dock containers bridge --thread-content-max-width and composer wrapper/form follow the reading width');
   for (const selector of ['.md-content > *', 'user-query', '.response-footer', 'hallucination-disclaimer']) {
     assert.ok(gemini.targets.includes(selector), `Gemini declares ${selector}`);
   }

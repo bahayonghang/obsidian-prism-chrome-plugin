@@ -16,23 +16,38 @@
       primary: ['main', '[role="main"]', '[data-testid="conversation-pane"]', '[data-testid="chat-main"]', '#main-content'],
       editors: ['#prompt-textarea', '[data-testid="prompt-textarea"]', 'textarea[name="prompt-textarea"]', 'main [contenteditable="true"][role="textbox"]', 'main textarea'],
       composers: ['[data-composer-layout]', '#composer-background', '[data-testid="chat-composer"]', '[data-testid="composer"]', '[data-composer-surface]', '.composer-parent'],
-      composerBackdrops: '#thread-bottom,[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
+      composerBackdrops: '#thread-bottom-container,#thread-bottom,[class*="content-fade"],.content-fade,[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
       codeSurfaces: '[data-testid="code-block"], .code-block-wrapper',
       codeHeaders: '.code-header, [data-testid="code-block-header"]',
       modelTriggers: '[data-testid="model-switcher-dropdown-button"], [data-testid="composer-model-switcher"], button[aria-label*="model" i], button[aria-label*="模型"]',
       modelLabels: '[data-testid="model-switcher-dropdown-button"], [data-testid="composer-model-switcher"], .model-label',
       addTriggers: '[data-testid="composer-plus-btn"], button[aria-label*="Add files" i], button[aria-label*="Attach" i], button[aria-label*="上传"], button[aria-label*="添加"]',
       composerChips: '[data-testid="composer-mode-pill"], [data-testid="composer-chip"], [data-testid="composer-tool-chip"]',
-      attachments: '[data-testid="attachment-card"], [data-testid="file-attachment"], [data-testid="uploaded-file"], [data-testid="image-attachment"], .native-footer-attachment',
-      /* v0.3.1 #21 Content Width Presets: the reading (text) width is 48rem natively (the 808px
+      attachments: '[data-testid="attachment-card"], [data-testid="file-attachment"], [data-testid="uploaded-file"], [data-testid="image-attachment"], [class*="file-tile"], .native-footer-attachment',
+      primaryActions: [
+        '[data-testid="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="发送"]',
+        '[data-testid="composer-speech-button"], button[aria-label*="Start Voice" i], button[aria-label*="Voice" i], button[aria-label*="语音"]',
+        'button[aria-label*="Microphone" i], button[aria-label*="麦克风"]'
+      ],
+      /* v0.3.1 #21 / v0.4.0 #26 Content Width Presets: the reading (text) width is 48rem natively (the 808px
        * transcript = 48rem + 2 × 20px padding, probe 2026-11-22). This declaration owns the width
        * limiters: hosts.css repeats them in its static width rules (CSS cannot read it) and
        * tests/content-width.test.cjs fails if the two drift. The runtime reads only `native`.
-       * No geometry search, no per-node marks. The first composer limiter is inferred (not probed); the
-       * second (review fix P3) sizes the probed composer form only when that limiter is absent. */
-      contentWidth: { native: 768, targets: ['[class*="transcriptContent"]'], composerTargets: ['#thread-bottom [class*="--thread-content-max-width"]', '#thread-bottom:not(:has([class*="--thread-content-max-width"])) form[data-chatgpt-composer]'] },
-      threadColumns: '.thread, [data-testid="conversation-thread"], [class*="thread-content"]',
-      composerColumns: '.composer-container, [data-testid="composer-container"]',
+       * Bridges --thread-content-max-width onto main and dock containers, sizes both transcript and
+       * #thread-bottom column wrapper, and keeps direct-form fallback if #thread-bottom > form exists. */
+      contentWidth: {
+        native: 768,
+        targets: ['main', '[class*="transcriptContent"]'],
+        composerTargets: [
+          '#thread-bottom-container',
+          '#thread-bottom',
+          '#thread-bottom [class*="--thread-content-max-width"]',
+          '#thread-bottom :has(> form[data-chatgpt-composer])',
+          '#thread-bottom > form[data-chatgpt-composer]'
+        ]
+      },
+      threadColumns: '[class*="transcriptContent"], .thread, [data-testid="conversation-thread"], [class*="thread-content"]',
+      composerColumns: '.composer-column, .composer-container, [data-testid="composer-container"]',
       // v0.3.1 #19: grid area names the two-row Composer Surface rearranges. Inferred: the probe
       // (2026-11-22) saw only the column tracks, so an unnamed grid falls back to structural slots.
       composerGridAreas: ['leading', 'primary', 'trailing'],
@@ -51,6 +66,7 @@
       primary: ['chat-window', 'main', '[role="main"]', '.chat-app'],
       editors: ['input-area-v2 .ql-editor[contenteditable="true"]', 'rich-textarea .ql-editor', 'input-area-v2 [contenteditable="true"]', 'rich-textarea [contenteditable="true"]', 'textarea[aria-label]', 'main [contenteditable="true"][role="textbox"]'],
       composers: ['input-area-v2 .text-input-field', 'input-area-v2 .input-area-container', '.input-area-container', '[data-test-id="input-area"]', 'input-area-v2', 'input-area'],
+      composerCard: 'input-area-v2',
       composerBackdrops: 'input-area-v2,input-area,.input-area-container,[data-test-id="input-area"],[data-test-id="input-area-container"],.input-area-wrapper',
       codeSurfaces: 'code-block, .code-block',
       codeHeaders: '.code-block-decoration, [data-test-id="code-block-header"]',
@@ -58,7 +74,12 @@
       modelLabels: 'bard-mode-switcher button, [data-test-id="bard-mode-menu-button"], .input-area-switch, .model-label',
       addTriggers: '[data-test-id="upload-file-button"], button[aria-label*="Add files" i], button[aria-label*="Upload" i], button[aria-label*="上传"], button[aria-label*="添加"]',
       composerChips: '.toolbox-drawer-item-button, [data-test-id="composer-chip"]',
-      attachments: '[data-test-id="file-preview-chip"], [data-test-id="attachment-card"], file-preview-chip, .native-footer-attachment',
+      attachments: '[data-test-id="file-preview-chip"], [data-test-id="attachment-card"], .file-preview-chip, uploader-file-preview, file-preview-chip, .native-footer-attachment',
+      primaryActions: [
+        '[data-test-id="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="发送"]',
+        'button[aria-label*="Start Voice" i], button[aria-label*="Voice" i], button[aria-label*="语音"]',
+        'button[aria-label*="Microphone" i], button[aria-label*="麦克风"]'
+      ],
       /* v0.3.1 #21: Gemini caps every markdown block at 708px (not the outer panel), plus the
        * User Turn, the response footer, the disclaimer and the 660px input area (probe 2026-11-22).
        * Owned here and mirrored by the hosts.css width rules (see the ChatGPT note above). */
@@ -273,23 +294,28 @@
       path.push(node);
       const rect = node.getBoundingClientRect();
       const style = view.getComputedStyle(node);
-      const smallRegion = rect.height > 0 && rect.height <= Math.max(composerRect.height + 160, viewportHeight * .5) &&
+      const smallRegion = rect.height > 0 && rect.height <= Math.max(composerRect.height + 220, viewportHeight * 0.48) &&
         rect.width >= composerRect.width - 24 && rect.right > composerRect.left && rect.left < composerRect.right &&
-        rect.bottom >= composerRect.top - 80 && rect.top <= composerRect.bottom + 80;
+        rect.bottom >= composerRect.top - 80 && rect.top <= composerRect.bottom + 140;
       const bottomDock = ['sticky','fixed','absolute'].includes(style.position) &&
         rect.bottom >= Math.min(viewportHeight - 96, composerRect.bottom - 4);
-      if (smallRegion && (node.matches(spec.composerBackdrops) || bottomDock)) boundary = path.length - 1;
+      const nearBottomInFlowDock = rect.bottom >= Math.min(viewportHeight - 120, composerRect.bottom - 4) &&
+        Boolean(node.parentElement && (node.parentElement.querySelector(MESSAGE_AREAS) || node.parentElement.matches('.composer-parent,main,[role="main"]')));
+      if (smallRegion && (node.matches(spec.composerBackdrops) || bottomDock || nearBottomInFlowDock)) boundary = path.length - 1;
     }
     if (boundary < 0) return [];
     const surfaces = path.slice(0, boundary + 1);
+    const hasInteractiveDescendant = node => Boolean(node.querySelector('a[href],button,input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex],[role="button"],[role="link"]'));
+    const isEmptyFadeBox = node =>
+      !node.contains(composer) && !composer.contains(node) && !isOwned(node) &&
+      !node.matches('[role="button"],[role="link"],[tabindex],[contenteditable],a[href],button,input,textarea,select,img,picture,svg,video,audio,canvas,iframe') &&
+      !textOf(node).trim() && !hasInteractiveDescendant(node);
     // Native fade siblings may sit above the shell. Only empty, noninteractive,
-    // full-width absolute decorations qualify; buttons and attachments do not.
+    // full-width absolute decorations or content-fade layers qualify; buttons and attachments do not.
     for (const surface of [...surfaces]) {
       const bounds = surface.getBoundingClientRect();
       for (const child of surface.children) {
-        if (child.contains(composer) || isOwned(child) || !child.matches('div,span') ||
-            child.matches('[role="button"],[role="link"],[tabindex],[contenteditable]') || child.textContent.trim() ||
-            child.querySelector('a[href],button,input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex],[role="button"],[role="link"]')) continue;
+        if (!child.matches('div,span') || !isEmptyFadeBox(child)) continue;
         const style = view.getComputedStyle(child);
         if (!['absolute','fixed'].includes(style.position) ||
             (style.pointerEvents !== 'none' && child.getAttribute('aria-hidden') !== 'true')) continue;
@@ -298,6 +324,13 @@
             rect.right > bounds.left && rect.left < bounds.right && rect.bottom >= bounds.top - 80 && rect.top <= bounds.bottom + 1) {
           surfaces.push(child);
         }
+      }
+      for (const fade of surface.querySelectorAll('[class*="content-fade"], .content-fade')) {
+        if (!isEmptyFadeBox(fade)) continue;
+        const fStyle = view.getComputedStyle(fade);
+        if (fStyle.display === 'none') continue;
+        const fRect = fade.getBoundingClientRect();
+        if (fRect.height <= bounds.height + 140) surfaces.push(fade);
       }
     }
     return [...new Set(surfaces)];
@@ -481,13 +514,13 @@
     }
     return out;
   }
-  function findVisibleAttachments(spec, messages, composer, root) {
-    if (!spec.attachments) return [];
+  function collectAttachments(selector, scopes) {
+    if (!selector) return [];
     const candidates = new Set();
-    for (const scope of [...messages, composer?.parentElement || composer, root]) {
+    for (const scope of scopes) {
       if (!scope?.querySelectorAll) continue;
-      for (const node of scope.querySelectorAll(spec.attachments)) {
-        if (isOwned(node) || !isVisible(node) || node.closest('dialog,[role="dialog"],[aria-modal="true"]')) continue;
+      for (const node of scope.querySelectorAll(selector)) {
+        if (isOwned(node) || !isVisible(node) || node.closest?.('dialog,[role="dialog"],[aria-modal="true"]')) continue;
         const rect = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
         if (rect && rect.width > 0 && rect.height > 0 && rect.width <= 36 && rect.height <= 36) continue;
         candidates.add(node);
@@ -495,6 +528,13 @@
     }
     const list = [...candidates];
     return list.filter(node => !list.some(other => other !== node && other.contains(node)));
+  }
+  function findVisibleAttachments(spec, messages, composer, root) {
+    return collectAttachments(spec.attachments, [...messages, composer?.parentElement || composer, root]);
+  }
+  function findComposerAttachments(spec, composer) {
+    if (!composer || isOwned(composer)) return [];
+    return collectAttachments(spec.attachments, [composer]);
   }
   function findComposerAddTrigger(spec, composer) {
     if (!composer || !spec.addTriggers) return null;
@@ -517,7 +557,7 @@
     }
     return chips.filter(node => !chips.some(other => other !== node && other.contains(node)));
   }
-  // v0.3.1 #19 two-row composer: the host's own grid that lays out the editor row, as { element, slots }.
+  // v0.3.1 #19 two-row composer: the host's own grid that lays out the editor row, as { element, slots, trailing }.
   // It qualifies when its direct children are placed by every expected area name (slots: null). Children
   // are read, not the container, because our override changes the container's template.
   // Review fix (P1): the ChatGPT area names are inferred; the probe only saw a "36px | input | trailing"
@@ -545,19 +585,61 @@
     const view = composer.ownerDocument?.defaultView;
     const editor = firstVisible(spec.editors, composer, node => composer.contains(node));
     if (!editor || !view?.getComputedStyle) return null;
+    const trailingArea = spec.composerGridAreas[spec.composerGridAreas.length - 1];
     for (let node = editor.parentElement; node; node = node.parentElement) {
       if (/grid/.test(view.getComputedStyle(node).display)) {
         const names = new Set();
+        let hostTrailing = null;
         for (const child of node.children) {
           if (COMPOSER_SLOT_MARKS.some(mark => child.hasAttribute(mark))) continue;
           const style = view.getComputedStyle(child);
           names.add(style.gridRowStart); names.add(style.gridColumnStart);
+          if (!hostTrailing && !isOwned(child) && (style.gridColumnStart === trailingArea || style.gridRowStart === trailingArea)) {
+            hostTrailing = child;
+          }
         }
-        if (spec.composerGridAreas.every(name => names.has(name))) return { element: node, slots: null };
+        if (spec.composerGridAreas.every(name => names.has(name))) return { element: node, slots: null, trailing: hostTrailing };
         const slots = spec.composerGridSlots ? composerGridSlots(spec, node, editor, view) : null;
-        if (slots) return { element: node, slots };
+        if (slots) return { element: node, slots, trailing: slots.trailing };
       }
       if (node === composer) break;
+    }
+    return null;
+  }
+  function findModelCapsuleSlot(trailing, modelTrigger) {
+    if (!trailing || !modelTrigger || isOwned(trailing) || isOwned(modelTrigger)) return null;
+    if (!trailing.contains(modelTrigger)) return null;
+    return [...trailing.children].find(child => !isOwned(child) && (child === modelTrigger || child.contains(modelTrigger))) || null;
+  }
+  function findComposerCard(spec, composer) {
+    if (!composer) return null;
+    return (spec?.composerCard && composer.closest?.(spec.composerCard)) || composer;
+  }
+  function findComposerPrimaryAction(spec, composer, addTrigger, modelTrigger, trailing) {
+    if (!composer || isOwned(composer)) return null;
+    const isCandidate = node => {
+      if (!node || node === composer || isOwned(node) || !isVisible(node) || !composer.contains(node)) return false;
+      if (node.closest?.('dialog,[role="dialog"],[aria-modal="true"]')) return false;
+      if (addTrigger && (node === addTrigger || node.contains(addTrigger) || addTrigger.contains?.(node))) return false;
+      if (modelTrigger && (node === modelTrigger || node.contains(modelTrigger) || modelTrigger.contains?.(node))) return false;
+      if (spec.attachments && node.closest?.(spec.attachments)) return false;
+      if (spec.composerChips && node.closest?.(spec.composerChips)) return false;
+      const aria = node.getAttribute?.('aria-label') || '';
+      if (/\bdictate\b|听写/i.test(aria)) return false;
+      return true;
+    };
+    const tiers = Array.isArray(spec.primaryActions) ? spec.primaryActions : (spec.primaryActions ? [spec.primaryActions] : []);
+    const scopes = trailing && composer.contains(trailing) && trailing !== composer ? [trailing, composer] : [composer];
+    for (const selector of tiers) {
+      if (!selector) continue;
+      for (const scope of scopes) {
+        const matched = [...scope.querySelectorAll(selector)].filter(isCandidate);
+        if (matched.length) return matched[matched.length - 1];
+      }
+    }
+    if (trailing && composer.contains(trailing)) {
+      const fallback = [...trailing.querySelectorAll('button')].filter(isCandidate);
+      if (fallback.length) return fallback[fallback.length - 1];
     }
     return null;
   }
@@ -570,6 +652,71 @@
       if (backdrops.includes(node)) ancestors.push(node);
     }
     return ancestors.length ? ancestors[ancestors.length - 1] : null;
+  }
+  function isComposerDockOverlaid(dock, scroller, view = dock?.ownerDocument?.defaultView || global) {
+    if (!dock) return false;
+    const style = view?.getComputedStyle?.(dock);
+    if (!style) return true;
+    const pos = style.position || '';
+    const doc = dock.ownerDocument || scroller?.ownerDocument || global.document;
+    if (!scroller || scroller === doc?.scrollingElement || scroller === doc?.documentElement || scroller === doc?.body) {
+      return ['sticky', 'fixed', 'absolute'].includes(pos);
+    }
+    if (typeof scroller.contains === 'function' && scroller.contains(dock)) {
+      return ['sticky', 'fixed', 'absolute'].includes(pos);
+    }
+    if (typeof dock.contains === 'function' && dock.contains(scroller)) return false;
+    if (typeof dock.getBoundingClientRect !== 'function' || typeof scroller.getBoundingClientRect !== 'function') return false;
+    const dRect = dock.getBoundingClientRect();
+    const sRect = scroller.getBoundingClientRect();
+    return dRect.height > 0 && sRect.height > 0 && dRect.top < sRect.bottom - 1 && dRect.bottom > sRect.top + 1;
+  }
+  function followingSiblings(node) {
+    if (node.nextElementSibling !== undefined) {
+      const out = [];
+      for (let sib = node.nextElementSibling; sib; sib = sib.nextElementSibling) out.push(sib);
+      return out;
+    }
+    const children = node.parentElement?.children;
+    if (!children) return [];
+    const idx = [...children].indexOf(node);
+    return idx >= 0 ? [...children].slice(idx + 1) : [];
+  }
+  const INTERACTIVE_DESCENDANT = 'a[href],button,[role="button"],input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex]';
+  const FORM_FIELD = 'input,textarea,select,[contenteditable],[contenteditable="true"]';
+  function findComposerBelowSiblings(composer, dock) {
+    const empty = [];
+    const disclaimers = [];
+    if (!composer || !dock || isOwned(composer) || isOwned(dock) || !dock.contains?.(composer)) {
+      return { empty, disclaimers };
+    }
+    const view = composer.ownerDocument?.defaultView || global;
+    const form = composer.closest?.('form');
+    const anchor = form && dock.contains(form) && form !== dock ? form : composer;
+    const seen = new Set();
+    for (let current = anchor; current && current !== dock && dock.contains(current); current = current.parentElement) {
+      for (const sib of followingSiblings(current)) {
+        if (!sib || seen.has(sib) || isOwned(sib)) continue;
+        seen.add(sib);
+        if (sib.matches?.('script,style,template') || sib.matches?.(MESSAGE_AREAS) || sib.querySelector?.(MESSAGE_AREAS)) continue;
+        if (sib.hasAttribute?.('hidden')) continue;
+        const sibStyle = view?.getComputedStyle?.(sib);
+        if (sibStyle && (sibStyle.display === 'none' || ['absolute', 'fixed'].includes(sibStyle.position))) continue;
+        const txt = textOf(sib).trim();
+        if (!txt && !sib.matches?.(INTERACTIVE_DESCENDANT) && !sib.querySelector?.(INTERACTIVE_DESCENDANT)) {
+          empty.push(sib);
+          continue;
+        }
+        if (txt.length > 0 && txt.length <= 240 && isVisible(sib) &&
+            !sib.matches?.(FORM_FIELD) && !sib.querySelector?.(FORM_FIELD)) {
+          const rect = typeof sib.getBoundingClientRect === 'function' ? sib.getBoundingClientRect() : null;
+          if (sib.matches?.('[class*="disclaimer"], .composer-hint') || (rect && rect.height > 0 && rect.height <= 96)) {
+            disclaimers.push(sib);
+          }
+        }
+      }
+    }
+    return { empty, disclaimers };
   }
   function findThreadTailSpacers(spec, primary, messages) {
     if (!primary || !spec.tailSpacers || !messages.length) return [];
@@ -616,6 +763,200 @@
     const shift = Math.min(0, Math.max(L.leftEdge - gap, gap - L.railReserve));
     return { width: round(width), shift: round(shift) || 0 };
   }
+  function normalizeBox(rect) {
+    if (!rect) return null;
+    const left = Number(rect.left);
+    const top = Number(rect.top);
+    const width = Number.isFinite(Number(rect.width)) ? Number(rect.width) : Number(rect.right) - left;
+    const height = Number.isFinite(Number(rect.height)) ? Number(rect.height) : Number(rect.bottom) - top;
+    if (!Number.isFinite(left) || !Number.isFinite(top) || !(width > 0) || !(height > 0)) return null;
+    const right = Number.isFinite(Number(rect.right)) ? Number(rect.right) : left + width;
+    const bottom = Number.isFinite(Number(rect.bottom)) ? Number(rect.bottom) : top + height;
+    return { left, top, right, bottom, width, height };
+  }
+  function boxOverlapArea(a, b, pad = 0) {
+    if (!a || !b) return 0;
+    const ox = Math.max(0, Math.min(a.right, b.right + pad) - Math.max(a.left, b.left - pad));
+    const oy = Math.max(0, Math.min(a.bottom, b.bottom + pad) - Math.max(a.top, b.top - pad));
+    return ox * oy;
+  }
+  function findCornerFloatingObstacles(root, composer, spec) {
+    const scope = root || document;
+    const doc = scope?.ownerDocument || scope;
+    const view = doc?.defaultView || global;
+    const vw = view?.innerWidth || doc?.documentElement?.clientWidth || 0;
+    const vh = view?.innerHeight || doc?.documentElement?.clientHeight || 0;
+    if (!scope?.querySelectorAll || !view?.getComputedStyle || !(vw > 0) || !(vh > 0)) return [];
+    const composerCard = findComposerCard(spec, composer);
+    const excludeZone = 'dialog,[role="dialog"],[aria-modal="true"],nav,[role="navigation"],[data-op-owned],[data-op-composer-backdrop="true"]';
+    const mainSelector = 'main,[role="main"],chat-window';
+    const raw = [...scope.querySelectorAll('button,[role="button"],a[href]')].filter(node => {
+      if (!isVisible(node)) return false;
+      if (node.closest?.(excludeZone) || node.closest?.(MESSAGE_AREAS)) return false;
+      if (composer && (composer.contains?.(node) || node.contains?.(composer))) return false;
+      if (composerCard && composerCard !== composer && (composerCard.contains?.(node) || node.contains?.(composerCard))) return false;
+      if (node.matches?.(mainSelector) || node.querySelector?.(mainSelector)) return false;
+      return true;
+    });
+    const candidates = raw.length > 240 ? [...raw.slice(0, 120), ...raw.slice(-120)] : raw;
+    const found = [];
+    for (const node of candidates) {
+      for (let cur = node, depth = 0; cur && depth <= 2; cur = cur.parentElement, depth++) {
+        if (cur.matches?.(`body,html,${mainSelector}`) || cur.matches?.(excludeZone)) break;
+        if (cur === composer || cur === composerCard) break;
+        if ((composer && cur.contains?.(composer)) || (composerCard && cur.contains?.(composerCard)) || cur.querySelector?.(mainSelector)) break;
+        const pos = view.getComputedStyle(cur).position;
+        if (!['fixed', 'absolute', 'sticky'].includes(pos)) continue;
+        const rect = normalizeBox(cur.getBoundingClientRect?.());
+        if (!rect || rect.width > 260 || rect.height > 160) continue;
+        if (rect.right >= vw - 360 && rect.bottom >= vh - 260 && rect.left >= vw * 0.45 && rect.top >= vh * 0.45) {
+          found.push({ node: cur, rect });
+          break;
+        }
+      }
+    }
+    const deduped = [];
+    for (const item of found) {
+      const idx = deduped.findIndex(other =>
+        other.node === item.node ||
+        other.node.contains?.(item.node) ||
+        item.node.contains?.(other.node) ||
+        boxOverlapArea(other.rect, item.rect, 0) > 0
+      );
+      if (idx < 0) {
+        deduped.push(item);
+      } else {
+        const existing = deduped[idx];
+        if (item.node.contains?.(existing.node) && item.node !== existing.node) {
+          deduped[idx] = item;
+        } else if (!existing.node.contains?.(item.node)) {
+          const left = Math.min(existing.rect.left, item.rect.left);
+          const top = Math.min(existing.rect.top, item.rect.top);
+          const right = Math.max(existing.rect.right, item.rect.right);
+          const bottom = Math.max(existing.rect.bottom, item.rect.bottom);
+          deduped[idx] = { node: existing.node, rect: { left, top, right, bottom, width: right - left, height: bottom - top } };
+        }
+      }
+    }
+    return deduped.map(item => item.rect);
+  }
+  function dockEdgeMargin(viewportWidth) {
+    const narrow = Number(viewportWidth) <= 700;
+    return { right: narrow ? 10 : 20, bottom: narrow ? 10 : 18 };
+  }
+  function pushAwayFromObstacles(obstacles, axis, initialOffset, boxFor, shiftFor, pad) {
+    let offset = initialOffset;
+    for (let i = 0; i < obstacles.length; i++) {
+      let advanced = false;
+      for (const obs of obstacles) {
+        const box = axis === 'x' ? boxFor(offset, 0) : boxFor(0, offset);
+        if (boxOverlapArea(box, obs, pad) > 0) {
+          const next = Math.max(offset, shiftFor(obs));
+          if (next > offset) { offset = next; advanced = true; }
+        }
+      }
+      if (!advanced) break;
+    }
+    return offset;
+  }
+  function computeDockAvoidance({ viewport, dockSize, baseRight, baseBottom, composerRect, railRect, cornerObstacles = [], gap = 10 } = {}) {
+    const vw = Number(viewport?.width) || 0;
+    const vh = Number(viewport?.height) || 0;
+    const dockW = Number(dockSize?.width) || 0;
+    const dockH = Number(dockSize?.height) || 0;
+    if (!(vw > 0) || !(vh > 0) || !(dockW > 0) || !(dockH > 0)) return { offsetX: 0, offsetY: 0 };
+    const margin = 8;
+    const defaults = dockEdgeMargin(vw);
+    const bRight = Number.isFinite(Number(baseRight)) ? Number(baseRight) : defaults.right;
+    const bBottom = Number.isFinite(Number(baseBottom)) ? Number(baseBottom) : defaults.bottom;
+    const pad = Math.max(0, Number.isFinite(Number(gap)) ? Number(gap) : 10);
+    const baseBox = { left: vw - bRight - dockW, top: vh - bBottom - dockH, right: vw - bRight, bottom: vh - bBottom, width: dockW, height: dockH };
+    const boxFor = (x, y) => ({ left: baseBox.left - x, top: baseBox.top - y, right: baseBox.right - x, bottom: baseBox.bottom - y, width: dockW, height: dockH });
+    const comp = normalizeBox(composerRect);
+    const rail = normalizeBox(railRect);
+    const corners = (Array.isArray(cornerObstacles) ? cornerObstacles : []).map(normalizeBox).filter(Boolean);
+    const shiftLeftOf = (obs, g = pad) => obs ? Math.max(0, Math.ceil(baseBox.right - (obs.left - g))) : 0;
+    const shiftAboveOf = (obs, g = pad) => obs ? Math.max(0, Math.ceil(baseBox.bottom - (obs.top - g))) : 0;
+    const neededCornerLeftX = pushAwayFromObstacles(corners, 'x', 0, boxFor, shiftLeftOf, pad);
+    const neededCornerUpY = pushAwayFromObstacles(corners, 'y', 0, boxFor, shiftAboveOf, pad);
+    const aboveComposerY = shiftAboveOf(comp);
+    const maxAboveY = pushAwayFromObstacles(corners, 'y', Math.max(aboveComposerY, neededCornerUpY), boxFor, shiftAboveOf, pad);
+    const railClearX = shiftLeftOf(rail);
+    const aboveRailY = shiftAboveOf(rail);
+    const composerLeftX = shiftLeftOf(comp);
+    const bothClearX = Math.max(railClearX, neededCornerLeftX);
+    const aboveAllY = Math.max(maxAboveY, aboveRailY);
+    const rawCandidates = [
+      [0, 0],
+      [neededCornerLeftX, 0],
+      [0, neededCornerUpY],
+      [0, aboveComposerY],
+      [railClearX, aboveComposerY],
+      [0, maxAboveY],
+      [railClearX, maxAboveY],
+      [railClearX, 0],
+      [railClearX, neededCornerUpY],
+      [bothClearX, 0],
+      [bothClearX, aboveComposerY],
+      [bothClearX, maxAboveY],
+      [neededCornerLeftX, aboveComposerY],
+      [0, Math.max(aboveComposerY, aboveRailY)],
+      [0, aboveAllY],
+      [composerLeftX, 0],
+      [composerLeftX, neededCornerUpY]
+    ];
+    const inside = box => box.left >= margin - 0.5 && box.right <= vw - margin + 0.5 && box.top >= margin - 0.5 && box.bottom <= vh - margin + 0.5;
+    const isClear = box => inside(box) && boxOverlapArea(box, comp, pad) === 0 && boxOverlapArea(box, rail, pad) === 0 && corners.every(c => boxOverlapArea(box, c, pad) === 0);
+    const seen = new Set();
+    for (const [rx, ry] of rawCandidates) {
+      const x = Math.max(0, Math.round(rx));
+      const y = Math.max(0, Math.round(ry));
+      const key = `${x},${y}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (isClear(boxFor(x, y))) return { offsetX: x, offsetY: y };
+    }
+    const minX = Math.max(0, Math.ceil(baseBox.right - (vw - margin)));
+    const maxX = Math.max(0, Math.floor(baseBox.left - margin));
+    const minY = Math.max(0, Math.ceil(baseBox.bottom - (vh - margin)));
+    const maxY = Math.max(0, Math.floor(baseBox.top - margin));
+    const clampX = x => Math.max(0, Math.min(maxX, Math.max(minX, Math.round(x))));
+    const clampY = y => Math.max(0, Math.min(maxY, Math.max(minY, Math.round(y))));
+    const cornerLeftTight = corners.reduce((m, c) => Math.max(m, shiftLeftOf(c, 0)), 0);
+    const cornerUpTight = corners.reduce((m, c) => Math.max(m, shiftAboveOf(c, 0)), 0);
+    const fallbackPool = [
+      ...rawCandidates,
+      [shiftLeftOf(rail, 0), shiftAboveOf(comp, 0)],
+      [0, shiftAboveOf(comp, 0)],
+      [cornerLeftTight, 0],
+      [0, cornerUpTight],
+      [railClearX, maxY],
+      [0, maxY],
+      [maxX, 0],
+      [maxX, maxY]
+    ];
+    const weightedOverlap = (box, p) =>
+      10 * boxOverlapArea(box, comp, p) +
+      10 * corners.reduce((sum, c) => sum + boxOverlapArea(box, c, p), 0) +
+      4 * boxOverlapArea(box, rail, p);
+    let best = { offsetX: clampX(0), offsetY: clampY(0) };
+    let bestScore = [Infinity, Infinity, Infinity];
+    const evalSeen = new Set();
+    for (const [rx, ry] of fallbackPool) {
+      const x = clampX(rx);
+      const y = clampY(ry);
+      const key = `${x},${y}`;
+      if (evalSeen.has(key)) continue;
+      evalSeen.add(key);
+      const box = boxFor(x, y);
+      const score = [weightedOverlap(box, 0), weightedOverlap(box, pad), x + y];
+      if (score[0] < bestScore[0] || (score[0] === bestScore[0] && (score[1] < bestScore[1] || (score[1] === bestScore[1] && score[2] < bestScore[2])))) {
+        bestScore = score;
+        best = { offsetX: x, offsetY: y };
+      }
+    }
+    return best;
+  }
   function forHost(host, root = document) {
     const spec = HOSTS[host];
     if (!spec) return null;
@@ -631,11 +972,27 @@
       conversationRoot: () => root.querySelector(spec.conversation) || root.body || root,
       primarySurface: () => findPrimary(spec, root),
       composerSurface: () => findComposer(spec, root),
+      composerCardSurface: (composer) => findComposerCard(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerBackdropSurfaces: (composer) => findComposerBackdrops(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerScrimSurface: (composer) => findComposerScrim(spec, composer === undefined ? findComposer(spec, root) : composer),
+      composerBelowSiblings: (composer, dock) => {
+        const comp = composer === undefined ? findComposer(spec, root) : composer;
+        const resolvedDock = dock === undefined ? findComposerScrim(spec, comp) : dock;
+        return findComposerBelowSiblings(comp, resolvedDock);
+      },
       composerGrid: (composer) => findComposerGrid(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerAddTrigger: (composer) => findComposerAddTrigger(spec, composer === undefined ? findComposer(spec, root) : composer),
       modelSelectorTrigger: () => findModelTrigger(spec, root),
+      modelCapsuleSlot: (trailing, modelTrigger) => findModelCapsuleSlot(
+        trailing === undefined ? findComposerGrid(spec, findComposer(spec, root))?.trailing : trailing,
+        modelTrigger === undefined ? findModelTrigger(spec, root) : modelTrigger
+      ),
+      composerPrimaryAction: (composer) => {
+        const comp = composer === undefined ? findComposer(spec, root) : composer;
+        const grid = findComposerGrid(spec, comp);
+        return findComposerPrimaryAction(spec, comp, findComposerAddTrigger(spec, comp), findModelTrigger(spec, root), grid?.trailing || null);
+      },
+      composerAttachments: (composer) => findComposerAttachments(spec, composer === undefined ? findComposer(spec, root) : composer),
       activeModelLabel: () => findActiveModelLabel(spec, root),
       composerChips: (composer) => {
         const comp = composer === undefined ? findComposer(spec, root) : composer;
@@ -649,6 +1006,7 @@
       composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, findPrimary(spec, root), composer === undefined ? findComposer(spec, root) : composer),
       sidebarSurfaces: () => findSidebars(spec, root),
       sidebarActiveRows: (sidebars) => findSidebarActiveRows(sidebars === undefined ? findSidebars(spec, root) : sidebars),
+      cornerFloatingObstacles: (composer) => findCornerFloatingObstacles(root, composer === undefined ? findComposer(spec, root) : composer, spec),
       codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))],
       thoughtBlocks: () => collect(spec.thoughts),
       isAssistantNode(node) {
@@ -660,6 +1018,6 @@
     });
   }
   global.ObsidianPrismAdapters = Object.freeze({
-    forHost, contentWidthTarget, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, scrollContainer
+    forHost, contentWidthTarget, dockEdgeMargin, computeDockAvoidance, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, isComposerDockOverlaid, scrollContainer
   });
 })(globalThis);

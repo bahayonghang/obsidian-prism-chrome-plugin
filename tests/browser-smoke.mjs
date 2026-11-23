@@ -19,6 +19,8 @@ import { checkHeadingTypography } from './heading-typography.mjs';
 import { checkLiveWidthPresets } from './live-width.mjs';
 // v0.3.1 #22 blur Composer Scrim
 import { checkLiveComposerScrim } from './live-scrim.mjs';
+// v0.4.0 #27 Bottom Dock singleton handover & dynamic collision avoidance
+import { checkBottomDock } from './bottom-dock.mjs';
 import { paragraphWidth } from './measure.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -226,11 +228,11 @@ async function surfaceSnapshot(page) {
       const style = getComputedStyle(node);
       const borderWidth = style.borderWidth;
       const hasBorder = borderWidth.split(' ').some(value => parseFloat(value) > 0);
-      return { background: style.backgroundColor, backgroundImage: style.backgroundImage, border: hasBorder ? style.borderColor : null, borderWidth, radius: style.borderRadius, shadow: style.boxShadow };
+      return { background: style.backgroundColor, backgroundImage: style.backgroundImage, maskImage: style.maskImage || 'none', border: hasBorder ? style.borderColor : null, borderWidth, radius: style.borderRadius, shadow: style.boxShadow };
     };
     const pseudo = (node, type) => {
       const style = getComputedStyle(node, type);
-      return { background: style.backgroundColor, backgroundImage: style.backgroundImage, content: style.content, display: style.display };
+      return { background: style.backgroundColor, backgroundImage: style.backgroundImage, maskImage: style.maskImage || 'none', content: style.content, display: style.display };
     };
     return { sidebar: read('[data-fixture-sidebar]'), composer: read('[data-fixture-composer]'), footerAttachment: read('[data-fixture-footer-attachment]'),
       backdrops: [...document.querySelectorAll('[data-fixture-backdrop]')].map(node => ({ ...read(node), before: pseudo(node, '::before'), after: pseudo(node, '::after') })) };
@@ -241,9 +243,9 @@ async function chatgptLayoutSnapshot(page) {
   return page.evaluate(() => {
     const spacer = document.querySelector('[data-testid="conversation-turn-spacer"], .thread-bottom-spacer');
     const thread = document.querySelector('.thread');
-    const scrim = document.querySelector('#thread-bottom');
-    const composerCol = scrim?.querySelector('.composer-container');
-    const hint = scrim?.querySelector('.composer-hint');
+    const dock = document.querySelector('#thread-bottom');
+    const composerCol = dock?.querySelector('.composer-container');
+    const hint = dock?.querySelector('.composer-hint');
     const composer = document.querySelector('[data-fixture-composer]');
     return {
       spacerHeight: spacer ? Math.round(spacer.getBoundingClientRect().height * 10) / 10 : null,
@@ -261,37 +263,29 @@ async function chatgptLayoutSnapshot(page) {
 async function assertComposerBackdrops(page, nativeSurfaces) {
   await page.waitForFunction(() =>
     [...document.querySelectorAll('[data-fixture-backdrop]')].every(node => node.getAttribute('data-op-composer-backdrop') === 'true') &&
-    Boolean(document.querySelector('[data-op-composer-scrim="true"]'))
+    Boolean(document.querySelector('[data-op-composer-dock="true"]'))
   );
   const current = await surfaceSnapshot(page);
   const backdropMeta = await page.evaluate(() => [...document.querySelectorAll('[data-fixture-backdrop]')].map(node => ({
+    isDock: node.getAttribute('data-op-composer-dock') === 'true',
     isScrim: node.getAttribute('data-op-composer-scrim') === 'true',
     isNativeFade: node.classList.contains('native-composer-fade')
   })));
   assert.ok(current.backdrops.length >= 4, 'conversation fixture must include multiple opaque dock layers and a decorative fade');
-  assert.equal(backdropMeta.filter(meta => meta.isScrim).length, 1, 'exactly one outermost dock layer acts as the feathered composer scrim');
+  assert.equal(backdropMeta.filter(meta => meta.isDock).length, 1, 'exactly one outermost dock layer acts as the composer dock');
+  assert.equal(backdropMeta.filter(meta => meta.isScrim).length, 0, 'in-flow flex-sibling fixture dock does not draw an overlaid scrim');
   const transparent = value => value === 'transparent' || /^rgba\(\s*0,\s*0,\s*0,\s*0\s*\)$/.test(value);
   for (const [index, layer] of current.backdrops.entries()) {
     const meta = backdropMeta[index];
     assert.ok(transparent(layer.background), `dock layer ${index} background-color must stay transparent`);
     assert.notEqual(layer.background, 'rgb(255, 255, 255)', `dock layer ${index} must not paint a solid white slab`);
-    if (meta.isScrim) {
-      // v0.3.1 #22: the host paints nothing itself; its ::before is a translucent blur layer, never a solid canvas.
-      assert.equal(layer.backgroundImage, 'none', `scrim host layer ${index} paints no gradient slab of its own`);
-      const alpha = value => transparent(value) ? 0 : Number(value.match(/(?:\/\s*|,\s*)([\d.]+)\s*\)$/)?.[1] ?? 1);
-      assert.ok(alpha(layer.before.background) <= 0.6, `scrim host layer ${index} ::before stays translucent, got ${layer.before.background}`);
-      assert.ok(transparent(layer.after.background) && layer.after.backgroundImage === 'none', `scrim host layer ${index} ::after must remain transparent`);
-      for (const type of ['before', 'after']) {
-        assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
-        assert.equal(layer[type].display, nativeSurfaces.backdrops[index][type].display, 'decorative pseudo display is preserved');
-      }
-    } else {
-      assert.equal(layer.backgroundImage, 'none', `inner dock layer ${index}${meta.isNativeFade ? ' (.native-composer-fade)' : ''} must reveal the themed canvas without a solid slab`);
-      for (const type of ['before', 'after']) {
-        assert.ok(transparent(layer[type].background) && layer[type].backgroundImage === 'none', `inner dock layer ${index} ${type} must not retain an opaque fade`);
-        assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
-        assert.equal(layer[type].display, nativeSurfaces.backdrops[index][type].display, 'decorative pseudo display is preserved');
-      }
+    assert.equal(layer.backgroundImage, 'none', `dock layer ${index}${meta.isNativeFade ? ' (.native-composer-fade)' : ''} must reveal the themed canvas without a solid slab`);
+    assert.equal(layer.maskImage, 'none', `dock layer ${index} mask-image must stay cleared`);
+    for (const type of ['before', 'after']) {
+      assert.ok(transparent(layer[type].background) && layer[type].backgroundImage === 'none', `dock layer ${index} ${type} must not retain an opaque fade`);
+      assert.equal(layer[type].maskImage, 'none', `dock layer ${index} ${type} mask-image must stay cleared`);
+      assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
+      assert.equal(layer[type].display, nativeSurfaces.backdrops[index][type].display, 'decorative pseudo display is preserved');
     }
   }
   assert.deepEqual(current.footerAttachment, nativeSurfaces.footerAttachment, 'native footer attachments retain their own painted controls');
@@ -321,24 +315,24 @@ async function assertComposerBackdrops(page, nativeSurfaces) {
     });
     const turnActionsCheck = await page.evaluate(() => {
       const scroller = document.querySelector('[data-prism-test-scroller]');
-      const scrim = document.querySelector('[data-op-composer-scrim="true"]');
+      const dock = document.querySelector('[data-op-composer-dock="true"]');
       const actions = document.querySelector('.thread article:last-of-type .turn-actions, .thread article:last-of-type [data-testid="turn-actions"]');
       const btn = actions?.querySelector('button');
-      if (!scroller || !scrim || !actions || !btn) return null;
+      if (!scroller || !dock || !actions || !btn) return null;
       const scrollerRect = scroller.getBoundingClientRect();
-      const scrimRect = scrim.getBoundingClientRect();
+      const dockRect = dock.getBoundingClientRect();
       const actionsRect = actions.getBoundingClientRect();
       const btnRect = btn.getBoundingClientRect();
       const hit = document.elementFromPoint(btnRect.left + btnRect.width / 2, btnRect.top + btnRect.height / 2);
       return {
         visibleInScroller: actionsRect.top >= scrollerRect.top - 1 && actionsRect.bottom <= scrollerRect.bottom + 1,
-        aboveScrim: actionsRect.bottom <= scrimRect.top,
+        aboveDock: actionsRect.bottom <= dockRect.top,
         clickable: Boolean(hit && actions.contains(hit))
       };
     });
     assert.ok(turnActionsCheck, 'last assistant turn must expose .turn-actions');
     assert.equal(turnActionsCheck.visibleInScroller, true, 'last .turn-actions must remain completely inside the visible scroll viewport');
-    assert.equal(turnActionsCheck.aboveScrim, true, 'last .turn-actions must not overlap the composer scrim');
+    assert.equal(turnActionsCheck.aboveDock, true, 'last .turn-actions must not overlap the composer dock');
     assert.equal(turnActionsCheck.clickable, true, 'last .turn-actions button must remain hit-testable and clickable');
     await page.locator('.thread article:last-of-type .turn-actions button').first().click({ trial: true });
     await page.evaluate(prev => { document.querySelector('[data-prism-test-scroller]').scrollTop = prev; }, previousScrollTop);
@@ -534,12 +528,14 @@ async function composerControlsSnapshot(page) {
     const addBtn = document.querySelector('button[data-testid="composer-plus-btn"], button[data-test-id="upload-file-button"]');
     const modelBtn = document.querySelector('button[data-testid="model-switcher-dropdown-button"], button[data-test-id="bard-mode-menu-button"]');
     const modelTier = modelBtn?.querySelector('.model-tier, .mode-tier');
+    const primaryBtn = composer?.querySelector('button[data-testid="send-button"], button[data-test-id="send-button"], .send-button');
     const chip = document.querySelector('button[data-testid="composer-mode-pill"], button.toolbox-drawer-item-button');
     const beforeStyle = modelBtn ? getComputedStyle(modelBtn, '::before') : null;
     const addRect = addBtn?.getBoundingClientRect();
+    const primaryRect = primaryBtn?.getBoundingClientRect();
     return {
       composer: composer ? {
-        style: readStyle(composer, ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderRadius', 'boxShadow', 'borderColor']),
+        style: readStyle(composer, ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderRadius', 'borderTopWidth', 'outlineStyle', 'boxShadow', 'borderColor']),
         parentTag: composer.parentElement?.tagName || null
       } : null,
       editor: editor ? {
@@ -556,17 +552,24 @@ async function composerControlsSnapshot(page) {
       modelBtn: modelBtn ? {
         attr: modelBtn.getAttribute('data-op-model-capsule'),
         parentTag: modelBtn.parentElement?.tagName || null,
-        style: readStyle(modelBtn, ['borderRadius', 'borderTopWidth', 'borderTopColor', 'backgroundColor', 'color', 'paddingTop', 'paddingLeft', 'gap', 'display', 'alignItems']),
+        style: readStyle(modelBtn, ['borderRadius', 'borderTopWidth', 'borderTopColor', 'backgroundColor', 'color', 'paddingTop', 'paddingLeft', 'minHeight', 'height', 'gap', 'display', 'alignItems']),
         before: beforeStyle ? {
           content: beforeStyle.content,
           width: beforeStyle.width,
           height: beforeStyle.height,
           borderRadius: beforeStyle.borderRadius,
+          clipPath: beforeStyle.clipPath,
           backgroundColor: beforeStyle.backgroundColor
         } : null,
         tier: readStyle(modelTier, ['color', 'fontWeight']),
         text: modelBtn.textContent,
         childCount: modelBtn.children.length
+      } : null,
+      primaryAction: primaryBtn ? {
+        attr: primaryBtn.getAttribute('data-op-composer-primary-action'),
+        parentTag: primaryBtn.parentElement?.tagName || null,
+        style: readStyle(primaryBtn, ['width', 'height', 'minWidth', 'borderRadius', 'backgroundColor', 'color', 'display', 'alignItems', 'justifyContent']),
+        rect: { width: Math.round(primaryRect.width), height: Math.round(primaryRect.height) }
       } : null,
       chip: chip ? {
         attr: chip.getAttribute('data-op-composer-chip'),
@@ -586,6 +589,10 @@ function composerSurfaceAndGeometry(snapshot) {
     delete copy.modelBtn.style.borderTopColor;
   }
   if (copy.modelBtn?.tier) delete copy.modelBtn.tier.color;
+  if (copy.primaryAction?.style) {
+    delete copy.primaryAction.style.backgroundColor;
+    delete copy.primaryAction.style.color;
+  }
   if (copy.chip?.style) {
     delete copy.chip.style.color;
     delete copy.chip.style.borderTopColor;
@@ -598,6 +605,7 @@ async function settleComposerControls(page) {
     settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow'),
     settledSurfaceStyle(page, 'button[data-testid="composer-plus-btn"], button[data-test-id="upload-file-button"]', 'backgroundColor'),
     settledSurfaceStyle(page, 'button[data-testid="model-switcher-dropdown-button"], button[data-test-id="bard-mode-menu-button"]', 'backgroundColor'),
+    settledSurfaceStyle(page, 'button[data-testid="send-button"], button[data-test-id="send-button"], .send-button', 'backgroundColor'),
     settledSurfaceStyle(page, 'button[data-testid="composer-mode-pill"], button.toolbox-drawer-item-button', 'backgroundColor')
   ]);
 }
@@ -607,22 +615,25 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
     document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'true' &&
     document.querySelector('[data-op-composer-add="true"]') &&
     document.querySelector('[data-op-model-capsule="true"]') &&
+    document.querySelector('[data-op-composer-primary-action="true"]') &&
     document.querySelector('[data-op-composer-chip="true"]')
   );
   await settleComposerControls(page);
   const snap = await composerControlsSnapshot(page);
-  assert.ok(snap.composer && snap.editor && snap.tools && snap.addBtn && snap.modelBtn && snap.chip, `${host} ${palette}: all composer & capsule nodes must exist`);
+  assert.ok(snap.composer && snap.editor && snap.tools && snap.addBtn && snap.modelBtn && snap.primaryAction && snap.chip, `${host} ${palette}: all composer & capsule nodes must exist`);
 
-  assert.equal(snap.composer.style.paddingTop, '14px');
-  assert.equal(snap.composer.style.paddingRight, '16px');
-  assert.equal(snap.composer.style.paddingBottom, '12px');
-  assert.equal(snap.composer.style.paddingLeft, '16px');
-  assert.equal(snap.composer.style.borderRadius, '22px');
+  assert.equal(snap.composer.style.paddingTop, '12px');
+  assert.equal(snap.composer.style.paddingRight, '14px');
+  assert.equal(snap.composer.style.paddingBottom, '10px');
+  assert.equal(snap.composer.style.paddingLeft, '14px');
+  assert.equal(snap.composer.style.borderRadius, '16px');
+  assert.equal(snap.composer.style.borderTopWidth, '1px');
+  assert.equal(snap.composer.style.outlineStyle, 'none');
   assert.match(snap.composer.style.boxShadow, /inset/);
   assert.equal(snap.composer.parentTag, nativeControls.composer.parentTag);
 
-  assert.ok(parseFloat(snap.editor.style.minHeight) >= 44, `${host} ${palette}: editor min-height >= 44px`);
-  assert.ok(parseFloat(snap.editor.style.paddingBottom) >= 6, `${host} ${palette}: editor padding-bottom >= 6px`);
+  assert.ok(parseFloat(snap.editor.style.minHeight) >= 40, `${host} ${palette}: editor min-height >= 40px`);
+  assert.ok(parseFloat(snap.editor.style.paddingBottom) >= 4, `${host} ${palette}: editor padding-bottom >= 4px`);
   assert.notEqual(snap.editor.style.caretColor, nativeControls.editor.style.caretColor);
   assert.equal(snap.tools.style.marginTop, '10px');
 
@@ -643,19 +654,33 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
   assert.ok(parseFloat(snap.modelBtn.style.borderTopWidth) >= 1);
   assert.ok(['inline-flex', 'flex'].includes(snap.modelBtn.style.display), `${host} ${palette}: model capsule uses flex layout, got ${snap.modelBtn.style.display}`);
   assert.equal(snap.modelBtn.style.alignItems, 'center');
-  assert.equal(snap.modelBtn.style.paddingTop, '5px');
-  assert.equal(snap.modelBtn.style.paddingLeft, '11px');
+  assert.equal(snap.modelBtn.style.paddingTop, '4px');
+  assert.equal(snap.modelBtn.style.paddingLeft, '10px');
+  assert.equal(snap.modelBtn.style.minHeight, '30px');
+  assert.equal(snap.modelBtn.style.height, '30px');
   assert.equal(snap.modelBtn.style.gap, '6px');
   assert.notEqual(snap.modelBtn.style.backgroundColor, nativeControls.modelBtn.style.backgroundColor);
   assert.equal(snap.modelBtn.before.content, '""');
-  assert.equal(snap.modelBtn.before.width, '6px');
-  assert.equal(snap.modelBtn.before.height, '6px');
-  assert.equal(snap.modelBtn.before.borderRadius, '50%');
-  assert.equal(snap.modelBtn.before.backgroundColor, snap.modelBtn.tier.color, `${host} ${palette}: ::before dot and tier tag share --op-accent`);
+  assert.equal(snap.modelBtn.before.width, '11px');
+  assert.equal(snap.modelBtn.before.height, '11px');
+  assert.notEqual(snap.modelBtn.before.borderRadius, '50%');
+  assert.match(snap.modelBtn.before.clipPath, /^polygon\(/);
+  assert.equal(snap.modelBtn.before.backgroundColor, snap.modelBtn.tier.color, `${host} ${palette}: ::before star and tier tag share --op-accent`);
   assert.notEqual(snap.modelBtn.tier.color, snap.modelBtn.style.color);
   assert.ok(Number(snap.modelBtn.tier.fontWeight) >= 600);
-  assert.equal(snap.modelBtn.childCount, nativeControls.modelBtn.childCount, `${host} ${palette}: ::before dot adds zero DOM elements`);
+  assert.equal(snap.modelBtn.childCount, nativeControls.modelBtn.childCount, `${host} ${palette}: ::before star adds zero DOM elements`);
   assert.equal(snap.modelBtn.text, nativeControls.modelBtn.text, `${host} ${palette}: native model text preserved`);
+
+  assert.equal(snap.primaryAction.attr, 'true');
+  assert.equal(snap.primaryAction.parentTag, nativeControls.primaryAction.parentTag);
+  assert.equal(snap.primaryAction.rect.width, 34, `${host} ${palette}: primary action width is 34px`);
+  assert.equal(snap.primaryAction.rect.height, 34, `${host} ${palette}: primary action height is 34px`);
+  assert.ok(parseFloat(snap.primaryAction.style.borderRadius) >= 999);
+  assert.ok(['inline-flex', 'flex'].includes(snap.primaryAction.style.display));
+  assert.equal(snap.primaryAction.style.alignItems, 'center');
+  assert.equal(snap.primaryAction.style.justifyContent, 'center');
+  assert.notEqual(snap.primaryAction.style.backgroundColor, nativeControls.primaryAction.style.backgroundColor);
+  assertContrastRatio(snap.primaryAction.style.color, snap.primaryAction.style.backgroundColor, `${host} ${palette} primary action`);
 
   assert.equal(snap.chip.attr, 'true');
   assert.equal(snap.chip.parentTag, nativeControls.chip.parentTag);
@@ -985,7 +1010,7 @@ async function exerciseFixture(browser, host) {
     await exerciseSidebarSelection(page, originalSidebarSelection);
     await page.evaluate(() => __prismFixture.patch({ composerRestyle: false }));
     await assertComposerBackdrops(page, originalSurfaces);
-    await page.waitForFunction(() => !document.querySelector('[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-chip="true"]') && document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'fixture-original');
+    await page.waitForFunction(() => !document.querySelector('[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-primary-action="true"],[data-op-composer-chip="true"],[data-op-composer-attachment="true"],[data-op-composer-toolbar="true"],[data-op-model-capsule-item="true"]') && document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'fixture-original');
     await settleComposerControls(page);
     assert.deepEqual(composerSurfaceAndGeometry(await composerControlsSnapshot(page)), composerSurfaceAndGeometry(originalComposerControls), `${host}: composerRestyle=false restores native composer, add button, model capsule, and chips`);
     await page.evaluate(() => __prismFixture.patch({ composerRestyle: true }));
@@ -1163,6 +1188,9 @@ async function exerciseFixture(browser, host) {
     await page.evaluate(() => __prismFixture.patch({ enabled: false }));
     await page.waitForFunction(() => !document.documentElement.hasAttribute('data-op-enabled'));
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-content-width')), false);
+    assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-instance')), false);
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-x')), '');
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-y')), '');
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), originalBackground);
@@ -1176,7 +1204,7 @@ async function exerciseFixture(browser, host) {
     assert.equal(await page.locator('[data-fixture-composer]').getAttribute('data-op-composer-surface'), 'fixture-original');
     await settleComposerControls(page);
     assert.deepEqual(await composerControlsSnapshot(page), originalComposerControls, `${host}: disable restores native composer, add button, model capsule, and chips`);
-    assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-sidebar-active="true"],[data-op-composer-backdrop="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-sidebar-active="true"],[data-op-composer-backdrop="true"],[data-op-composer-dock="true"],[data-op-composer-scrim="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"]').count(), 0);
     assert.equal(await page.locator('pre code').textContent(), originalText);
     assert.equal(await page.evaluate(() => ObsidianPrismRuntime.diagnostics().observing), false);
     await page.evaluate(() => __prismFixture.patch({ enabled: true, contentWidth: 'standard' }));
@@ -1226,9 +1254,12 @@ async function exerciseFixture(browser, host) {
     assert.equal(stopped.codeBlocks, 0);
     assert.equal(stopped.thoughtBlocks, 0);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
-    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-composer-scrim="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-composer-dock="true"],[data-op-composer-scrim="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"],[data-op-composer-grid="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-enabled')), false);
+    assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-instance')), false);
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-x')), '');
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-y')), '');
     await page.evaluate(() => { __prismFixture.patch({ enabled: true }); window.dispatchEvent(new Event('pageshow')); document.body.append(document.createElement('div')); });
     await page.waitForTimeout(250);
     assert.equal(await page.evaluate(() => ObsidianPrismRuntime.diagnostics().passes), stopped.passes, 'stop removes observers and event hooks permanently');
@@ -1242,8 +1273,15 @@ async function exerciseFixture(browser, host) {
 }
 
 // PRISM_SUITE=live-fixtures runs only the probe-derived fixture checks (a fast local loop; never a full pass).
-const liveOnly = process.env.PRISM_SUITE === 'live-fixtures';
-if (liveOnly) console.log('NOTE PRISM_SUITE=live-fixtures: only the probe-derived fixture checks run.');
+// PRISM_SUITE=live-baselines runs only the bare native baselines and read-only probe privacy checks.
+const suiteMode = process.env.PRISM_SUITE || 'all';
+if (!['all', 'live-fixtures', 'live-baselines'].includes(suiteMode)) {
+  throw new Error(`Unsupported PRISM_SUITE=${suiteMode}; expected live-fixtures, live-baselines, or unset`);
+}
+const liveOnly = suiteMode === 'live-fixtures';
+const baselinesOnly = suiteMode === 'live-baselines';
+if (baselinesOnly) console.log('NOTE PRISM_SUITE=live-baselines: only the native live-fixture baselines and probe privacy checks run.');
+else if (liveOnly) console.log('NOTE PRISM_SUITE=live-fixtures: only the probe-derived fixture checks run.');
 else if (engine === 'chromium' && process.env.PRISM_SKIP_EXTENSION !== '1') await actualChromiumExtension();
 else console.log(`NOTE ${engine}: this run covers injected offline DOM fixtures only, not native extension installation.`);
 const browser = await type.launch(launchOptions);
@@ -1251,15 +1289,19 @@ try {
   // One shared bundle for every probe-derived live-fixture check (see onLiveFixture in live-fixtures.mjs).
   const liveSuite = { browser, engine, interceptFixtures, fixtureBridge, styles, scripts, probeSource, artifacts: ARTIFACTS };
   await checkLiveFixtureBaselines(liveSuite);
-  await checkTwoRowComposer(liveSuite);
-  // v0.3.1 #18 live turns and tier-aware Reference Capacity
-  await checkLiveTurnsAndCapacity(liveSuite);
-  await checkHeadingTypography(liveSuite);
-  // v0.3.1 #21 Content Width Presets measured on the rendered paragraph and composer card
-  await checkLiveWidthPresets(liveSuite);
-  // v0.3.1 #22 blur Composer Scrim
-  await checkLiveComposerScrim(liveSuite);
-  if (!liveOnly) {
+  if (!baselinesOnly) {
+    await checkTwoRowComposer(liveSuite);
+    // v0.3.1 #18 live turns and tier-aware Reference Capacity
+    await checkLiveTurnsAndCapacity(liveSuite);
+    await checkHeadingTypography(liveSuite);
+    // v0.3.1 #21 Content Width Presets measured on the rendered paragraph and composer card
+    await checkLiveWidthPresets(liveSuite);
+    // v0.3.1 #22 blur Composer Scrim
+    await checkLiveComposerScrim(liveSuite);
+    // v0.4.0 #27 Bottom Dock singleton handover & dynamic collision avoidance
+    await checkBottomDock(liveSuite);
+  }
+  if (!liveOnly && !baselinesOnly) {
     await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
     await savedDisabledStartup(browser);
     for (const host of ['chatgpt', 'gemini']) {
@@ -1269,6 +1311,8 @@ try {
   }
 }
 finally { await browser.close(); }
-console.log(liveOnly
-  ? 'Live-fixture subset completed. This is not a full browser suite pass.'
-  : 'Browser suite completed. These are synthetic DOM fixtures, not validation against signed-in production websites.');
+console.log(baselinesOnly
+  ? 'Live-baselines subset completed. This is not a full browser suite pass.'
+  : liveOnly
+    ? 'Live-fixture subset completed. This is not a full browser suite pass.'
+    : 'Browser suite completed. These are synthetic DOM fixtures, not validation against signed-in production websites.');
