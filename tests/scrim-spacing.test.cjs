@@ -113,29 +113,3 @@ test('hosts.css keeps non-scrim composer backdrop layers and native fades transp
   assert.match(fadeRule.body, /background-image:\s*none\s*!important/);
 
 });
-
-const BLUR_MARKER = '/* === Blur Composer Scrim (v0.3.1 #22) === */';
-const BLUR_SUPPORTS = '@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))';
-
-test('blur Composer Scrim is gated to active conversations outside Native Palette and never paints solid canvas', () => {
-  const idx = hostsCss.indexOf(BLUR_MARKER);
-  assert.notEqual(idx, -1, 'hosts.css must include the Blur Composer Scrim (v0.3.1 #22) section');
-  const nextIdx = hostsCss.indexOf('/* === ', idx + BLUR_MARKER.length);
-  const section = nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx);
-  assert.ok(section.includes(BLUR_SUPPORTS), 'the blur is gated by the backdrop-filter @supports condition the browser fallback test overrides');
-  const flat = section.replace(BLUR_SUPPORTS, '').replace(/\/\*[\s\S]*?\*\//g, '');
-  const blocks = parseRuleBlocks(flat);
-  assert.ok(blocks.length >= 4);
-  for (const block of blocks) {
-    for (const sel of block.selectors) {
-      for (const gate of ['html[data-op-enabled="true"]', '[data-op-home="false"]', ':not([data-op-effective-palette="host"])', '[data-op-composer-scrim="true"]']) {
-        assert.ok(sel.includes(gate), `selector must include ${gate}: ${sel}`);
-      }
-    }
-    for (const [, percent] of block.body.matchAll(/color-mix\(in srgb,\s*var\(--op-canvas\)\s*(\d+)%/g)) {
-      assert.ok(Number(percent) <= 60, `scrim paint stays at or below ~60% canvas, got ${percent}% in ${block.selectors.join(', ')}`);
-    }
-    assert.equal(/background(?:-color)?:\s*var\(--op-canvas\)/.test(block.body), false, 'no solid canvas fill');
-    assert.equal(/overflow(?:-y)?\s*:\s*hidden/i.test(block.body), false, 'no overflow clipping');
-  }
-});

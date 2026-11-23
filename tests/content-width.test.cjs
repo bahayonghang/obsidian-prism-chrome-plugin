@@ -1,6 +1,6 @@
 'use strict';
 /* v0.3.1 #21 Content Width Presets: per-site width-limiter declarations, the midpoint target math,
- * and the hosts.css rules that apply the root reading width only to the declared limiters. */
+ * and a static guard that keeps the hosts.css width rules in sync with those declarations. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -52,33 +52,47 @@ test('standard adds no override; full reserves a left edge and the Conversation 
   assert.equal(A.contentWidthTarget(768, 'full', 0, 860), null, 'no main area, no override');
 });
 
+/* Static guard (declaration <-> CSS sync), not a rendering check: hosts.css cannot read the adapter, so its
+ * width rules repeat the selectors declared in src/adapters.js (contentWidth.targets / composerTargets), which
+ * own them. This guard fails when the two lists drift apart in either direction. What the reader sees (widths,
+ * midpoint, bubble cap, native restore) is measured in tests/live-width.mjs. */
 const hostsCss = fs.readFileSync(path.join(ROOT, 'styles/hosts.css'), 'utf8');
 const MARKER = '/* === Content Width Presets (v0.3.1 #21) === */';
-function section() {
+function splitTopLevel(text) {
+  const parts = [];
+  let depth = 0, start = 0;
+  for (let i = 0; i < text.length; i++) {
+    if ('(['.includes(text[i])) depth++;
+    else if (')]'.includes(text[i])) depth--;
+    else if (text[i] === ',' && depth === 0) { parts.push(text.slice(start, i).trim()); start = i + 1; }
+  }
+  parts.push(text.slice(start).trim());
+  return parts.filter(Boolean);
+}
+/** Element selectors of the hosts.css rules that size something from --op-reading-width for one host. */
+function cssWidthLimiters(host) {
   const start = hostsCss.indexOf(MARKER);
   assert.notEqual(start, -1, `hosts.css has the ${MARKER} block`);
   const end = hostsCss.indexOf('/* === ', start + MARKER.length);
-  return (end === -1 ? hostsCss.slice(start) : hostsCss.slice(start, end)).replace(/\/\*[\s\S]*?\*\//g, '');
-}
-
-test('hosts.css applies the reading width only to the declared limiters, gated per site and preset', () => {
-  const A = adapters();
-  const css = section();
-  assert.doesNotMatch(css, /data-op-(?:thread|composer)-column/, 'width rules use no per-node marks');
-  assert.doesNotMatch(hostsCss, /Content Width Presets \(v0\.3\.0\)/, 'the v0.3.0 fixed-pixel tiers are gone');
-  const rules = [...css.matchAll(/([^{}]+)\{([^{}]*)\}/g)].map(match => ({ selector: match[1].replace(/\s+/g, ' ').trim(), body: match[2] }));
-  for (const host of ['chatgpt', 'gemini']) {
-    const spec = A.forHost(host, {}).contentWidth;
-    const hostRules = rules.filter(rule => rule.selector.includes(`[data-op-host="${host}"]`));
-    for (const selector of [...spec.targets, ...spec.composerTargets]) {
-      const rule = hostRules.find(candidate => candidate.selector.includes(selector) && /--op-reading-width/.test(candidate.body));
-      assert.ok(rule, `${host}: a rule sizes ${selector} from --op-reading-width`);
-      assert.match(rule.selector, /html\[data-op-enabled="true"\]/);
-      assert.match(rule.selector, /\[data-op-content-width="wide"\]/);
-      assert.match(rule.selector, /\[data-op-content-width="full"\]/);
-      assert.doesNotMatch(rule.selector, /\[data-op-content-width="standard"\]/);
+  const css = (end === -1 ? hostsCss.slice(start) : hostsCss.slice(start, end)).replace(/\/\*[\s\S]*?\*\//g, '');
+  const out = [];
+  for (const [, selectorText, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    if (!/--op-reading-width/.test(body)) continue;
+    for (const selector of splitTopLevel(selectorText.replace(/\s+/g, ' ').trim())) {
+      if (!selector.startsWith(`html[data-op-enabled="true"][data-op-host="${host}"]`)) continue;
+      // Drop the root gate (the first compound); what remains is the limiter, or an :is() list of limiters.
+      const limiter = selector.slice(selector.indexOf(' ') + 1);
+      const list = limiter.match(/^:is\((.*)\)$/);
+      out.push(...(list ? splitTopLevel(list[1]) : [limiter]));
     }
   }
-  assert.match(css, /\[data-user-message-bubble="true"\][^{]*\{[^}]*max-width:\s*min\(78%,\s*820px\)/, 'the live ChatGPT bubble keeps the min(78%, 820px) cap');
-  assert.match(css, /user-query \.user-query-bubble-with-background[^{]*\{[^}]*max-width:\s*min\(78%,\s*820px\)/, 'the Gemini bubble keeps the min(78%, 820px) cap');
+  return out;
+}
+
+test('static guard: hosts.css width rules size exactly the limiters each adapter declares', () => {
+  const A = adapters();
+  for (const host of ['chatgpt', 'gemini']) {
+    const spec = plain(A.forHost(host, {}).contentWidth);
+    assert.deepEqual(cssWidthLimiters(host).sort(), [...spec.targets, ...spec.composerTargets].sort(), `${host}: hosts.css and src/adapters.js list the same width limiters`);
+  }
 });

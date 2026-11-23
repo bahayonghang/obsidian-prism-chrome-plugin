@@ -666,7 +666,8 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-m
 /* content.js sets --op-reading-width (target text-column width) and --op-reading-shift on the root
  * for wide/full from the main area's width (Adapters.contentWidthTarget); standard sets nothing and
  * leaves the host's native width. The rules below touch only the per-site width limiters declared in
- * src/adapters.js (contentWidth.targets / composerTargets): no geometry search and no per-node marks.
+ * src/adapters.js (contentWidth.targets / composerTargets), which owns them: these selectors are a copy,
+ * and tests/content-width.test.cjs fails when they drift. No geometry search and no per-node marks.
  * The margin-left formula centres each limiter in its own container, then shifts it left by
  * --op-reading-shift so a full column clears the Conversation Rail. Fallbacks are the native widths. */
 html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([class*="transcriptContent"],#thread-bottom [class*="--thread-content-max-width"]) {

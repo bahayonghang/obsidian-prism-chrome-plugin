@@ -25,8 +25,10 @@
       composerChips: '[data-testid="composer-mode-pill"], [data-testid="composer-chip"], [data-testid="composer-tool-chip"]',
       attachments: '[data-testid="attachment-card"], [data-testid="file-attachment"], [data-testid="uploaded-file"], [data-testid="image-attachment"], .native-footer-attachment',
       /* v0.3.1 #21 Content Width Presets: the reading (text) width is 48rem natively (the 808px
-       * transcript = 48rem + 2 × 20px padding, probe 2026-11-22). The width rules in hosts.css set
-       * --thread-content-max-width on these limiters only; no geometry search, no per-node marks. */
+       * transcript = 48rem + 2 × 20px padding, probe 2026-11-22). This declaration owns the width
+       * limiters: hosts.css repeats them in its static width rules (CSS cannot read it) and
+       * tests/content-width.test.cjs fails if the two drift. The runtime reads only `native`.
+       * No geometry search, no per-node marks. */
       contentWidth: { native: 768, targets: ['[class*="transcriptContent"]'], composerTargets: ['#thread-bottom [class*="--thread-content-max-width"]'] },
       threadColumns: '.thread, [data-testid="conversation-thread"], [class*="thread-content"]',
       composerColumns: '.composer-container, [data-testid="composer-container"]',
@@ -55,7 +57,8 @@
       composerChips: '.toolbox-drawer-item-button, [data-test-id="composer-chip"]',
       attachments: '[data-test-id="file-preview-chip"], [data-test-id="attachment-card"], file-preview-chip, .native-footer-attachment',
       /* v0.3.1 #21: Gemini caps every markdown block at 708px (not the outer panel), plus the
-       * User Turn, the response footer, the disclaimer and the 660px input area (probe 2026-11-22). */
+       * User Turn, the response footer, the disclaimer and the 660px input area (probe 2026-11-22).
+       * Owned here and mirrored by the hosts.css width rules (see the ChatGPT note above). */
       contentWidth: { native: 708, targets: ['.md-content > *', 'user-query', '.response-footer', 'hallucination-disclaimer'], composerTargets: ['.input-area-container'] },
       threadColumns: '.thread, .response-container',
       composerColumns: '.composer-container, input-area-v2',
