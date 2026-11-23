@@ -878,8 +878,9 @@ html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:no
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-markdown-text-style="assistant-message"],[data-user-message-bubble],[data-message-author-role],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn .markdown,model-response :is(.md-content,.markdown),user-query) :is(h1,h2,h3,h4):not([data-op-owned] *) {
   font-family: inherit !important;
   color: var(--op-fg) !important;
+  font-weight: var(--op-heading-weight) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-markdown-text-style="assistant-message"],[data-user-message-bubble],[data-message-author-role],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn .markdown,model-response :is(.md-content,.markdown),user-query) h1:not([data-op-owned] *) { font-weight: 700 !important; }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-markdown-text-style="assistant-message"],[data-user-message-bubble],[data-message-author-role],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn .markdown,model-response :is(.md-content,.markdown),user-query) h2:not([data-op-owned] *) { font-weight: 650 !important; }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-markdown-text-style="assistant-message"],[data-user-message-bubble],[data-message-author-role],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn .markdown,model-response :is(.md-content,.markdown),user-query) h3:not([data-op-owned] *) { font-weight: 600 !important; }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-markdown-text-style="assistant-message"],[data-user-message-bubble],[data-message-author-role],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn .markdown,model-response :is(.md-content,.markdown),user-query) h4:not([data-op-owned] *) { font-weight: 600 !important; }
+/* Per-level weights for the rule above; the variable is read only inside the scoped message headings. */
+html[data-op-enabled="true"] h1 { --op-heading-weight: 700; }
+html[data-op-enabled="true"] h2 { --op-heading-weight: 650; }
+html[data-op-enabled="true"] :is(h3,h4) { --op-heading-weight: 600; }
