@@ -622,25 +622,25 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
   const snap = await composerControlsSnapshot(page);
   assert.ok(snap.composer && snap.editor && snap.tools && snap.addBtn && snap.modelBtn && snap.primaryAction && snap.chip, `${host} ${palette}: all composer & capsule nodes must exist`);
 
-  assert.equal(snap.composer.style.paddingTop, '12px');
-  assert.equal(snap.composer.style.paddingRight, '14px');
-  assert.equal(snap.composer.style.paddingBottom, '10px');
-  assert.equal(snap.composer.style.paddingLeft, '14px');
+  assert.equal(snap.composer.style.paddingTop, '8px');
+  assert.equal(snap.composer.style.paddingRight, '12px');
+  assert.equal(snap.composer.style.paddingBottom, '7px');
+  assert.equal(snap.composer.style.paddingLeft, '12px');
   assert.equal(snap.composer.style.borderRadius, '16px');
   assert.equal(snap.composer.style.borderTopWidth, '1px');
   assert.equal(snap.composer.style.outlineStyle, 'none');
   assert.match(snap.composer.style.boxShadow, /inset/);
   assert.equal(snap.composer.parentTag, nativeControls.composer.parentTag);
 
-  assert.ok(parseFloat(snap.editor.style.minHeight) >= 40, `${host} ${palette}: editor min-height >= 40px`);
-  assert.ok(parseFloat(snap.editor.style.paddingBottom) >= 4, `${host} ${palette}: editor padding-bottom >= 4px`);
+  assert.ok(parseFloat(snap.editor.style.minHeight) >= 24 && parseFloat(snap.editor.style.minHeight) <= 28, `${host} ${palette}: editor min-height in [24, 28]`);
+  assert.equal(snap.editor.style.paddingBottom, '2px', `${host} ${palette}: editor padding-bottom is 2px`);
   assert.notEqual(snap.editor.style.caretColor, nativeControls.editor.style.caretColor);
-  assert.equal(snap.tools.style.marginTop, '10px');
+  assert.equal(snap.tools.style.marginTop, '6px');
 
   assert.equal(snap.addBtn.attr, 'true');
   assert.equal(snap.addBtn.parentTag, nativeControls.addBtn.parentTag);
-  assert.equal(snap.addBtn.rect.width, 32, `${host} ${palette}: circular + width is 32px`);
-  assert.equal(snap.addBtn.rect.height, 32, `${host} ${palette}: circular + height is 32px`);
+  assert.equal(snap.addBtn.rect.width, 28, `${host} ${palette}: circular + width is 28px`);
+  assert.equal(snap.addBtn.rect.height, 28, `${host} ${palette}: circular + height is 28px`);
   assert.ok(parseFloat(snap.addBtn.style.borderRadius) >= 999, `${host} ${palette}: circular + border-radius >= 999px`);
   assert.ok(parseFloat(snap.addBtn.style.borderTopWidth) >= 1);
   assert.ok(['inline-flex', 'flex'].includes(snap.addBtn.style.display), `${host} ${palette}: circular + uses flex layout, got ${snap.addBtn.style.display}`);
@@ -654,10 +654,10 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
   assert.ok(parseFloat(snap.modelBtn.style.borderTopWidth) >= 1);
   assert.ok(['inline-flex', 'flex'].includes(snap.modelBtn.style.display), `${host} ${palette}: model capsule uses flex layout, got ${snap.modelBtn.style.display}`);
   assert.equal(snap.modelBtn.style.alignItems, 'center');
-  assert.equal(snap.modelBtn.style.paddingTop, '4px');
-  assert.equal(snap.modelBtn.style.paddingLeft, '10px');
-  assert.equal(snap.modelBtn.style.minHeight, '30px');
-  assert.equal(snap.modelBtn.style.height, '30px');
+  assert.equal(snap.modelBtn.style.paddingTop, '3px');
+  assert.equal(snap.modelBtn.style.paddingLeft, '9px');
+  assert.equal(snap.modelBtn.style.minHeight, '28px');
+  assert.equal(snap.modelBtn.style.height, '28px');
   assert.equal(snap.modelBtn.style.gap, '6px');
   assert.notEqual(snap.modelBtn.style.backgroundColor, nativeControls.modelBtn.style.backgroundColor);
   assert.equal(snap.modelBtn.before.content, '""');
@@ -673,8 +673,8 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
 
   assert.equal(snap.primaryAction.attr, 'true');
   assert.equal(snap.primaryAction.parentTag, nativeControls.primaryAction.parentTag);
-  assert.equal(snap.primaryAction.rect.width, 34, `${host} ${palette}: primary action width is 34px`);
-  assert.equal(snap.primaryAction.rect.height, 34, `${host} ${palette}: primary action height is 34px`);
+  assert.equal(snap.primaryAction.rect.width, 30, `${host} ${palette}: primary action width is 30px`);
+  assert.equal(snap.primaryAction.rect.height, 30, `${host} ${palette}: primary action height is 30px`);
   assert.ok(parseFloat(snap.primaryAction.style.borderRadius) >= 999);
   assert.ok(['inline-flex', 'flex'].includes(snap.primaryAction.style.display));
   assert.equal(snap.primaryAction.style.alignItems, 'center');
@@ -686,8 +686,8 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
   assert.equal(snap.chip.parentTag, nativeControls.chip.parentTag);
   assert.ok(parseFloat(snap.chip.style.borderRadius) >= 999);
   assert.ok(parseFloat(snap.chip.style.borderTopWidth) >= 1);
-  assert.equal(snap.chip.style.paddingTop, '5px');
-  assert.equal(snap.chip.style.paddingLeft, '11px');
+  assert.equal(snap.chip.style.paddingTop, '3px');
+  assert.equal(snap.chip.style.paddingLeft, '10px');
   assert.notEqual(snap.chip.style.backgroundColor, nativeControls.chip.style.backgroundColor);
 
   assert.equal(await page.locator('.op-repo-capsule, .op-branch-capsule, [data-op-repo-capsule], [data-op-branch-capsule]').count(), 0);
@@ -1254,7 +1254,7 @@ async function exerciseFixture(browser, host) {
     assert.equal(stopped.codeBlocks, 0);
     assert.equal(stopped.thoughtBlocks, 0);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
-    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-composer-dock="true"],[data-op-composer-scrim="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"],[data-op-composer-grid="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-composer-dock="true"],[data-op-composer-scrim="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"],[data-op-composer-grid="true"],[data-op-composer-header-empty="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-enabled')), false);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-instance')), false);

@@ -181,7 +181,7 @@ const RUNTIME_SURFACE_ATTRS = [
   'data-op-main-surface', 'data-op-thread-column', 'data-op-composer-column', 'data-op-code-surface',
   'data-op-code-header', 'data-op-composer-dock', 'data-op-composer-scrim', 'data-op-thread-scroller',
   'data-op-composer-empty-sibling', 'data-op-composer-disclaimer', 'data-op-thread-spacer',
-  'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-leading', 'data-op-composer-primary',
+  'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-header-empty', 'data-op-composer-leading', 'data-op-composer-primary',
   'data-op-composer-trailing', 'data-op-composer-toolbar', 'data-op-composer-add', 'data-op-model-capsule',
   'data-op-model-capsule-item', 'data-op-composer-primary-action', 'data-op-composer-attachment',
   'data-op-composer-chip', 'data-op-composer-backdrop', 'data-op-sidebar-surface', 'data-op-sidebar-active'

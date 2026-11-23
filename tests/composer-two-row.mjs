@@ -233,11 +233,105 @@ async function assertTwoRow(page, host, label) {
   assert.equal(visual.attachment.borderRadius, '12px', `${label}: attachment preview renders as compact rounded-square card`);
   assert.equal(visual.attachment.borderTopWidth, '1px', `${label}: attachment card carries 1px border`);
 
-  assert.ok(Math.abs(trailing.width - 34) <= 1 && Math.abs(trailing.height - 34) <= 1, `${label}: primary action is 34px circle (${trailing.width}x${trailing.height})`);
+  assert.ok(Math.abs(trailing.width - 30) <= 1 && Math.abs(trailing.height - 30) <= 1, `${label}: primary action is 30px circle (${trailing.width}x${trailing.height})`);
   assert.ok(parseFloat(visual.primary.borderRadius) >= 999, `${label}: primary action is circular`);
   const ratio = contrastRatio(visual.primary.color, visual.primary.backgroundColor);
   assert.ok(ratio >= 4.5, `${label}: primary action icon contrast >= 4.5:1 (got ${ratio.toFixed(2)}:1)`);
   return geometry;
+}
+
+/**
+ * Verifies compact single-line height when the attachment header is empty (including an empty
+ * wrapper node), tight internal spacing, multi-line growth, and non-collapsed attachment restore.
+ */
+async function assertCompactEmptyHeaderAndGrowth(page, host, label, screenshotPath = null) {
+  const s = LIVE_SELECTORS[host];
+  const headerSel = host === 'chatgpt' ? '.composer-header' : '.file-preview-container';
+  await page.evaluate(({ headerSel }) => {
+    const hdr = document.querySelector(headerSel);
+    window.__savedHeaderNodes = hdr ? [...hdr.childNodes] : [];
+    hdr?.replaceChildren();
+    ObsidianPrismRuntime.refresh();
+  }, { headerSel });
+  await page.waitForFunction(sel => {
+    const h = document.querySelector(sel);
+    return h && h.getAttribute('data-op-composer-header-empty') === 'true' && h.getBoundingClientRect().height <= 0.5;
+  }, headerSel);
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+  const measureState = () => page.evaluate(({ cardSel, headerSel, editorSel, addSel }) => {
+    const card = document.querySelector(cardSel);
+    const hdr = document.querySelector(headerSel);
+    const ed = card.querySelector(editorSel);
+    const add = card.querySelector(addSel);
+    const c = card.getBoundingClientRect();
+    const h = hdr.getBoundingClientRect();
+    const e = ed.getBoundingClientRect();
+    const a = add.getBoundingClientRect();
+    const bt = parseFloat(getComputedStyle(card).borderTopWidth) || 0;
+    return {
+      cardH: Math.round(c.height * 10) / 10,
+      headerH: Math.round(h.height * 10) / 10,
+      editorH: Math.round(e.height * 10) / 10,
+      topGap: Math.round((e.top - (c.top + bt)) * 10) / 10,
+      toolbarGap: Math.round((a.top - e.bottom) * 10) / 10
+    };
+  }, { cardSel: CARD[host], headerSel, editorSel: s.editor, addSel: s.add });
+
+  const single = await measureState();
+  assert.ok(single.headerH <= 0.5, `${label}: empty attachment header collapses to 0px (got ${single.headerH}px)`);
+  assert.ok(single.cardH <= 86, `${label}: empty-header single-line composer card <= 86px (got ${single.cardH}px)`);
+  assert.ok(single.topGap <= 14, `${label}: editor sits cleanly below top padding (${single.topGap}px <= 14px)`);
+  assert.ok(single.toolbarGap >= 0 && single.toolbarGap <= 10, `${label}: tight gap between editor and toolbar (${single.toolbarGap}px)`);
+
+  // Empty wrapper inside header also collapses cleanly.
+  await page.evaluate(sel => {
+    const hdr = document.querySelector(sel);
+    const wrapper = document.createElement('div');
+    wrapper.id = 'prism-empty-hdr-wrapper';
+    hdr.append(wrapper);
+    ObsidianPrismRuntime.refresh();
+  }, headerSel);
+  await page.waitForFunction(sel => document.querySelector(sel)?.getBoundingClientRect().height <= 0.5, headerSel);
+  const withEmptyWrapper = await measureState();
+  assert.ok(withEmptyWrapper.headerH <= 0.5, `${label}: empty-wrapper header still collapses to 0px (got ${withEmptyWrapper.headerH}px)`);
+  await page.evaluate(() => {
+    document.getElementById('prism-empty-hdr-wrapper')?.remove();
+    ObsidianPrismRuntime.refresh();
+  });
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+  if (screenshotPath) {
+    await page.screenshot({ path: screenshotPath, caret: 'initial' });
+  }
+
+  // Multi-line typing still expands editor & card naturally.
+  const editor = page.locator(`${CARD[host]} ${s.editor}`);
+  await editor.click();
+  await page.keyboard.type('Line 1');
+  await page.keyboard.press('Shift+Enter');
+  await page.keyboard.type('Line 2');
+  await page.keyboard.press('Shift+Enter');
+  await page.keyboard.type('Line 3');
+  const multi = await measureState();
+  assert.ok(multi.editorH >= single.editorH + 16, `${label}: multi-line input expands editor (${single.editorH} -> ${multi.editorH})`);
+  assert.ok(multi.cardH >= single.cardH + 16, `${label}: multi-line input expands card (${single.cardH} -> ${multi.cardH})`);
+  await page.keyboard.press('Enter');
+  await page.evaluate(() => { if (window.__hostComposer?.sends?.length) window.__hostComposer.sends.pop(); });
+  await editor.evaluate(node => node.blur());
+
+  // Restoring original attachment nodes un-collapses header above the editor.
+  await page.evaluate(sel => {
+    const hdr = document.querySelector(sel);
+    hdr.replaceChildren(...(window.__savedHeaderNodes || []));
+    delete window.__savedHeaderNodes;
+    ObsidianPrismRuntime.refresh();
+  }, headerSel);
+  await page.waitForFunction(sel => !document.querySelector(sel)?.hasAttribute('data-op-composer-header-empty'), headerSel);
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const restored = await controlGeometry(page, CARD[host], { attachment: s.attachment, editor: s.editor });
+  assert.ok(restored.controls.attachment.bottom <= restored.controls.editor.top + 0.5, `${label}: restored attachment preview renders above editor`);
+  return single;
 }
 
 /** Native input, IME composition, Enter / Shift+Enter, model menu and upload. Returns comparable results. */
@@ -329,6 +423,9 @@ export async function checkTwoRowComposer(suite) {
           // caret: 'initial' keeps Playwright from leaving an empty style attribute on the native editor.
           await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-two-row-composer.png`), caret: 'initial' });
           assert.deepEqual(await exerciseComposer(page, host, label), nativeBehaviour, `${label}: input, IME, Enter/Shift+Enter, model menu and upload match native`);
+          const compactShot = path.join(artifacts, `${engine}-${host}-compact-composer.png`);
+          const compact = await assertCompactEmptyHeaderAndGrowth(page, host, label, compactShot);
+          console.log(`PASS ${label} compact empty-header card: ${compact.cardH}px (topGap ${compact.topGap}px, toolbarGap ${compact.toolbarGap}px)`);
           if (host === 'chatgpt') {
             for (const state of ['multi-line', 'single-line']) {
               await page.locator(CARD.chatgpt).evaluate((node, state) => node.setAttribute('data-composer-layout', state), state);
@@ -379,6 +476,7 @@ export async function checkTwoRowComposer(suite) {
     });
   }
   await checkPositionalChatGPTGrid(suite);
+  await checkWrappedChatGPTTrailing(suite);
 }
 
 /**
@@ -440,6 +538,250 @@ async function checkPositionalChatGPTGrid(suite) {
     await assertHostNodesUnchanged(page, `${label} stopped`);
     assert.deepEqual(errors, []);
     console.log(`PASS ${label}: unnamed ChatGPT grid gets the two-row Composer Surface by structural slots, keeps host DOM order, restores exactly, and an unrecognizable grid stays native`);
+  });
+}
+
+/**
+ * Wrapped trailing & multiline stacked variants observed on live ChatGPT (2026-11-23):
+ * 1) Single-line footer: unnamed 3-col grid where the trailing grid item has a pill background
+ *    (`rounded-full`, `rgb(33, 33, 33)`) and wraps all controls inside a single inner flex row whose
+ *    model branch carries `flex: 1 1 0%; justify-content: flex-end`.
+ * 2) Multiline footer: `[primary, leading, trailing]` child order where trailing wraps controls
+ *    inside `display: contents` + inner flex row.
+ */
+const WRAPPED_TRAILING_CSS = `
+${POSITIONAL_GRID}
+[data-composer-trailing-controls="true"]{justify-self:end;border-radius:9999px;background:rgb(33,33,33)}
+.trailing-inner{display:flex;align-items:center;justify-content:flex-end;flex-shrink:0}
+.trailing-picker-wrap{display:flex;min-width:0;flex:1 1 0%;justify-content:flex-end}
+[data-composer-trailing-picker="true"]{padding:0 4px 0 0}
+.trailing-actions-group{display:flex;flex-shrink:0;align-items:center;gap:4px}
+`;
+
+async function checkWrappedChatGPTTrailing(suite) {
+  const { engine, artifacts } = suite;
+  const host = 'chatgpt';
+
+  // 1) Wrapped trailing single-line footer variant
+  await onLiveFixture(suite, host, { failure: 'chatgpt-wrapped-trailing-failure', initial: { themeMode: 'dark' } }, async ({ page, errors }) => {
+    await page.addStyleTag({ content: WRAPPED_TRAILING_CSS });
+    await page.locator(LIVE_SELECTORS.chatgpt.composerGrid).evaluate(grid => {
+      const expansion = document.createElement('div');
+      expansion.setAttribute('data-composer-expansion-control', '');
+      expansion.style.cssText = 'position:absolute;width:0;height:0';
+      const trailing = grid.querySelector('.composer-trailing');
+      trailing.setAttribute('data-composer-trailing-controls', 'true');
+      const model = trailing.querySelector('button[aria-label="Select ChatGPT model"]');
+      const dictate = trailing.querySelector('button[aria-label="Dictate"]');
+      const voice = trailing.querySelector('button[aria-label="Start Voice"]');
+      model.querySelector('span').textContent = 'Pro';
+
+      const inner = document.createElement('div');
+      inner.className = 'trailing-inner';
+      const pickerWrap = document.createElement('div');
+      pickerWrap.className = 'trailing-picker-wrap';
+      const picker = document.createElement('div');
+      picker.setAttribute('data-composer-trailing-picker', 'true');
+      const popSpan = document.createElement('span');
+      popSpan.append(model);
+      picker.append(popSpan);
+      pickerWrap.append(picker);
+
+      const actionsGroup = document.createElement('div');
+      actionsGroup.className = 'trailing-actions-group';
+      actionsGroup.append(dictate, voice);
+
+      inner.append(pickerWrap, actionsGroup);
+      trailing.replaceChildren(inner);
+      grid.insertBefore(expansion, trailing);
+    });
+
+    await waitForShape(page, host, 'single-row', 'chatgpt wrapped trailing native');
+    const nativeSnapshot = await cardSnapshot(page, host, { geometry: true });
+    await rememberHostNodes(page);
+
+    await injectExtension(page, suite);
+    for (const [theme, palette] of [['dark', 'obsidian'], ['light', 'crystal']]) {
+      const label = `${engine} chatgpt wrapped trailing ${theme} (${palette})`;
+      const paletteKey = theme === 'dark' ? 'palette' : 'lightPreset';
+      await patchConfig(page, { themeMode: theme, [paletteKey]: palette });
+      await page.waitForFunction(([t, p]) =>
+        document.documentElement.getAttribute('data-op-scheme') === t &&
+        document.documentElement.getAttribute('data-op-effective-palette') === p,
+        [theme, palette]);
+      await waitForShape(page, host, 'two-row', label);
+      await assertTwoRow(page, host, label);
+      await assertHostNodesUnchanged(page, label);
+
+      const state = await page.locator(CARD.chatgpt).evaluate(() => {
+        const shell = document.querySelector('[data-composer-trailing-controls]');
+        const inner = document.querySelector('.trailing-inner');
+        const pickerWrap = document.querySelector('.trailing-picker-wrap');
+        const model = document.querySelector('button[aria-label="Select ChatGPT model"]');
+        const sc = getComputedStyle(shell);
+        return {
+          shellBg: sc.backgroundColor,
+          shellRadius: sc.borderTopLeftRadius,
+          shellToolbarAttr: shell.getAttribute('data-op-composer-toolbar'),
+          innerToolbarAttr: inner.getAttribute('data-op-composer-toolbar'),
+          pickerWrapCapsuleItem: pickerWrap.getAttribute('data-op-model-capsule-item'),
+          pickerWrapWidth: pickerWrap.getBoundingClientRect().width,
+          modelWidth: model.getBoundingClientRect().width
+        };
+      });
+      assert.equal(state.shellBg, 'rgba(0, 0, 0, 0)', `${label}: outer trailing shell clears native pill background`);
+      assert.equal(state.shellRadius, '0px', `${label}: outer trailing shell clears pill border-radius`);
+      assert.equal(state.shellToolbarAttr, null, `${label}: outer shell is not marked data-op-composer-toolbar`);
+      assert.equal(state.innerToolbarAttr, 'true', `${label}: inner flex row is marked data-op-composer-toolbar`);
+      assert.equal(state.pickerWrapCapsuleItem, 'true', `${label}: picker branch is marked data-op-model-capsule-item`);
+      assert.ok(state.pickerWrapWidth < 180, `${label}: picker branch stays compact (${state.pickerWrapWidth}px), not stretched by flex-1`);
+      assert.ok(state.modelWidth < 180, `${label}: Model Capsule button stays compact (${state.modelWidth}px)`);
+
+      if (theme === 'dark' && palette === 'obsidian') {
+        await page.evaluate(() => {
+          const hdr = document.querySelector('.composer-header');
+          window.__savedWrappedHdr = [...hdr.childNodes];
+          hdr.replaceChildren();
+          ObsidianPrismRuntime.refresh();
+        });
+        await page.waitForFunction(() => document.querySelector('.composer-header')?.getAttribute('data-op-composer-header-empty') === 'true');
+        await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+        const wrappedCompact = await page.evaluate(() => {
+          const card = document.querySelector('[data-composer-layout]');
+          const hdr = document.querySelector('.composer-header');
+          return {
+            cardH: Math.round(card.getBoundingClientRect().height * 10) / 10,
+            hdrH: Math.round(hdr.getBoundingClientRect().height * 10) / 10,
+            hdrEmptyAttr: hdr.getAttribute('data-op-composer-header-empty')
+          };
+        });
+        assert.equal(wrappedCompact.hdrEmptyAttr, 'true', `${label}: empty header gets data-op-composer-header-empty`);
+        assert.ok(wrappedCompact.hdrH <= 0.5, `${label}: empty header collapses to 0px (got ${wrappedCompact.hdrH}px)`);
+        assert.ok(wrappedCompact.cardH <= 86, `${label}: wrapped compact card <= 86px (got ${wrappedCompact.cardH}px)`);
+        await page.evaluate(() => {
+          const hdr = document.querySelector('.composer-header');
+          hdr.replaceChildren(...(window.__savedWrappedHdr || []));
+          delete window.__savedWrappedHdr;
+          ObsidianPrismRuntime.refresh();
+        });
+        await page.waitForFunction(() => !document.querySelector('.composer-header')?.hasAttribute('data-op-composer-header-empty'));
+        await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+        if (engine === 'chromium' && artifacts) {
+          await page.locator(CARD.chatgpt).screenshot({ path: path.join(artifacts, `${engine}-chatgpt-wrapped-composer.png`), caret: 'initial' });
+        }
+      }
+    }
+
+    for (const [name, off, on] of [
+      ['composerRestyle off', { composerRestyle: false }, { composerRestyle: true }],
+      ['Native Palette', { lightPreset: 'host' }, { lightPreset: 'crystal' }]
+    ]) {
+      await patchConfig(page, off);
+      await waitForShape(page, host, 'single-row', `${engine} chatgpt wrapped ${name}`);
+      assert.deepEqual(await cardSnapshot(page, host), stripGeometry(nativeSnapshot), `${engine} chatgpt wrapped ${name}: native grid restored without attribute or layout residue`);
+      await patchConfig(page, on);
+      await waitForShape(page, host, 'two-row', `${engine} chatgpt wrapped ${name} back on`);
+    }
+
+    await patchConfig(page, { themeMode: 'dark', palette: 'obsidian' });
+    await page.waitForFunction(() =>
+      document.documentElement.getAttribute('data-op-scheme') === 'dark' &&
+      document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian'
+    );
+    await waitForShape(page, host, 'two-row', `${engine} chatgpt wrapped dark obsidian`);
+
+    await patchConfig(page, { enabled: false });
+    await waitForShape(page, host, 'single-row', `${engine} chatgpt wrapped extension disabled`);
+    assert.deepEqual(await cardSnapshot(page, host, { geometry: true }), nativeSnapshot, `${engine} chatgpt wrapped extension disabled: native composer restored exactly`);
+    await patchConfig(page, { enabled: true });
+    await waitForShape(page, host, 'two-row', `${engine} chatgpt wrapped re-enabled`);
+    await page.evaluate(() => ObsidianPrismRuntime.stop());
+    await waitForShape(page, host, 'single-row', `${engine} chatgpt wrapped stopped`);
+    assert.deepEqual(await cardSnapshot(page, host, { geometry: true }), nativeSnapshot, `${engine} chatgpt wrapped stopped: native composer restored exactly`);
+    await assertHostNodesUnchanged(page, `${engine} chatgpt wrapped stopped`);
+    assert.deepEqual(errors, []);
+    console.log(`PASS ${engine} chatgpt wrapped trailing: outer pill cleared, compact left Pro capsule, right actions, reversible`);
+  });
+
+  // 2) Multiline stacked variant ([header, primary, leading, trailing] + display: contents)
+  await onLiveFixture(suite, host, { failure: 'chatgpt-multiline-stacked-failure', initial: { themeMode: 'dark' } }, async ({ page, errors }) => {
+    await page.addStyleTag({
+      content: `${POSITIONAL_GRID}
+      [class*="composerGrid"]{grid-template-columns:146px 0px minmax(0,1fr)}
+      [class*="composerGrid"] > .composer-primary{grid-column:1 / -1;grid-row:2}
+      [class*="composerGrid"] > .composer-leading{grid-column:1;grid-row:3}
+      [class*="composerGrid"] > [data-composer-trailing-controls]{grid-column:3;grid-row:3;justify-self:end}
+      .trailing-contents{display:contents}
+      .trailing-multiline-row{display:flex;align-items:center;justify-content:flex-end;width:100%}
+      .trailing-actions-group{display:flex;flex-shrink:0;align-items:center;gap:4px}`
+    });
+    await page.locator(LIVE_SELECTORS.chatgpt.composerGrid).evaluate(grid => {
+      const header = grid.querySelector('.composer-header');
+      const primary = grid.querySelector('.composer-primary');
+      const leading = grid.querySelector('.composer-leading');
+      const trailing = grid.querySelector('.composer-trailing');
+      trailing.setAttribute('data-composer-trailing-controls', 'true');
+      const model = trailing.querySelector('button[aria-label="Select ChatGPT model"]');
+      const dictate = trailing.querySelector('button[aria-label="Dictate"]');
+      const voice = trailing.querySelector('button[aria-label="Start Voice"]');
+      model.querySelector('span').textContent = 'Pro';
+
+      const contents = document.createElement('div');
+      contents.className = 'trailing-contents';
+      const row = document.createElement('div');
+      row.className = 'trailing-multiline-row';
+      const actions = document.createElement('div');
+      actions.className = 'trailing-actions-group';
+      actions.append(dictate, voice);
+      row.append(model, actions);
+      contents.append(row);
+      trailing.replaceChildren(contents);
+      grid.replaceChildren(header, primary, leading, trailing);
+    });
+
+    const nativeSnapshot = await cardSnapshot(page, host, { geometry: true });
+    await rememberHostNodes(page);
+
+    await injectExtension(page, suite);
+    const label = `${engine} chatgpt multiline stacked`;
+    await page.waitForFunction(() => document.querySelector('[data-op-composer-grid="true"]'));
+    await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    await assertTwoRow(page, host, label);
+    await assertHostNodesUnchanged(page, label);
+
+    const multiState = await page.locator(CARD.chatgpt).evaluate(() => {
+      const row = document.querySelector('.trailing-multiline-row');
+      const model = document.querySelector('button[aria-label="Select ChatGPT model"]');
+      return {
+        rowToolbar: row.getAttribute('data-op-composer-toolbar'),
+        modelItem: model.getAttribute('data-op-model-capsule-item'),
+        modelWidth: model.getBoundingClientRect().width
+      };
+    });
+    assert.equal(multiState.rowToolbar, 'true', `${label}: inner multiline row is marked data-op-composer-toolbar`);
+    assert.equal(multiState.modelItem, 'true', `${label}: model button directly inside multiline row is marked data-op-model-capsule-item`);
+    assert.ok(multiState.modelWidth < 180, `${label}: model capsule stays compact (${multiState.modelWidth}px)`);
+
+    // Ambiguous extra control group keeps grid native.
+    await page.locator(LIVE_SELECTORS.chatgpt.composerGrid).evaluate(grid => {
+      const extra = document.createElement('div');
+      extra.id = 'host-extra-controls';
+      extra.innerHTML = '<button type="button" aria-label="Extra tool">x</button>';
+      grid.append(extra);
+    });
+    await page.evaluate(() => ObsidianPrismRuntime.refresh());
+    await page.waitForFunction(() => !document.querySelector('[data-op-composer-grid="true"]'));
+    assert.equal(await page.locator(LIVE_SELECTORS.chatgpt.composerGrid).evaluate(n => getComputedStyle(n).gridTemplateAreas), 'none');
+    await page.evaluate(() => document.getElementById('host-extra-controls').remove());
+    await page.evaluate(() => ObsidianPrismRuntime.refresh());
+    await page.waitForFunction(() => Boolean(document.querySelector('[data-op-composer-grid="true"]')));
+
+    await page.evaluate(() => ObsidianPrismRuntime.stop());
+    await page.waitForFunction(() => !document.querySelector('[data-op-composer-grid="true"]'));
+    assert.deepEqual(await cardSnapshot(page, host, { geometry: true }), nativeSnapshot, `${label} stopped: native composer restored exactly`);
+    await assertHostNodesUnchanged(page, `${label} stopped`);
+    assert.deepEqual(errors, []);
+    console.log(`PASS ${label}: [primary, leading, trailing] grid & display:contents trailing resolved and reversible`);
   });
 }
 

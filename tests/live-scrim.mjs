@@ -77,10 +77,21 @@ async function composerBox(page, host) {
 async function glowPoints(page, host, { includeInFlowBands = false } = {}) {
   const box = await composerBox(page, host);
   const vh = page.viewportSize().height;
+  const dockRect = await page.evaluate(() => {
+    const d = document.querySelector('#op-bottom-dock');
+    if (!d) return null;
+    const r = d.getBoundingClientRect();
+    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+  });
+  let right = { x: box.right + 40, y: box.centerY };
+  if (dockRect && right.x >= dockRect.left - 4 && right.x <= dockRect.right + 4 && right.y >= dockRect.top - 4 && right.y <= dockRect.bottom + 4) {
+    if (dockRect.left - box.right >= 16) right.x = Math.round((box.right + dockRect.left) / 2);
+    else right.y = Math.max(box.top + 8, dockRect.top - 10);
+  }
   const points = {
     below: { x: box.left + 8, y: Math.min(vh - 3, box.bottom + 6) },
     left: { x: box.left - 40, y: box.centerY },
-    right: { x: box.right + 40, y: box.centerY }
+    right
   };
   if (includeInFlowBands) {
     points.above = { x: box.left - 40, y: box.top - 24 };
@@ -212,8 +223,8 @@ async function textBlockStats(page, host, where) {
 function crispTargets(host) {
   const s = LIVE_SELECTORS[host];
   return host === 'chatgpt'
-    ? { editor: s.editor, disclaimer: s.disclaimer, actions: '[data-turn-key]:last-of-type .turn-actions' }
-    : { editor: s.editor, disclaimer: s.disclaimer, actions: 'model-response:last-of-type message-actions' };
+    ? { editor: s.editor, actions: '[data-turn-key]:last-of-type .turn-actions' }
+    : { editor: s.editor, actions: 'model-response:last-of-type message-actions' };
 }
 
 async function assertCrispAndClickable(page, host, label) {
@@ -225,18 +236,25 @@ async function assertCrispAndClickable(page, host, label) {
       return { x: r.left, y: r.top, width: r.width, height: r.height };
     });
     const clip = { x: rect.x + 2, y: rect.y + 2, width: Math.min(rect.width - 4, 220), height: Math.max(6, Math.min(rect.height - 4, 26)) };
-    if (name === 'disclaimer') { clip.x = rect.x + rect.width / 2 - 110; clip.width = 220; }
     const edge = await sharpness(page, clip);
     assert.ok(edge.range >= 40 && edge.ratio >= 0.3, `${label}: ${name} stays crisp (edge ${edge.ratio.toFixed(2)}, range ${edge.range.toFixed(0)})`);
   }
+  const hiddenDisclaimer = await page.locator(s.disclaimer).evaluate(node => {
+    const style = getComputedStyle(node);
+    const rect = node.getBoundingClientRect();
+    return { display: style.display, height: Math.round(rect.height * 10) / 10 };
+  });
+  assert.equal(hiddenDisclaimer.display, 'none', `${label}: disclaimer is hidden when Prism is active`);
+  assert.equal(hiddenDisclaimer.height, 0, `${label}: hidden disclaimer takes 0px height`);
+
   const hits = await page.evaluate(selectors => Object.fromEntries(Object.entries(selectors).map(([name, selector]) => {
     const node = document.querySelector(selector);
     if (!node) return [name, 'missing'];
     const r = node.getBoundingClientRect();
-    const x = name === 'disclaimer' ? r.left + r.width / 2 : r.left + Math.min(r.width / 2, 14);
+    const x = r.left + Math.min(r.width / 2, 14);
     const hit = document.elementFromPoint(x, r.top + r.height / 2);
     return [name, Boolean(hit && (node === hit || node.contains(hit)))];
-  })), { editor: s.editor, add: s.add, model: s.model, disclaimer: s.disclaimer, action: `${targets.actions} button` });
+  })), { editor: s.editor, add: s.add, model: s.model, action: `${targets.actions} button` });
   for (const [name, ok] of Object.entries(hits)) assert.equal(ok, true, `${label}: ${name} is hit-testable`);
 
   const row = await page.evaluate(([actions, composer]) => {
@@ -253,7 +271,6 @@ async function assertCrispAndClickable(page, host, label) {
   for (const button of row.buttons) assert.equal(button.hit, true, `${label}: "${button.label}" action is hit at its centre`);
   await page.locator(s.add).click({ trial: true });
   await page.locator(s.model).click({ trial: true });
-  await page.locator(s.disclaimer).click({ trial: true });
   await page.locator(`${targets.actions} button`).first().click({ trial: true });
 }
 
@@ -305,10 +322,18 @@ async function assertRestoredState(page, host, label, native, hostPatch, restore
   await scrollToEnd(page, host);
   assert.deepEqual(await dockPaint(page, host), native.paint, `${label}: Native Palette restores dock paint`);
   near((await occlusionColumn(page, host, native.canvas)).max, native.occlusion.max, 0.05, `${label}: Native Palette restores native occlusion`);
+  const restoredDisclaimer = await page.locator(LIVE_SELECTORS[host].disclaimer).evaluate(node => ({
+    display: getComputedStyle(node).display,
+    height: Math.round(node.getBoundingClientRect().height * 10) / 10
+  }));
+  assert.notEqual(restoredDisclaimer.display, 'none', `${label}: Native Palette restores disclaimer visibility`);
+  assert.ok(restoredDisclaimer.height > 0, `${label}: Native Palette restores disclaimer height`);
   if (host === 'chatgpt') {
     const hostSpacing = await chatgptSpacingMetrics(page);
     near(hostSpacing.spacerHeight, native.spacing.spacerHeight, 0.5, `${label}: Native Palette restores spacer height`);
     near(hostSpacing.bottomGap, native.spacing.bottomGap, 0.5, `${label}: Native Palette restores bottom gap`);
+  } else if (native.layout) {
+    assert.deepEqual(await gemiInputLayout(page), native.layout, `${label}: Native Palette restores Gemini input layout`);
   }
   await patchConfig(page, restorePatch, () => document.documentElement.getAttribute('data-op-effective-palette') !== 'host');
 }
@@ -319,10 +344,18 @@ async function assertDisabledAndHomeRestore(page, host, label, native, restorePa
   assert.deepEqual(await attributeSnapshot(page, host), native.attributes, `${label}: disabling restores every attribute`);
   assert.deepEqual(await dockPaint(page, host), native.paint, `${label}: disabling restores dock paint`);
   near((await occlusionColumn(page, host, native.canvas)).max, native.occlusion.max, 0.05, `${label}: disabling restores native occlusion`);
+  const disabledDisclaimer = await page.locator(LIVE_SELECTORS[host].disclaimer).evaluate(node => ({
+    display: getComputedStyle(node).display,
+    height: Math.round(node.getBoundingClientRect().height * 10) / 10
+  }));
+  assert.notEqual(disabledDisclaimer.display, 'none', `${label}: disabling restores disclaimer visibility`);
+  assert.ok(disabledDisclaimer.height > 0, `${label}: disabling restores disclaimer height`);
   if (host === 'chatgpt') {
     const disSpacing = await chatgptSpacingMetrics(page);
     near(disSpacing.spacerHeight, native.spacing.spacerHeight, 0.5, `${label}: disabling restores spacer height`);
     near(disSpacing.bottomGap, native.spacing.bottomGap, 0.5, `${label}: disabling restores bottom gap`);
+  } else if (native.layout) {
+    assert.deepEqual(await gemiInputLayout(page), native.layout, `${label}: disabling restores Gemini input layout`);
   }
   await patchConfig(page, { enabled: true, ...restorePatch }, () => document.documentElement.getAttribute('data-op-enabled') === 'true');
 
@@ -330,7 +363,7 @@ async function assertDisabledAndHomeRestore(page, host, label, native, restorePa
     await page.evaluate(sel => document.querySelector(sel)?.remove(), LIVE_SELECTORS.chatgpt.disclaimer);
     await frames(page);
     const noDisclaimer = await chatgptSpacingMetrics(page);
-    assert.ok(noDisclaimer.bottomGap >= 9 && noDisclaimer.bottomGap <= 20, `${label}: no-disclaimer dock preserves 10px bottom breathing room (got ${noDisclaimer.bottomGap})`);
+    assert.ok(noDisclaimer.bottomGap >= 8 && noDisclaimer.bottomGap <= 16, `${label}: no-disclaimer dock preserves ~10px bottom breathing room (got ${noDisclaimer.bottomGap})`);
   }
 
   const open = await textBlockStats(page, host, 'open');
@@ -384,17 +417,41 @@ async function checkChatGPTInFlow(suite) {
 
       const spacing = await chatgptSpacingMetrics(page);
       assert.equal(spacing.spacerHeight, 0, `${label}: empty sibling collapsed to 0px`);
-      assert.ok(spacing.bottomGap >= 10 && spacing.bottomGap <= 40, `${label}: compact bottom gap (${spacing.bottomGap}px)`);
-      assert.ok(spacing.bottomGap <= native.spacing.bottomGap - 20, `${label}: bottom gap tightened from native ${native.spacing.bottomGap}px to ${spacing.bottomGap}px`);
+      assert.equal(spacing.disclaimerHeight, 0, `${label}: disclaimer is hidden (0px)`);
+      assert.ok(spacing.bottomGap >= 8 && spacing.bottomGap <= 16, `${label}: composer lowered to ~10px from bottom (${spacing.bottomGap}px)`);
+      assert.ok(spacing.bottomGap <= native.spacing.bottomGap - 45, `${label}: bottom gap tightened from native ${native.spacing.bottomGap}px to ${spacing.bottomGap}px`);
       assert.equal(spacing.threadPaddingBottom, 24, `${label}: transcript bottom padding tightened to 24px`);
 
       await assertCrispAndClickable(page, host, label);
+      if (pal.name === 'obsidian') {
+        await page.evaluate(() => {
+          const form = document.querySelector('form[data-chatgpt-composer]');
+          const above = document.createElement('div');
+          above.id = 'prism-above-disclaimer';
+          above.textContent = 'ChatGPT is AI and can make mistakes. Check important info.';
+          form.before(above);
+          ObsidianPrismRuntime.refresh();
+        });
+        await page.waitForFunction(() => document.getElementById('prism-above-disclaimer')?.getAttribute('data-op-composer-disclaimer') === 'true');
+        await frames(page);
+        const aboveMetrics = await page.evaluate(() => {
+          const el = document.getElementById('prism-above-disclaimer');
+          return { display: getComputedStyle(el).display, height: el.getBoundingClientRect().height };
+        });
+        assert.equal(aboveMetrics.display, 'none', `${label}: above-composer disclaimer text is hidden`);
+        assert.equal(aboveMetrics.height, 0, `${label}: above-composer disclaimer takes 0px height`);
+        await page.evaluate(() => {
+          document.getElementById('prism-above-disclaimer')?.remove();
+          ObsidianPrismRuntime.refresh();
+        });
+        await frames(page);
+      }
       await patchConfig(page, { ambientStyle: 'aurora' }, () => document.documentElement.getAttribute('data-op-ambient-style') === 'aurora');
       if (pal.name === 'obsidian' || pal.name === 'crystal') {
         await page.screenshot({ path: path.join(artifacts, `${engine}-chatgpt-${pal.name}-live-scrim.png`) });
         await assertRestoredState(page, host, label, native, pal.hostPatch, pal.patch);
       }
-      console.log(`PASS ${label}: continuous glow (max occlusion ${occlusion.max.toFixed(2)}), spacer 0px, gap ${spacing.bottomGap}px (was ${native.spacing.bottomGap}px)`);
+      console.log(`PASS ${label}: continuous glow (max occlusion ${occlusion.max.toFixed(2)}), spacer 0px, disclaimer 0px, gap ${spacing.bottomGap}px (was ${native.spacing.bottomGap}px)`);
     }
 
     await patchConfig(page, { ...PALETTES[0].patch, ambientStyle: 'aurora' }, () => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
@@ -458,8 +515,10 @@ async function checkChatGPTStickyOverlay(suite) {
       const label = `${engine} chatgpt sticky-overlay ${pal.name}`;
       await applyPalette(page, pal, '#thread-bottom-container[data-op-composer-scrim="true"]');
       await scrollToEnd(page, host);
+      const threadPadBottom = await page.locator(LIVE_SELECTORS.chatgpt.column).evaluate(el => parseFloat(getComputedStyle(el).paddingBottom));
+      assert.ok(threadPadBottom >= 96, `${label}: overlaid thread column preserves scroll clearance >= 96px (got ${threadPadBottom})`);
       const occlusion = await assertOverlayScrimActive(page, host, pal.scheme, label);
-      console.log(`PASS ${label}: overlay blur Composer Scrim active (alpha ${occlusion.atCenter.toFixed(2)})`);
+      console.log(`PASS ${label}: overlay blur Composer Scrim active (alpha ${occlusion.atCenter.toFixed(2)}, padBottom ${threadPadBottom}px)`);
     }
     assert.deepEqual(errors, []);
   });
@@ -487,16 +546,44 @@ async function checkGeminiOverlay(suite) {
       await applyPalette(page, pal);
       await scrollToEnd(page, host);
       const occlusion = await assertOverlayScrimActive(page, host, pal.scheme, label);
-      assert.deepEqual(await gemiInputLayout(page), native.layout, `${label}: native input gradient layer keeps layout`);
+      const activeLayout = await gemiInputLayout(page);
+      assert.equal(activeLayout.position, native.layout.position, `${label}: Gemini dock keeps native positioning`);
+      assert.equal(activeLayout.left, native.layout.left);
+      assert.equal(activeLayout.right, native.layout.right);
+      assert.equal(activeLayout.bottom, native.layout.bottom);
+      assert.equal(activeLayout.minHeight, '0px', `${label}: Gemini dock drops 133px min-height`);
+      assert.equal(activeLayout.paddingTop, '16px', `${label}: Gemini dock tightens top fade padding to 16px`);
+      const gemiBottomGap = await page.evaluate(sel => {
+        const c = document.querySelector(sel);
+        return Math.round((window.innerHeight - c.getBoundingClientRect().bottom) * 10) / 10;
+      }, LIVE_SELECTORS.gemini.composer);
+      assert.ok(gemiBottomGap >= 8 && gemiBottomGap <= 16, `${label}: Gemini composer lowered to ~10px from bottom (got ${gemiBottomGap}px)`);
       assert.ok(await page.locator(LIVE_SELECTORS.gemini.attachment).isVisible(), `${label}: attachment preview visible`);
       await page.locator(`${LIVE_SELECTORS.gemini.attachment} button`).click({ trial: true });
+      const disclaimerHeight = await page.locator(LIVE_SELECTORS.gemini.disclaimer).evaluate(el => Math.round(el.getBoundingClientRect().height * 10) / 10);
+      assert.equal(disclaimerHeight, 0, `${label}: Gemini disclaimer is hidden (0px)`);
 
       await patchConfig(page, { ambientStyle: 'aurora' }, () => document.documentElement.getAttribute('data-op-ambient-style') === 'aurora');
       if (pal.name === 'obsidian' || pal.name === 'crystal') {
-        await page.screenshot({ path: path.join(artifacts, `${engine}-gemini-${pal.name}-live-scrim.png`) });
+        await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-${pal.name}-live-scrim.png`) });
+        if (pal.name === 'obsidian') {
+          const emptyDockH = await page.evaluate(() => {
+            const hdr = document.querySelector('.file-preview-container');
+            const saved = [...hdr.childNodes];
+            hdr.replaceChildren();
+            ObsidianPrismRuntime.refresh();
+            return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => {
+              const h = document.querySelector('input-container.input-gradient').getBoundingClientRect().height;
+              hdr.replaceChildren(...saved);
+              ObsidianPrismRuntime.refresh();
+              requestAnimationFrame(() => requestAnimationFrame(() => r(Math.round(h * 10) / 10)));
+            })));
+          });
+          assert.ok(emptyDockH <= 116, `${label}: empty-header Gemini overlaid dock <= 116px (got ${emptyDockH}px)`);
+        }
         await assertRestoredState(page, host, label, native, pal.hostPatch, pal.patch);
       }
-      console.log(`PASS ${label}: blur Composer Scrim active (alpha ${occlusion.atCenter.toFixed(2)})`);
+      console.log(`PASS ${label}: blur Composer Scrim active (alpha ${occlusion.atCenter.toFixed(2)}, disclaimer 0px, bottomGap ${gemiBottomGap}px)`);
     }
 
     await patchConfig(page, { ...PALETTES[0].patch, ambientStyle: 'aurora' }, () => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
