@@ -38,6 +38,8 @@
   let fadeEntries = [];
   let surfaceObserver = null;
   let primarySurface = null;
+  let dockObserver = null;
+  let observedDock = null;
   let geometryFrame = null;
   const surfaceMarks = new Map();
   const codes = new Map();
@@ -60,6 +62,7 @@
     'data-op-thread-spacer',
     'data-op-composer-surface',
     'data-op-composer-grid',
+    'data-op-composer-header-empty',
     'data-op-composer-leading',
     'data-op-composer-primary',
     'data-op-composer-trailing',
@@ -101,6 +104,7 @@
     clearTimeout(pending); pending = null;
     if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = null;
     if (geometryFrame) cancelAnimationFrame(geometryFrame); geometryFrame = null;
+    dockObserver?.disconnect(); dockObserver = null; observedDock = null;
     dockScrim = dockScroller = null;
     railSignature = ''; lastEstimate = 0; lastModelLabel = ''; lastAttachments = 0; activeTurn = -1;
     if (permanent) {
@@ -711,6 +715,7 @@
     }
     surfaceMarks.clear();
     surfaceObserver?.disconnect();surfaceObserver=null;primarySurface=null;
+    dockObserver?.disconnect();dockObserver=null;observedDock=null;
   }
   function syncSurfaces() {
     const targets = new Map();
@@ -721,7 +726,7 @@
     };
     const isNativePalette = Schema.resolvePalette(cfg) === 'host';
     const isHome = !adapter.userTurns().length && !adapter.assistantTurns().length;
-    let nextScrim = null, nextScroller = null;
+    let nextScrim = null, nextScroller = null, nextObservedDock = null;
     const nextPrimary = adapter.primarySurface?.() || null;
     add(nextPrimary,'data-op-main-surface');
     for (const element of adapter.threadColumns?.() || []) add(element,'data-op-thread-column');
@@ -753,17 +758,20 @@
         // Structural slots (unnamed ChatGPT grid, review fix P1) mark the existing grid children.
         const grid = adapter.composerGrid?.(composer);
         add(grid?.element,'data-op-composer-grid');
+        for (const element of adapter.composerEmptyHeaders?.(composer, grid) || []) add(element, 'data-op-composer-header-empty');
         for (const [slot, element] of Object.entries(grid?.slots || {})) add(element,`data-op-composer-${slot}`);
-        add(grid?.trailing,'data-op-composer-toolbar');
         const modelTrigger = adapter.modelSelectorTrigger?.() || null;
+        const toolbar = adapter.composerToolbar?.(grid?.trailing, modelTrigger) || grid?.trailing || null;
+        add(toolbar,'data-op-composer-toolbar');
         add(adapter.composerAddTrigger?.(composer),'data-op-composer-add');
         add(modelTrigger,'data-op-model-capsule');
-        add(adapter.modelCapsuleSlot?.(grid?.trailing,modelTrigger),'data-op-model-capsule-item');
+        add(adapter.modelCapsuleSlot?.(toolbar,modelTrigger),'data-op-model-capsule-item');
         add(adapter.composerPrimaryAction?.(composer),'data-op-composer-primary-action');
         for (const element of adapter.composerAttachments?.(composer) || []) add(element,'data-op-composer-attachment');
         for (const element of adapter.composerChips?.(composer) || []) add(element,'data-op-composer-chip');
       }
     }
+    nextObservedDock = nextScrim || composer || null;
     // Backdrops belong to the page canvas, not the input card. Keep their
     // reversible bridge independent of the optional composer restyling.
     for (const element of adapter.composerBackdropSurfaces?.(composer) || []) {
@@ -799,6 +807,13 @@
       if (primarySurface && global.ResizeObserver) {
         surfaceObserver=new ResizeObserver(primaryResized);
         surfaceObserver.observe(primarySurface);
+      }
+    }
+    if (nextObservedDock !== observedDock) {
+      dockObserver?.disconnect(); dockObserver = null; observedDock = nextObservedDock;
+      if (observedDock && global.ResizeObserver) {
+        dockObserver = new ResizeObserver(dockResized);
+        dockObserver.observe(observedDock);
       }
     }
     dockScrim = nextScrim; dockScroller = nextScroller;
@@ -895,7 +910,8 @@
       const turn=adapter.assistantTurns()[0]||adapter.userTurns()[0];
       scroller=turn?adapter.scrollContainer(turn):null;
     }
-    if (!scroller || [document.scrollingElement,document.documentElement,document.body].includes(scroller) || scroller.contains(scrim) || scrim.contains(scroller)) return null;
+    const scrimPos = (typeof getComputedStyle === 'function' ? getComputedStyle(scrim)?.position : '') || '';
+    if (!scroller || [document.scrollingElement,document.documentElement,document.body].includes(scroller) || scrim.contains(scroller) || (scroller.contains(scrim) && scrimPos !== 'fixed')) return null;
     return scroller;
   }
   function syncDockClearance() {
@@ -903,8 +919,10 @@
     if (enabled && dockScroller?.isConnected && dockScrim?.isConnected) {
       const box=dockScroller.getBoundingClientRect(), dock=dockScrim.getBoundingClientRect();
       const padding=parseFloat(getComputedStyle(dockScroller).paddingBottom)||0;
-      // Only a dock docked over the scroller's bottom edge covers the end of the thread.
-      if (dock.top < box.bottom && dock.bottom >= box.bottom - 1) clearance=Math.max(0,Math.ceil(box.bottom - padding - dock.top + DOCK_GAP));
+      // Only a dock docked over or floating near the scroller's bottom edge covers the end of the thread.
+      if (dock.top < box.bottom && dock.bottom >= box.bottom - 48 && dock.bottom <= box.bottom + 48) {
+        clearance=Math.max(0,Math.ceil(box.bottom - padding - dock.top + DOCK_GAP));
+      }
     }
     if (clearance) setRootVar('--op-dock-clearance',clearance+'px'); else clearRootVar('--op-dock-clearance');
   }
@@ -945,6 +963,10 @@
   function primaryResized() {
     if (lostOwnership() || !enabled || stopped) return;
     syncReadingWidth(); syncDockClearance(); syncDockAvoidance(); scheduleGeometry();
+  }
+  function dockResized() {
+    if (lostOwnership() || !enabled || stopped) return;
+    syncDockClearance(); syncDockAvoidance();
   }
   function syncAmbient() {
     if (lostOwnership()) return;

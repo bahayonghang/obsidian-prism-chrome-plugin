@@ -77,6 +77,10 @@ test('hosts.css tightens ChatGPT active conversation bottom spacer, thread colum
   assert.ok(threadRule, 'must define ChatGPT active conversation rule for [data-op-thread-column="true"]');
   assert.match(threadRule.body, /padding-bottom:\s*24px\s*!important/);
 
+  const overlaidThreadRule = findRule(s => s.startsWith(chatgptPrefix) && s.includes(':has([data-op-composer-scrim="true"])') && s.includes('[data-op-thread-column="true"]'));
+  assert.ok(overlaidThreadRule, 'must preserve bottom scroll clearance when ChatGPT dock is overlaid');
+  assert.match(overlaidThreadRule.body, /padding-bottom:\s*max\(24px,\s*var\(--op-dock-clearance,\s*96px\)\)\s*!important/);
+
   const composerColRule = findRule(
     s => s.startsWith(chatgptPrefix) && s.includes('[data-op-composer-dock="true"]') && s.includes('.composer-container')
   );
@@ -119,22 +123,39 @@ test('hosts.css tightens ChatGPT active conversation bottom spacer, thread colum
     assert.match(emptyRule.body, prop);
   }
 
+  const chatgptNoHintDockRule = findRule(
+    s => s.startsWith(chatgptPrefix) && s.includes('[data-op-composer-dock="true"]:not(:has(.composer-hint))')
+  );
+  assert.ok(chatgptNoHintDockRule, 'must keep 10px bottom padding on ChatGPT dock without .composer-hint');
+  assert.match(chatgptNoHintDockRule.body, /padding-bottom:\s*10px\s*!important/);
+
+  const dockInnerResetRule = findRule(
+    s => s.includes('[data-op-composer-dock="true"] :has([data-op-composer-surface="true"]):not(.composer-container)')
+  );
+  assert.ok(dockInnerResetRule, 'must clear vertical padding/margin on inner dock wrappers around composer surface');
+  assert.match(dockInnerResetRule.body, /padding-top:\s*0\s*!important/);
+  assert.match(dockInnerResetRule.body, /padding-bottom:\s*0\s*!important/);
+
+  const geminiPrefix = 'html[data-op-enabled="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"])';
+  const geminiDockRule = findRule(
+    s => s.startsWith(geminiPrefix) && s.endsWith('[data-op-composer-dock="true"]')
+  );
+  assert.ok(geminiDockRule, 'must lower Gemini overlaid dock closer to viewport bottom');
+  assert.match(geminiDockRule.body, /min-height:\s*0\s*!important/);
+  assert.match(geminiDockRule.body, /padding-top:\s*16px\s*!important/);
+  assert.match(geminiDockRule.body, /padding-bottom:\s*10px\s*!important/);
+
   const disclaimerRule = findRule(
     s => s.startsWith(chatgptPrefix) && s.includes('[data-op-composer-disclaimer="true"]:not(.composer-hint)')
   );
-  assert.ok(disclaimerRule, 'must compact visible disclaimer siblings without touching .composer-hint');
-  for (const prop of [
-    /min-height:\s*0\s*!important/,
-    /padding-top:\s*4px\s*!important/,
-    /padding-bottom:\s*6px\s*!important/,
-    /margin-top:\s*2px\s*!important/,
-    /margin-bottom:\s*0\s*!important/,
-    /font-size:\s*11px\s*!important/,
-    /line-height:\s*1\.35\s*!important/,
-    /text-align:\s*center\s*!important/
-  ]) {
-    assert.match(disclaimerRule.body, prop);
-  }
+  assert.ok(disclaimerRule, 'must hide visible disclaimer siblings without touching .composer-hint');
+  assert.match(disclaimerRule.body, /display:\s*none\s*!important/);
+
+  const geminiDisclaimerRule = findRule(
+    s => s.startsWith(geminiPrefix) && s.includes('hallucination-disclaimer')
+  );
+  assert.ok(geminiDisclaimerRule, 'must hide Gemini hallucination-disclaimer cleanly');
+  assert.match(geminiDisclaimerRule.body, /display:\s*none\s*!important/);
 });
 
 test('hosts.css keeps non-scrim composer backdrop layers and native fades transparent and mask-free', () => {

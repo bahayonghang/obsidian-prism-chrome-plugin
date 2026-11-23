@@ -109,7 +109,7 @@ test('hosts.css defines Prism optical composer card (single 1px border, no outli
     !s.includes(':focus-within')
   );
   assert.ok(surfaceRule, 'must define upgraded [data-op-composer-surface="true"] card rule');
-  assert.match(surfaceRule.body, /padding:\s*12px 14px 10px\s*!important/);
+  assert.match(surfaceRule.body, /padding:\s*8px 12px 7px\s*!important/);
   assert.match(surfaceRule.body, /border-radius:\s*calc\(var\(--op-radius-md\)\s*\+\s*4px\)\s*!important/);
   assert.match(surfaceRule.body, /border:\s*1px solid var\(--op-border-strong\)\s*!important/);
   assert.match(surfaceRule.body, /outline:\s*none\s*!important/);
@@ -120,6 +120,11 @@ test('hosts.css defines Prism optical composer card (single 1px border, no outli
     }
   }
 
+  const geminiInputAreaRule = findBySelector(s => s.includes('[data-op-host="gemini"]') && s.includes('input-area-v2:has([data-op-composer-surface="true"])'));
+  assert.ok(geminiInputAreaRule, 'must reset outer input-area-v2 vertical padding on Gemini');
+  assert.match(geminiInputAreaRule.body, /padding-top:\s*0\s*!important/);
+  assert.match(geminiInputAreaRule.body, /padding-bottom:\s*0\s*!important/);
+
   const editorRule = findBySelector(s =>
     s.includes('[data-op-composer-surface="true"]') &&
     s.includes('textarea') &&
@@ -127,8 +132,10 @@ test('hosts.css defines Prism optical composer card (single 1px border, no outli
     s.includes('.ql-editor')
   );
   assert.ok(editorRule, 'must define editor rule covering textarea, [contenteditable="true"], and .ql-editor');
-  assert.match(editorRule.body, /min-height:\s*40px/);
-  assert.match(editorRule.body, /padding-bottom:\s*4px/);
+  assert.match(editorRule.body, /min-height:\s*24px/);
+  assert.match(editorRule.body, /padding-top:\s*2px\s*!important/);
+  assert.match(editorRule.body, /padding-bottom:\s*2px\s*!important/);
+  assert.match(editorRule.body, /line-height:\s*1\.45/);
   assert.match(editorRule.body, /caret-color:\s*var\(--op-accent\)/);
 
   const attachmentRule = findBySelector(s => s.endsWith('[data-op-composer-attachment="true"]'));
@@ -141,7 +148,7 @@ test('hosts.css defines Prism optical composer card (single 1px border, no outli
 
   const toolsRule = findBySelector(s => s.includes('[data-op-composer-surface="true"]') && s.includes('.composer-tools'));
   assert.ok(toolsRule, 'must define .composer-tools spacing rule');
-  assert.match(toolsRule.body, /margin-top:\s*10px/);
+  assert.match(toolsRule.body, /margin-top:\s*6px/);
 
   const glowRule = findBySelector(s =>
     s.includes('[data-op-composer-glow="true"]') && s.includes('[data-op-composer-surface="true"]')
@@ -158,9 +165,9 @@ test('hosts.css defines circular + add trigger, four-pointed star Model Capsule,
 
   const addRule = findBySelector(s => s.endsWith('[data-op-composer-add="true"]'));
   assert.ok(addRule, 'must define [data-op-composer-add="true"] rule');
-  assert.match(addRule.body, /min-width:\s*32px\s*!important/);
-  assert.match(addRule.body, /width:\s*32px/);
-  assert.match(addRule.body, /height:\s*32px\s*!important/);
+  assert.match(addRule.body, /min-width:\s*28px\s*!important/);
+  assert.match(addRule.body, /width:\s*28px/);
+  assert.match(addRule.body, /height:\s*28px\s*!important/);
   assert.match(addRule.body, /padding:\s*0\s*!important/);
   assert.match(addRule.body, /border-radius:\s*999px\s*!important/);
   assert.match(addRule.body, /display:\s*inline-flex/);
@@ -182,9 +189,9 @@ test('hosts.css defines circular + add trigger, four-pointed star Model Capsule,
   assert.match(capsuleRule.body, /border:\s*1px solid color-mix\(in srgb,\s*var\(--op-accent\)\s*22%,\s*var\(--op-border-strong\)\)\s*!important/);
   assert.match(capsuleRule.body, /background:\s*color-mix\(in srgb,\s*var\(--op-accent\)\s*5%,\s*var\(--op-secondary\)\)\s*!important/);
   assert.match(capsuleRule.body, /color:\s*var\(--op-fg\)\s*!important/);
-  assert.match(capsuleRule.body, /padding:\s*4px 10px\s*!important/);
-  assert.match(capsuleRule.body, /min-height:\s*30px\s*!important/);
-  assert.match(capsuleRule.body, /height:\s*30px\s*!important/);
+  assert.match(capsuleRule.body, /padding:\s*3px 9px\s*!important/);
+  assert.match(capsuleRule.body, /min-height:\s*28px\s*!important/);
+  assert.match(capsuleRule.body, /height:\s*28px\s*!important/);
   assert.match(capsuleRule.body, /gap:\s*6px\s*!important/);
   assert.match(capsuleRule.body, /display:\s*inline-flex\s*!important/);
   assert.match(capsuleRule.body, /align-items:\s*center\s*!important/);
@@ -218,9 +225,9 @@ test('hosts.css defines circular + add trigger, four-pointed star Model Capsule,
 
   const primaryRule = findBySelector(s => s.endsWith('[data-op-composer-primary-action="true"]'));
   assert.ok(primaryRule, 'must define [data-op-composer-primary-action="true"] ink button base rule');
-  assert.match(primaryRule.body, /width:\s*34px\s*!important/);
-  assert.match(primaryRule.body, /min-width:\s*34px\s*!important/);
-  assert.match(primaryRule.body, /height:\s*34px\s*!important/);
+  assert.match(primaryRule.body, /width:\s*30px\s*!important/);
+  assert.match(primaryRule.body, /min-width:\s*30px\s*!important/);
+  assert.match(primaryRule.body, /height:\s*30px\s*!important/);
   assert.match(primaryRule.body, /border-radius:\s*999px\s*!important/);
 
   const primaryLight = findBySelector(s => s.includes('[data-op-scheme="light"]') && s.endsWith('[data-op-composer-primary-action="true"]'));
@@ -243,6 +250,8 @@ test('hosts.css defines circular + add trigger, four-pointed star Model Capsule,
   assert.match(secondaryGhost.body, /background:\s*transparent\s*!important/);
   assert.match(secondaryGhost.body, /border-color:\s*transparent\s*!important/);
   assert.match(secondaryGhost.body, /color:\s*var\(--op-fg-secondary\)\s*!important/);
+  assert.match(secondaryGhost.body, /height:\s*28px\s*!important/);
+  assert.match(secondaryGhost.body, /min-height:\s*28px\s*!important/);
 
   const motionOffRule = findBySelector(s => s.includes('[data-op-motion="off"]') && s.includes('[data-op-composer-primary-action="true"]'));
   assert.ok(motionOffRule, 'motion="off" rule must disable transitions on [data-op-composer-primary-action="true"]');
@@ -253,7 +262,7 @@ test('hosts.css defines circular + add trigger, four-pointed star Model Capsule,
   assert.match(chipRule.body, /border:\s*1px solid var\(--op-border-strong\)\s*!important/);
   assert.match(chipRule.body, /background:\s*var\(--op-secondary\)\s*!important/);
   assert.match(chipRule.body, /color:\s*var\(--op-fg-secondary\)\s*!important/);
-  assert.match(chipRule.body, /padding:\s*5px 11px\s*!important/);
+  assert.match(chipRule.body, /padding:\s*3px 10px\s*!important/);
 
   const twoRowRules = flattenRules(parseCssRules(sliceSection('/* === v0.3.1 #19 two-row composer')));
   const findTwoRow = pred => twoRowRules.find(r => splitTopLevelSelectors(r.selector).some(pred));
@@ -261,11 +270,17 @@ test('hosts.css defines circular + add trigger, four-pointed star Model Capsule,
   assert.ok(chatgptGrid);
   assert.match(chatgptGrid.body, /grid-template-columns:\s*auto minmax\(0,\s*1fr\)\s*!important/);
   assert.match(chatgptGrid.body, /grid-template-areas:\s*"header header" "primary primary" "leading trailing"\s*!important/);
+  assert.match(chatgptGrid.body, /row-gap:\s*0\s*!important/);
 
   const geminiGrid = findTwoRow(s => s.includes('[data-op-host="gemini"]') && s.endsWith('[data-op-composer-grid="true"]'));
   assert.ok(geminiGrid);
   assert.match(geminiGrid.body, /grid-template-columns:\s*auto minmax\(0,\s*1fr\)\s*!important/);
   assert.match(geminiGrid.body, /grid-template-areas:\s*"file-preview file-preview" "text-input text-input" "leading-actions trailing-actions"\s*!important/);
+  assert.match(geminiGrid.body, /row-gap:\s*0\s*!important/);
+
+  const emptyHeaderCollapse = findTwoRow(s => s.includes('[data-op-composer-header-empty="true"]'));
+  assert.ok(emptyHeaderCollapse, 'must collapse empty attachment header rows cleanly');
+  assert.match(emptyHeaderCollapse.body, /height:\s*0\s*!important/);
 
   const toolbarRule = findTwoRow(s => s.endsWith('[data-op-composer-toolbar="true"]'));
   assert.ok(toolbarRule, 'must define [data-op-composer-toolbar="true"] flex row');

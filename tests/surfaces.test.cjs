@@ -165,6 +165,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     primarySurface: () => primary,
     composerSurface: () => composer,
     composerGrid: () => ({ element: gridEl, slots: null, trailing: trailingEl }),
+    composerEmptyHeaders: () => options.emptyHeaders || [],
     composerBackdropSurfaces: () => [scrim],
     composerScrimSurface: () => scrim,
     composerBelowSiblings: () => ({
@@ -1115,7 +1116,7 @@ test('v0.4.0 handover: same-realm double-injection keeps active marks flicker-fr
     'data-op-main-surface', 'data-op-thread-column', 'data-op-composer-column', 'data-op-code-surface',
     'data-op-code-header', 'data-op-composer-dock', 'data-op-composer-scrim', 'data-op-thread-scroller',
     'data-op-composer-empty-sibling', 'data-op-composer-disclaimer', 'data-op-thread-spacer',
-    'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-leading', 'data-op-composer-primary',
+    'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-header-empty', 'data-op-composer-leading', 'data-op-composer-primary',
     'data-op-composer-trailing', 'data-op-composer-toolbar', 'data-op-composer-add', 'data-op-model-capsule',
     'data-op-model-capsule-item', 'data-op-composer-primary-action', 'data-op-composer-attachment',
     'data-op-composer-chip', 'data-op-composer-backdrop', 'data-op-sidebar-surface', 'data-op-sidebar-active'
@@ -1232,4 +1233,71 @@ test('v0.4.0 handover: isolated-world reload adopts DOM marks & root vars withou
   assert.equal(docEl.style.getPropertyValue('--op-reading-width'), '');
   assert.equal(docEl.style.getPropertyValue('--op-dock-offset-x'), '');
   assert.equal(docEl.getAttribute('style'), null);
+});
+
+test('v0.4.1 compact composer: marks empty header wrappers reversibly, detects wrapped overlaid dock, and guards sidebar against wrapping composer', async () => {
+  const emptyHeaders = [];
+  const ctx = createRuntimeDom({}, { host: 'chatgpt', emptyHeaders });
+  const gridEl = ctx.elements.get('gridEl');
+  const docEl = ctx.elements.get('docEl');
+  const primary = ctx.elements.get('primary');
+  const composer = ctx.elements.get('composer');
+
+  const emptyHeader = {
+    nodeType: 1, tagName: 'DIV', isConnected: true, parentElement: gridEl, children: [], childNodes: [], textContent: '   ',
+    attributesMap: new Map(),
+    getAttribute(k) { return this.attributesMap.get(k) ?? null; },
+    setAttribute(k, v) { this.attributesMap.set(k, String(v)); },
+    removeAttribute(k) { this.attributesMap.delete(k); },
+    hasAttribute(k) { return this.attributesMap.has(k); },
+    matches() { return false; },
+    closest() { return null; },
+    querySelector() { return null; },
+    querySelectorAll() { return []; },
+    contains(t) { return t === this; },
+    getBoundingClientRect() { return { left: 0, top: 0, right: 600, bottom: 10, width: 600, height: 10 }; }
+  };
+  gridEl.children.unshift(emptyHeader);
+  emptyHeaders.push(emptyHeader);
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(emptyHeader.getAttribute('data-op-composer-header-empty'), 'true');
+
+  // Native Palette and stop() both clear data-op-composer-header-empty cleanly.
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'host', themeMode: 'dark' } });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(emptyHeader.getAttribute('data-op-composer-header-empty'), null);
+
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark' } });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(emptyHeader.getAttribute('data-op-composer-header-empty'), 'true');
+  ctx.runtime.stop();
+  assert.equal(emptyHeader.getAttribute('data-op-composer-header-empty'), null);
+
+  // Adapter checks: wrapped sticky ancestor inside scroller + findSidebars guard against wrapping primary/composer.
+  const adapters = ctx.h.context.ObsidianPrismAdapters;
+  const scroller = { nodeType: 1, contains: n => n === stickyWrap || n === dockNode };
+  const stickyWrap = { nodeType: 1, parentElement: scroller, ownerDocument: docEl.ownerDocument };
+  const dockNode = { nodeType: 1, parentElement: stickyWrap, ownerDocument: docEl.ownerDocument };
+  const fakeView = { getComputedStyle: el => ({ position: el === stickyWrap ? 'sticky' : 'relative' }) };
+  assert.equal(adapters.isComposerDockOverlaid(dockNode, scroller, fakeView), true, 'detects sticky wrapper ancestor inside scroller');
+
+  const inFlowWrap = { nodeType: 1, parentElement: scroller, ownerDocument: docEl.ownerDocument };
+  const inFlowDock = { nodeType: 1, parentElement: inFlowWrap, ownerDocument: docEl.ownerDocument };
+  const staticView = { getComputedStyle: () => ({ position: 'relative' }) };
+  assert.equal(adapters.isComposerDockOverlaid(inFlowDock, scroller, staticView), false, 'keeps in-flow wrapper false');
+
+  // Sidebar guard: an outer sidebar selector matching an ancestor of primary/composer is excluded.
+  const fakeDoc = ctx.h.context.document;
+  const oldQsa = fakeDoc.querySelectorAll;
+  const outerWrapper = {
+    nodeType: 1, isConnected: true, attributesMap: new Map(),
+    getAttribute(k) { return this.attributesMap.get(k) ?? null; },
+    closest() { return null; },
+    querySelectorAll() { return []; },
+    contains(n) { return n === primary || n === composer; }
+  };
+  fakeDoc.querySelectorAll = sel => sel.includes('#stage-slideover-sidebar') ? [outerWrapper] : oldQsa.call(fakeDoc, sel);
+  assert.deepEqual(adapters.forHost('chatgpt', fakeDoc).sidebarSurfaces(), [], 'sidebarSurfaces rejects any container wrapping primary or composer');
+  fakeDoc.querySelectorAll = oldQsa;
 });

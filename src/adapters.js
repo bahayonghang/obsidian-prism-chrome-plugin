@@ -337,8 +337,12 @@
   }
   function findSidebars(spec, root) {
     const result = [];
+    const primary = findPrimary(spec, root);
+    const composer = findComposer(spec, root);
     const add = node => {
       if (!node || isOwned(node) || !isVisible(node) || node.closest(MESSAGE_AREAS)) return;
+      if ((primary && (node === primary || node.contains?.(primary))) ||
+          (composer && (node === composer || node.contains?.(composer)))) return;
       if (!result.includes(node)) result.push(node);
     };
     for (const selector of spec.sidebars) root.querySelectorAll(selector).forEach(add);
@@ -575,10 +579,20 @@
     if (hostNamed) return null;
     const primaryIndex = children.findIndex(child => child.contains(editor));
     if (primaryIndex < 0) return null;
-    const leading = children.slice(0, primaryIndex).filter(child => child.querySelector(spec.addTriggers));
-    const trailing = children.slice(primaryIndex + 1).filter(child => child.querySelector('button,[role="button"]'));
-    if (leading.length !== 1 || trailing.length !== 1) return null;
-    return { leading: leading[0], primary: children[primaryIndex], trailing: trailing[0] };
+    const leadingBefore = children.slice(0, primaryIndex).filter(child => child.querySelector(spec.addTriggers));
+    if (leadingBefore.length === 1) {
+      const trailing = children.slice(primaryIndex + 1).filter(child => child.querySelector('button,[role="button"]'));
+      if (trailing.length !== 1) return null;
+      return { leading: leadingBefore[0], primary: children[primaryIndex], trailing: trailing[0] };
+    }
+    if (leadingBefore.length !== 0) return null;
+    const afterPrimary = children.slice(primaryIndex + 1);
+    const leadingAfter = afterPrimary.filter(child => child.querySelector(spec.addTriggers));
+    if (leadingAfter.length !== 1) return null;
+    const trailingAfter = afterPrimary.filter(child => child !== leadingAfter[0] && child.querySelector('button,[role="button"]'));
+    if (trailingAfter.length !== 1) return null;
+    if (children.indexOf(trailingAfter[0]) <= children.indexOf(leadingAfter[0])) return null;
+    return { leading: leadingAfter[0], primary: children[primaryIndex], trailing: trailingAfter[0] };
   }
   function findComposerGrid(spec, composer) {
     if (!composer || !spec.composerGridAreas || isOwned(composer)) return null;
@@ -606,10 +620,45 @@
     }
     return null;
   }
+  function hasOtherVisibleControl(container, excluded) {
+    if (!container || isOwned(container)) return false;
+    const isExcluded = node => Boolean(excluded && (node === excluded || node.contains(excluded) || excluded.contains?.(node)));
+    if (container.matches?.('button,[role="button"]') && isVisible(container) && !isExcluded(container)) return true;
+    for (const node of container.querySelectorAll?.('button,[role="button"]') || []) {
+      if (isOwned(node) || !isVisible(node) || isExcluded(node)) continue;
+      return true;
+    }
+    return false;
+  }
+  function findComposerToolbar(trailing, modelTrigger) {
+    if (!trailing || isOwned(trailing)) return null;
+    let current = trailing;
+    for (let depth = 0; depth < 6; depth++) {
+      const kids = [...(current.children || [])].filter(child => !isOwned(child));
+      if (!kids.length) break;
+      if (modelTrigger && current.contains(modelTrigger)) {
+        const modelBranch = kids.find(child => child === modelTrigger || child.contains(modelTrigger));
+        if (!modelBranch || modelBranch === modelTrigger) break;
+        const siblingHasControl = kids.some(child => child !== modelBranch && hasOtherVisibleControl(child, null));
+        if (!siblingHasControl && hasOtherVisibleControl(modelBranch, modelTrigger)) {
+          current = modelBranch;
+          continue;
+        }
+        break;
+      }
+      if (kids.length === 1 && !kids[0].matches?.('button,[role="button"]') && hasOtherVisibleControl(kids[0], null)) {
+        current = kids[0];
+        continue;
+      }
+      break;
+    }
+    return current;
+  }
   function findModelCapsuleSlot(trailing, modelTrigger) {
     if (!trailing || !modelTrigger || isOwned(trailing) || isOwned(modelTrigger)) return null;
-    if (!trailing.contains(modelTrigger)) return null;
-    return [...trailing.children].find(child => !isOwned(child) && (child === modelTrigger || child.contains(modelTrigger))) || null;
+    const toolbar = findComposerToolbar(trailing, modelTrigger) || trailing;
+    if (!toolbar.contains(modelTrigger)) return null;
+    return [...(toolbar.children || [])].find(child => !isOwned(child) && (child === modelTrigger || child.contains(modelTrigger))) || null;
   }
   function findComposerCard(spec, composer) {
     if (!composer) return null;
@@ -660,10 +709,19 @@
     const pos = style.position || '';
     const doc = dock.ownerDocument || scroller?.ownerDocument || global.document;
     if (!scroller || scroller === doc?.scrollingElement || scroller === doc?.documentElement || scroller === doc?.body) {
-      return ['sticky', 'fixed', 'absolute'].includes(pos);
+      for (let el = dock, steps = 0; el && steps < 4; el = el.parentElement, steps++) {
+        if (steps > 0 && el.matches?.('main,[role="main"],body,html')) break;
+        const elPos = view?.getComputedStyle?.(el)?.position || '';
+        if (['sticky', 'fixed', 'absolute'].includes(elPos)) return true;
+      }
+      return false;
     }
     if (typeof scroller.contains === 'function' && scroller.contains(dock)) {
-      return ['sticky', 'fixed', 'absolute'].includes(pos);
+      for (let el = dock; el && el !== scroller; el = el.parentElement) {
+        const elPos = view?.getComputedStyle?.(el)?.position || '';
+        if (['sticky', 'fixed', 'absolute'].includes(elPos)) return true;
+      }
+      return false;
     }
     if (typeof dock.contains === 'function' && dock.contains(scroller)) return false;
     if (typeof dock.getBoundingClientRect !== 'function' || typeof scroller.getBoundingClientRect !== 'function') return false;
@@ -682,41 +740,158 @@
     const idx = [...children].indexOf(node);
     return idx >= 0 ? [...children].slice(idx + 1) : [];
   }
+  function precedingSiblings(node) {
+    if (node.previousElementSibling !== undefined) {
+      const out = [];
+      for (let sib = node.previousElementSibling; sib; sib = sib.previousElementSibling) out.push(sib);
+      return out;
+    }
+    const children = node.parentElement?.children;
+    if (!children) return [];
+    const idx = [...children].indexOf(node);
+    return idx > 0 ? [...children].slice(0, idx).reverse() : [];
+  }
   const INTERACTIVE_DESCENDANT = 'a[href],button,[role="button"],input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex]';
   const FORM_FIELD = 'input,textarea,select,[contenteditable],[contenteditable="true"]';
-  function findComposerBelowSiblings(composer, dock) {
+  const DISCLAIMER_SELECTOR = '[class*="disclaimer"], [data-testid*="disclaimer"], [data-test-id*="disclaimer"], hallucination-disclaimer, .composer-hint';
+  const DISCLAIMER_TEXT_RE = /(?:chatgpt|gemini|ai)\s+(?:is\s+ai\s+and\s+)?(?:can|may|might)\s+make\s+mistakes|check\s+important\s+info|double[- ]check\s+(?:its\s+)?responses|可能会犯错|可能会出错|请核查重要信息|内容由\s*ai\s*生成|仅供参考/i;
+  function isDisclaimerCandidate(node, composer, { allowGenericBelow = false } = {}) {
+    if (!node || isOwned(node)) return false;
+    if (composer && (node === composer || node.contains?.(composer) || composer.contains?.(node))) return false;
+    if (node.matches?.('script,style,template') || node.hasAttribute?.('hidden')) return false;
+    if (node.matches?.(MESSAGE_AREAS) || node.closest?.(MESSAGE_AREAS) || node.querySelector?.(MESSAGE_AREAS)) return false;
+    if (node.matches?.(FORM_FIELD) || node.querySelector?.(FORM_FIELD)) return false;
+    const selfMarked = node.getAttribute?.('data-op-composer-disclaimer') === 'true';
+    if (selfMarked) {
+      if (!node.isConnected || node.closest?.('[hidden], [aria-hidden="true"]') || node.style?.display === 'none') return false;
+      if (node.parentElement && !isVisible(node.parentElement)) return false;
+    } else if (!isVisible(node)) {
+      return false;
+    }
+    const txt = textOf(node).trim();
+    if (!txt || txt.length > 240) return false;
+    if (node.matches?.('svg,button,[role="button"]') || node.querySelector?.('svg')) return false;
+    if ((node.querySelectorAll?.('button,[role="button"]')?.length || 0) > 2) return false;
+    if (node.matches?.(DISCLAIMER_SELECTOR) || DISCLAIMER_TEXT_RE.test(txt)) return true;
+    if (!allowGenericBelow) return false;
+    if (selfMarked) return true;
+    const rect = typeof node.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null;
+    return Boolean(rect && rect.height > 0 && rect.height <= 96);
+  }
+  function outermostDisclaimerWrapper(node, boundary, composer) {
+    let current = node;
+    const targetText = textOf(node).trim();
+    while (current.parentElement && current.parentElement !== boundary) {
+      const parent = current.parentElement;
+      if (parent.matches?.('main,[role="main"],chat-window,body,html')) break;
+      if (isOwned(parent) || (composer && parent.contains?.(composer))) break;
+      if (parent.matches?.(MESSAGE_AREAS) || parent.querySelector?.(MESSAGE_AREAS)) break;
+      if (parent.matches?.(FORM_FIELD) || parent.querySelector?.(FORM_FIELD) || parent.querySelector?.('svg')) break;
+      if (textOf(parent).trim() !== targetText) break;
+      current = parent;
+    }
+    return current;
+  }
+  function findComposerBelowSiblings(composer, dock, primary = null, lastMessage = null) {
     const empty = [];
     const disclaimers = [];
-    if (!composer || !dock || isOwned(composer) || isOwned(dock) || !dock.contains?.(composer)) {
-      return { empty, disclaimers };
-    }
-    const view = composer.ownerDocument?.defaultView || global;
-    const form = composer.closest?.('form');
-    const anchor = form && dock.contains(form) && form !== dock ? form : composer;
-    const seen = new Set();
-    for (let current = anchor; current && current !== dock && dock.contains(current); current = current.parentElement) {
-      for (const sib of followingSiblings(current)) {
-        if (!sib || seen.has(sib) || isOwned(sib)) continue;
-        seen.add(sib);
-        if (sib.matches?.('script,style,template') || sib.matches?.(MESSAGE_AREAS) || sib.querySelector?.(MESSAGE_AREAS)) continue;
-        if (sib.hasAttribute?.('hidden')) continue;
-        const sibStyle = view?.getComputedStyle?.(sib);
-        if (sibStyle && (sibStyle.display === 'none' || ['absolute', 'fixed'].includes(sibStyle.position))) continue;
-        const txt = textOf(sib).trim();
-        if (!txt && !sib.matches?.(INTERACTIVE_DESCENDANT) && !sib.querySelector?.(INTERACTIVE_DESCENDANT)) {
-          empty.push(sib);
-          continue;
+    const seenDisclaimers = new Set();
+    const pushDisclaimer = (node, boundary) => {
+      if (!node) return;
+      const target = boundary ? outermostDisclaimerWrapper(node, boundary, composer) : node;
+      if (!target || seenDisclaimers.has(target)) return;
+      seenDisclaimers.add(target);
+      disclaimers.push(target);
+    };
+    const scanExplicitInside = (container, boundary) => {
+      if (isDisclaimerCandidate(container, composer, { allowGenericBelow: false })) {
+        pushDisclaimer(container, boundary);
+        return;
+      }
+      if (!container.querySelectorAll || container.matches?.(FORM_FIELD) || container.querySelector?.(FORM_FIELD)) return;
+      const selector = (container.matches?.(MESSAGE_AREAS) || container.querySelector?.(MESSAGE_AREAS))
+        ? DISCLAIMER_SELECTOR
+        : `${DISCLAIMER_SELECTOR}, p, span, div, small, footer`;
+      for (const child of [...container.querySelectorAll(selector)].slice(0, 24)) {
+        if (isDisclaimerCandidate(child, composer, { allowGenericBelow: false })) {
+          pushDisclaimer(child, boundary);
         }
-        if (txt.length > 0 && txt.length <= 240 && isVisible(sib) &&
-            !sib.matches?.(FORM_FIELD) && !sib.querySelector?.(FORM_FIELD)) {
-          const rect = typeof sib.getBoundingClientRect === 'function' ? sib.getBoundingClientRect() : null;
-          if (sib.matches?.('[class*="disclaimer"], .composer-hint') || (rect && rect.height > 0 && rect.height <= 96)) {
-            disclaimers.push(sib);
+      }
+    };
+    const view = composer?.ownerDocument?.defaultView || global;
+    if (composer && dock && !isOwned(composer) && !isOwned(dock) && dock.contains?.(composer)) {
+      const form = composer.closest?.('form');
+      const anchor = form && dock.contains(form) && form !== dock ? form : composer;
+      const seenFollowing = new Set();
+      const seenPreceding = new Set();
+      for (let current = anchor; current && current !== dock && dock.contains(current); current = current.parentElement) {
+        for (const sib of followingSiblings(current)) {
+          if (!sib || seenFollowing.has(sib) || isOwned(sib)) continue;
+          seenFollowing.add(sib);
+          if (sib.matches?.('script,style,template') || sib.matches?.(MESSAGE_AREAS) || sib.querySelector?.(MESSAGE_AREAS)) continue;
+          if (sib.hasAttribute?.('hidden')) continue;
+          const selfMarked = sib.getAttribute?.('data-op-composer-disclaimer') === 'true';
+          const sibStyle = view?.getComputedStyle?.(sib);
+          if (!selfMarked && sibStyle && sibStyle.display === 'none') continue;
+          const isPositioned = Boolean(sibStyle && ['absolute', 'fixed'].includes(sibStyle.position));
+          const txt = textOf(sib).trim();
+          if (!selfMarked && !isPositioned && !txt && !sib.matches?.(INTERACTIVE_DESCENDANT) && !sib.querySelector?.(INTERACTIVE_DESCENDANT)) {
+            empty.push(sib);
+            continue;
           }
+          if (isDisclaimerCandidate(sib, composer, { allowGenericBelow: !isPositioned })) {
+            pushDisclaimer(sib, dock);
+          } else if (!isPositioned) {
+            scanExplicitInside(sib, dock);
+          }
+        }
+        for (const sib of precedingSiblings(current)) {
+          if (!sib || seenPreceding.has(sib) || isOwned(sib)) continue;
+          seenPreceding.add(sib);
+          scanExplicitInside(sib, dock);
+        }
+      }
+      if (dock.parentElement && !dock.parentElement.matches?.('body,html')) {
+        for (const sib of [...(dock.parentElement.children || [])]) {
+          if (!sib || sib === dock || sib.contains?.(dock) || sib.contains?.(composer) || isOwned(sib)) continue;
+          scanExplicitInside(sib, dock.parentElement);
         }
       }
     }
-    return { empty, disclaimers };
+    if (composer && primary && lastMessage && primary.contains?.(lastMessage)) {
+      const seenPostThread = new Set();
+      for (let cur = lastMessage, depth = 0; cur && cur !== primary && depth < 14; cur = cur.parentElement, depth++) {
+        for (const sib of followingSiblings(cur)) {
+          if (!sib || seenPostThread.has(sib) || isOwned(sib)) continue;
+          seenPostThread.add(sib);
+          if (dock && (sib === dock || sib.contains?.(dock) || dock.contains?.(sib))) continue;
+          if (sib.contains?.(composer) || sib.matches?.(MESSAGE_AREAS) || sib.querySelector?.(MESSAGE_AREAS)) continue;
+          scanExplicitInside(sib, cur.parentElement || primary);
+        }
+      }
+    }
+    const dedupedDisclaimers = disclaimers.filter(node => !disclaimers.some(other => other !== node && other.contains?.(node)));
+    return { empty, disclaimers: dedupedDisclaimers };
+  }
+  function findComposerEmptyHeaders(spec, composer, grid, addTrigger, modelTrigger) {
+    if (!composer || !grid?.element || isOwned(composer) || isOwned(grid.element)) return [];
+    const editor = firstVisible(spec.editors, composer, node => composer.contains(node));
+    const view = composer.ownerDocument?.defaultView || global;
+    const emptyHeaders = [];
+    for (const child of [...(grid.element.children || [])]) {
+      if (!child || isOwned(child)) continue;
+      if (child === grid.trailing || child === grid.slots?.leading || child === grid.slots?.primary || child === grid.slots?.trailing) continue;
+      if (editor && (child === editor || child.contains?.(editor))) continue;
+      if (addTrigger && (child === addTrigger || child.contains?.(addTrigger))) continue;
+      if (modelTrigger && (child === modelTrigger || child.contains?.(modelTrigger))) continue;
+      if (child.matches?.('script,style,template') || child.hasAttribute?.('hidden')) continue;
+      const style = view?.getComputedStyle?.(child);
+      if (style && (style.display === 'none' || ['absolute', 'fixed'].includes(style.position))) continue;
+      if (!textOf(child).trim() && !child.matches?.(INTERACTIVE_DESCENDANT) && !child.querySelector?.(INTERACTIVE_DESCENDANT)) {
+        emptyHeaders.push(child);
+      }
+    }
+    return emptyHeaders;
   }
   function findThreadTailSpacers(spec, primary, messages) {
     if (!primary || !spec.tailSpacers || !messages.length) return [];
@@ -978,11 +1153,22 @@
       composerBelowSiblings: (composer, dock) => {
         const comp = composer === undefined ? findComposer(spec, root) : composer;
         const resolvedDock = dock === undefined ? findComposerScrim(spec, comp) : dock;
-        return findComposerBelowSiblings(comp, resolvedDock);
+        const primary = findPrimary(spec, root);
+        const allMessages = messages();
+        return findComposerBelowSiblings(comp, resolvedDock, primary, allMessages[allMessages.length - 1] || null);
       },
       composerGrid: (composer) => findComposerGrid(spec, composer === undefined ? findComposer(spec, root) : composer),
+      composerEmptyHeaders: (composer, grid) => {
+        const comp = composer === undefined ? findComposer(spec, root) : composer;
+        const resolvedGrid = grid === undefined ? findComposerGrid(spec, comp) : grid;
+        return findComposerEmptyHeaders(spec, comp, resolvedGrid, findComposerAddTrigger(spec, comp), findModelTrigger(spec, root));
+      },
       composerAddTrigger: (composer) => findComposerAddTrigger(spec, composer === undefined ? findComposer(spec, root) : composer),
       modelSelectorTrigger: () => findModelTrigger(spec, root),
+      composerToolbar: (trailing, modelTrigger) => findComposerToolbar(
+        trailing === undefined ? findComposerGrid(spec, findComposer(spec, root))?.trailing : trailing,
+        modelTrigger === undefined ? findModelTrigger(spec, root) : modelTrigger
+      ),
       modelCapsuleSlot: (trailing, modelTrigger) => findModelCapsuleSlot(
         trailing === undefined ? findComposerGrid(spec, findComposer(spec, root))?.trailing : trailing,
         modelTrigger === undefined ? findModelTrigger(spec, root) : modelTrigger

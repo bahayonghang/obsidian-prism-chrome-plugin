@@ -951,12 +951,13 @@ test('composerBelowSiblings separates empty spacers from visible disclaimers bel
   nestedEmpty.append(el('div', {}));
   const disclaimer = el('div', { class: 'disclaimer_v7rk' }, { textContent: 'Offline disclaimer. ', rect: { left: 260, right: 1020, top: 858, bottom: 900, width: 760, height: 42 } });
   disclaimer.append(el('a', { href: '#prefs' }, { textContent: 'Cookie Preferences' }));
+  const genericBelow = el('div', { class: 'footer-note-plain' }, { textContent: 'Offline footer terms notice.', rect: { left: 260, right: 1020, top: 858, bottom: 882, width: 760, height: 24 } });
   const hiddenDisclaimer = el('div', { class: 'disclaimer_hidden', hidden: '' }, { textContent: 'Hidden notice', rect: { left: 260, right: 1020, top: 858, bottom: 890, width: 760, height: 32 } });
   const inputSibling = el('div', { class: 'disclaimer_input' }, { textContent: 'Input row', rect: { left: 260, right: 1020, top: 858, bottom: 890, width: 760, height: 32 } });
   inputSibling.append(el('input', { type: 'text' }));
   const tallSibling = el('div', {}, { textContent: 'Tall non-disclaimer panel', rect: { left: 260, right: 1020, top: 858, bottom: 990, width: 760, height: 132 } });
 
-  col.append(preAttachment, form, emptySpacer, nestedEmpty, disclaimer, hiddenDisclaimer, inputSibling, tallSibling);
+  col.append(preAttachment, form, emptySpacer, nestedEmpty, disclaimer, genericBelow, hiddenDisclaimer, inputSibling, tallSibling);
   const dockLevelDisclaimer = el('div', { class: 'composer-hint' }, { textContent: 'Dock level hint', rect: { left: 260, right: 1020, top: 890, bottom: 900, width: 760, height: 10 } });
   const outsideSibling = el('div', { class: 'outside-after-dock' });
   dock.append(col, dockLevelDisclaimer);
@@ -965,7 +966,69 @@ test('composerBelowSiblings separates empty spacers from visible disclaimers bel
   const adapter = A.forHost('chatgpt', doc);
   const res = adapter.composerBelowSiblings(composer, dock);
   assert.deepEqual([...res.empty], [emptySpacer, nestedEmpty]);
-  assert.deepEqual([...res.disclaimers], [disclaimer, dockLevelDisclaimer]);
+  assert.deepEqual([...res.disclaimers], [disclaimer, genericBelow, dockLevelDisclaimer]);
+
+  // Once Prism hides below-form disclaimers via CSS (display: none, 0px height), rescans must preserve them.
+  disclaimer.setAttribute('data-op-composer-disclaimer', 'true');
+  genericBelow.setAttribute('data-op-composer-disclaimer', 'true');
+  disclaimer.getBoundingClientRect = () => ({ left: 260, right: 1020, top: 858, bottom: 858, width: 760, height: 0 });
+  genericBelow.getBoundingClientRect = () => ({ left: 260, right: 1020, top: 858, bottom: 858, width: 760, height: 0 });
+  const origGetStyle = doc.defaultView.getComputedStyle;
+  doc.defaultView.getComputedStyle = n => (
+    (n === disclaimer || n === genericBelow)
+      ? { display: 'none', visibility: 'visible', opacity: '1', contentVisibility: 'visible' }
+      : origGetStyle(n)
+  );
+  const resAfterHide = adapter.composerBelowSiblings(composer, dock);
+  assert.deepEqual([...resAfterHide.empty], [emptySpacer, nestedEmpty]);
+  assert.equal(resAfterHide.disclaimers.includes(disclaimer), true, 'keeps selector-matched below disclaimer across rescans');
+  assert.equal(resAfterHide.disclaimers.includes(genericBelow), true, 'keeps generic below disclaimer across rescans');
+});
+
+test('composerBelowSiblings detects above-form and deep post-thread AI disclaimers while ignoring turns and icon buttons', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main');
+  const scroller = el('div', { class: 'scroller' });
+  const threadWrap = el('div', {});
+  let nestedHost = threadWrap;
+  for (let i = 0; i < 8; i++) {
+    const layer = el('div', {});
+    nestedHost.append(layer);
+    nestedHost = layer;
+  }
+  const assistantTurn = el('div', { 'data-message-author-role': 'assistant' }, { textContent: 'ChatGPT is AI and can make mistakes.' });
+  nestedHost.append(assistantTurn);
+  const postThreadInner = el('span', {}, { textContent: 'ChatGPT is AI and can make mistakes. Check important info.' });
+  const postThreadWrap = el('div', {}, { textContent: 'ChatGPT is AI and can make mistakes. Check important info.', rect: { left: 260, right: 1020, top: 700, bottom: 720, width: 760, height: 20 } });
+  postThreadWrap.append(postThreadInner);
+  scroller.append(threadWrap, postThreadWrap);
+
+  const dock = el('div', { id: 'thread-bottom-container' });
+  const col = el('div', { class: 'composer-column' });
+  const scrollBtn = el('button', { type: 'button', 'aria-label': 'Scroll down' }, { textContent: 'ChatGPT is AI and can make mistakes.' });
+  scrollBtn.append(el('svg', {}));
+  const aboveInner = el('div', {}, { textContent: 'ChatGPT is AI and can make mistakes. Check important info.' });
+  const aboveOuter = el('div', {}, { textContent: 'ChatGPT is AI and can make mistakes. Check important info.', rect: { left: 260, right: 1020, top: 740, bottom: 760, width: 760, height: 20 } });
+  aboveOuter.append(aboveInner);
+  const form = el('form', { 'data-chatgpt-composer': '' });
+  const composer = el('div', { 'data-composer-layout': 'single-line' });
+  form.append(composer);
+  col.append(scrollBtn, aboveOuter, form);
+  dock.append(col);
+  main.append(scroller, dock);
+  body.append(main);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const res = adapter.composerBelowSiblings(composer, dock);
+  assert.deepEqual([...res.disclaimers], [aboveOuter, postThreadWrap]);
+
+  // Once Prism hides a marked disclaimer via CSS (computed display: none), a subsequent scan must keep it marked.
+  aboveOuter.setAttribute('data-op-composer-disclaimer', 'true');
+  const origGetStyle = doc.defaultView.getComputedStyle;
+  doc.defaultView.getComputedStyle = n => (n === aboveOuter ? { display: 'none', visibility: 'visible', opacity: '1', contentVisibility: 'visible' } : origGetStyle(n));
+  const resAfterHide = adapter.composerBelowSiblings(composer, dock);
+  assert.equal(resAfterHide.disclaimers.includes(aboveOuter), true, 'keeps CSS-hidden self-marked disclaimer across rescans');
 });
 
 test('v0.4.0 #27: computeDockAvoidance computes idempotent zero-overlap shifts across corner floats, composer, tall rail, and tiny viewports', () => {
@@ -1156,4 +1219,37 @@ test('v0.4.0 #27: cornerFloatingObstacles finds small corner buttons/wrappers an
   assert.equal(found.length, 2, 'detects the fixed help button and deduplicated absolute feedback wrapper');
   assert.deepEqual(found[0], { left: 1232, right: 1264, top: 852, bottom: 884, width: 32, height: 32 });
   assert.deepEqual(found[1], { left: 1180, right: 1220, top: 852, bottom: 884, width: 40, height: 32 });
+});
+
+test('v0.4.1 compact composer: composerEmptyHeaders identifies empty wrapper headers while keeping attachments, leading, primary, and trailing intact', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main');
+  const composer = el('div', { 'data-composer-layout': 'single-line' });
+  const grid = el('div', { class: 'composerGrid_test' }, { style: { display: 'grid' } });
+  const emptyHeader = el('div', { class: 'composer-header' });
+  emptyHeader.append(el('div', {}, { textContent: '   ' }));
+  const filledHeader = el('div', { class: 'composer-header-extra' });
+  filledHeader.append(el('button', { type: 'button' }, { textContent: 'chip' }));
+  const leading = el('div', { class: 'composer-leading' }, { style: { gridColumnStart: 'leading', gridRowStart: 'leading' } });
+  const addBtn = el('button', { type: 'button', 'aria-label': 'Add files and more' });
+  leading.append(addBtn);
+  const primary = el('div', { class: 'composer-primary' }, { style: { gridColumnStart: 'primary', gridRowStart: 'primary' } });
+  const editor = el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' });
+  primary.append(editor);
+  const trailing = el('div', { class: 'composer-trailing' }, { style: { gridColumnStart: 'trailing', gridRowStart: 'trailing' } });
+  const modelBtn = el('button', { type: 'button', 'aria-label': 'Select ChatGPT model' });
+  trailing.append(modelBtn);
+  grid.append(emptyHeader, filledHeader, leading, primary, trailing);
+  composer.append(grid);
+  main.append(composer);
+  body.append(main);
+
+  const adapter = A.forHost('chatgpt', doc);
+  assert.deepEqual([...adapter.composerEmptyHeaders(composer)], [emptyHeader]);
+  emptyHeader.textContent = 'attachment.pdf';
+  assert.deepEqual([...adapter.composerEmptyHeaders(composer)], []);
+  emptyHeader.textContent = '';
+  emptyHeader.append(el('button', { type: 'button' }));
+  assert.deepEqual([...adapter.composerEmptyHeaders(composer)], []);
 });
