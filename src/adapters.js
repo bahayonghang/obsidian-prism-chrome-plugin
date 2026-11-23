@@ -32,8 +32,10 @@
       contentWidth: { native: 768, targets: ['[class*="transcriptContent"]'], composerTargets: ['#thread-bottom [class*="--thread-content-max-width"]'] },
       threadColumns: '.thread, [data-testid="conversation-thread"], [class*="thread-content"]',
       composerColumns: '.composer-container, [data-testid="composer-container"]',
-      // v0.3.1 #19: grid area names the two-row Composer Surface rearranges (probe 2026-11-22).
+      // v0.3.1 #19: grid area names the two-row Composer Surface rearranges. Inferred: the probe
+      // (2026-11-22) saw only the column tracks, so an unnamed grid falls back to structural slots.
       composerGridAreas: ['leading', 'primary', 'trailing'],
+      composerGridSlots: true,
       tailSpacers: '[data-testid="conversation-turn-spacer"], .thread-bottom-spacer',
       sidebars: ['#stage-slideover-sidebar', '#stage-sidebar', '#app-rail', '[data-testid="app-rail"]', '[data-testid="app-sidebar"]', '[data-testid="history-sidebar"]', '[data-testid="sidebar"]', '[data-testid="sidebar-container"]', '[data-testid="stage-thread-flyout"]', '[data-testid="conversation-history"]', '[data-testid="chat-history"]'],
       sidebarLinks: 'a[href^="/c/"],a[href^="/g/"],a[href^="/project/"]',
@@ -513,9 +515,29 @@
     }
     return chips.filter(node => !chips.some(other => other !== node && other.contains(node)));
   }
-  // v0.3.1 #19 two-row composer: the host's own grid that lays out the editor row. It qualifies only when
-  // its direct children are placed by every expected area name. Children are read, not the container,
-  // because our override changes the container's template; an unknown layout keeps its native row.
+  // v0.3.1 #19 two-row composer: the host's own grid that lays out the editor row, as { element, slots }.
+  // It qualifies when its direct children are placed by every expected area name (slots: null). Children
+  // are read, not the container, because our override changes the container's template.
+  // Review fix (P1): the ChatGPT area names are inferred; the probe only saw a "36px | input | trailing"
+  // grid. When no child carries a named area, a host with composerGridSlots identifies the slots by role
+  // instead: leading holds the add button, primary the editor, trailing is the only control-bearing child
+  // after primary. content.js marks those existing children reversibly (data-op-composer-<slot>) and
+  // hosts.css names their areas; nothing is moved or wrapped (ADR-0002). An unknown layout stays native.
+  const COMPOSER_SLOT_MARKS = ['data-op-composer-leading', 'data-op-composer-primary', 'data-op-composer-trailing'];
+  const isAreaName = value => Boolean(value) && !/^(?:auto|-?\d+|span(?:\s+\d+)?)$/.test(value);
+  function composerGridSlots(spec, grid, editor, view) {
+    const children = [...grid.children].filter(child => !isOwned(child));
+    // Our slot marks give children area names; only unmarked children show the host's own placement.
+    const hostNamed = children.some(child => !COMPOSER_SLOT_MARKS.some(mark => child.hasAttribute(mark)) &&
+      ['gridRowStart', 'gridRowEnd', 'gridColumnStart', 'gridColumnEnd'].some(key => isAreaName(view.getComputedStyle(child)[key])));
+    if (hostNamed) return null;
+    const primaryIndex = children.findIndex(child => child.contains(editor));
+    if (primaryIndex < 0) return null;
+    const leading = children.slice(0, primaryIndex).filter(child => child.querySelector(spec.addTriggers));
+    const trailing = children.slice(primaryIndex + 1).filter(child => child.querySelector('button,[role="button"]'));
+    if (leading.length !== 1 || trailing.length !== 1) return null;
+    return { leading: leading[0], primary: children[primaryIndex], trailing: trailing[0] };
+  }
   function findComposerGrid(spec, composer) {
     if (!composer || !spec.composerGridAreas || isOwned(composer)) return null;
     const view = composer.ownerDocument?.defaultView;
@@ -525,10 +547,13 @@
       if (/grid/.test(view.getComputedStyle(node).display)) {
         const names = new Set();
         for (const child of node.children) {
+          if (COMPOSER_SLOT_MARKS.some(mark => child.hasAttribute(mark))) continue;
           const style = view.getComputedStyle(child);
           names.add(style.gridRowStart); names.add(style.gridColumnStart);
         }
-        if (spec.composerGridAreas.every(name => names.has(name))) return node;
+        if (spec.composerGridAreas.every(name => names.has(name))) return { element: node, slots: null };
+        const slots = spec.composerGridSlots ? composerGridSlots(spec, node, editor, view) : null;
+        if (slots) return { element: node, slots };
       }
       if (node === composer) break;
     }

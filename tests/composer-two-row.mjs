@@ -303,6 +303,69 @@ export async function checkTwoRowComposer(suite) {
       console.log(`PASS ${engine} ${host} two-row Composer Surface: geometry, host DOM order, native input/menu/upload, reversible in dark and light`);
     });
   }
+  await checkPositionalChatGPTGrid(suite);
+}
+
+/**
+ * Positional variant of the ChatGPT live fixture. The probe recorded only a three-column grid
+ * "36px | input | trailing"; the area names in the fixture are inferred. Here the host grid has no
+ * grid-template-areas: the attachment header spans the first row by line numbers and the leading, primary
+ * and trailing children are placed by column order alone.
+ */
+const POSITIONAL_GRID = '[class*="composerGrid"]{grid-template-areas:none}[class*="composerGrid"] > *{grid-area:auto}[class*="composerGrid"] > .composer-header{grid-column:1 / -1}';
+
+async function checkPositionalChatGPTGrid(suite) {
+  const { engine } = suite;
+  const host = 'chatgpt';
+  await onLiveFixture(suite, host, { failure: 'chatgpt-two-row-positional-failure', initial: { themeMode: 'dark' } }, async ({ page, errors }) => {
+    await page.addStyleTag({ content: POSITIONAL_GRID });
+    const areas = () => page.locator(LIVE_SELECTORS.chatgpt.composerGrid).evaluate(node => getComputedStyle(node).gridTemplateAreas);
+    assert.equal(await areas(), 'none', 'chatgpt positional: the host grid names no areas');
+    await waitForShape(page, host, 'single-row', 'chatgpt positional native');
+    const nativeSnapshot = await cardSnapshot(page, host, { geometry: true });
+    await rememberHostNodes(page);
+
+    await injectExtension(page, suite);
+    const label = `${engine} chatgpt positional grid`;
+    await waitForShape(page, host, 'two-row', label);
+    await assertTwoRow(page, host, label);
+    await assertHostNodesUnchanged(page, label);
+
+    for (const [name, off, on] of [['composerRestyle off', { composerRestyle: false }, { composerRestyle: true }], ['Native Palette', { palette: 'host' }, { palette: 'obsidian' }]]) {
+      await patchConfig(page, off);
+      await waitForShape(page, host, 'single-row', `${label} ${name}`);
+      assert.deepEqual(await cardSnapshot(page, host), stripGeometry(nativeSnapshot), `${label} ${name}: native grid restored without attribute or layout residue`);
+      await patchConfig(page, on);
+      await waitForShape(page, host, 'two-row', `${label} ${name} back on`);
+    }
+
+    // Negative case: a second control group after the editor makes the trailing slot ambiguous, so the
+    // unrecognizable grid stays native. Removing it makes the slots recognizable again.
+    await page.locator(LIVE_SELECTORS.chatgpt.composerGrid).evaluate(grid => {
+      const extra = document.createElement('div');
+      extra.id = 'host-extra-controls';
+      extra.innerHTML = '<button type="button" aria-label="Extra tool">x</button>';
+      grid.append(extra);
+    });
+    await page.evaluate(() => ObsidianPrismRuntime.refresh());
+    await waitForShape(page, host, 'single-row', `${label} unrecognizable slots`);
+    assert.equal(await areas(), 'none', `${label}: an unrecognizable positional grid keeps its native template`);
+    await page.evaluate(() => document.getElementById('host-extra-controls').remove());
+    await page.evaluate(() => ObsidianPrismRuntime.refresh());
+    await waitForShape(page, host, 'two-row', `${label} recognizable again`);
+
+    await patchConfig(page, { enabled: false });
+    await waitForShape(page, host, 'single-row', `${label} extension disabled`);
+    assert.deepEqual(await cardSnapshot(page, host, { geometry: true }), nativeSnapshot, `${label} extension disabled: native composer restored exactly`);
+    await patchConfig(page, { enabled: true });
+    await waitForShape(page, host, 'two-row', `${label} re-enabled`);
+    await page.evaluate(() => ObsidianPrismRuntime.stop());
+    await waitForShape(page, host, 'single-row', `${label} stopped`);
+    assert.deepEqual(await cardSnapshot(page, host, { geometry: true }), nativeSnapshot, `${label} stopped: native composer restored exactly`);
+    await assertHostNodesUnchanged(page, `${label} stopped`);
+    assert.deepEqual(errors, []);
+    console.log(`PASS ${label}: unnamed ChatGPT grid gets the two-row Composer Surface by structural slots, keeps host DOM order, restores exactly, and an unrecognizable grid stays native`);
+  });
 }
 
 function stripGeometry(snapshot) {

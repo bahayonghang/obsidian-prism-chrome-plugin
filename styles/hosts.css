@@ -839,6 +839,15 @@ html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not
   grid-template-columns: auto minmax(0, 1fr) auto !important;
   grid-template-areas: "file-preview file-preview file-preview" "text-input text-input text-input" "leading-actions . trailing-actions" !important;
 }
+/* Review fix P1: ChatGPT's area names are inferred. On a grid without named areas the adapter marks the
+ * existing children it identified by role (data-op-composer-leading/-primary/-trailing) and these rules
+ * name their areas; any other child (the attachment header) spans the first free row. */
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] > [data-op-composer-leading="true"] { grid-area: leading !important; }
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] > [data-op-composer-primary="true"] { grid-area: primary !important; }
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] > [data-op-composer-trailing="true"] { grid-area: trailing !important; }
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"]:has(> [data-op-composer-primary="true"]) > :not([data-op-composer-leading="true"], [data-op-composer-primary="true"], [data-op-composer-trailing="true"]) {
+  grid-column: 1 / -1 !important;
+}
 
 /* === v0.3.1 #20 conversation heading typography ===
  * Outside Native Palette, h1–h4 inside User and Assistant Turns follow the message body font family, use
