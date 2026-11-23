@@ -179,7 +179,7 @@ async function assertPopoverInsideViewport(page, label) {
 
 const RUNTIME_SURFACE_ATTRS = [
   'data-op-main-surface', 'data-op-thread-column', 'data-op-composer-column', 'data-op-code-surface',
-  'data-op-code-header', 'data-op-composer-dock', 'data-op-composer-scrim', 'data-op-thread-scroller',
+  'data-op-code-header', 'data-op-composer-dock', 'data-op-composer-overlaid', 'data-op-composer-scrim', 'data-op-thread-scroller', 'data-op-scroller-fade',
   'data-op-composer-empty-sibling', 'data-op-composer-disclaimer', 'data-op-thread-spacer',
   'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-header-empty', 'data-op-composer-leading', 'data-op-composer-primary',
   'data-op-composer-trailing', 'data-op-composer-toolbar', 'data-op-composer-add', 'data-op-model-capsule',
@@ -187,7 +187,7 @@ const RUNTIME_SURFACE_ATTRS = [
   'data-op-composer-chip', 'data-op-composer-backdrop', 'data-op-sidebar-surface', 'data-op-sidebar-active'
 ];
 const RUNTIME_ROOT_VARS = [
-  '--op-reading-width', '--op-reading-shift', '--op-dock-clearance', '--op-dock-offset-x', '--op-dock-offset-y'
+  '--op-reading-width', '--op-reading-shift', '--op-dock-clearance', '--op-scroller-fade-start', '--op-scroller-fade-end', '--op-dock-offset-x', '--op-dock-offset-y'
 ];
 
 async function assertNoRuntimeResidue(page, label) {

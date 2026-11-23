@@ -12,7 +12,7 @@
  */
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { onLiveFixture, injectExtension as injectRuntime, patchConfig, settle as frames, LIVE_SELECTORS } from './live-fixtures.mjs';
+import { onLiveFixture, injectExtension as injectRuntime, patchConfig, settle as frames, applyChatGPTBottomVariants, LIVE_SELECTORS } from './live-fixtures.mjs';
 import { capturePixels, regionStats } from './measure.mjs';
 
 /** The @supports condition that switches the scrim from the fallback gradient to the blur. */
@@ -37,14 +37,15 @@ async function injectExtension(page, suite) {
   await frames(page);
 }
 
-async function applyPalette(page, pal, extraSelector = '') {
-  await patchConfig(page, { ...pal.patch, ambientStyle: 'aurora' });
-  await page.waitForFunction(([name, scheme, sel]) =>
+async function applyPalette(page, pal, extraSelector = '', extraPatch = {}) {
+  await patchConfig(page, { ...pal.patch, ambientStyle: 'aurora', ...extraPatch });
+  await page.waitForFunction(([name, scheme, sel, tex]) =>
     document.documentElement.getAttribute('data-op-effective-palette') === name &&
     document.documentElement.getAttribute('data-op-scheme') === scheme &&
     document.documentElement.getAttribute('data-op-ambient-style') === 'aurora' &&
+    (!tex || document.documentElement.getAttribute('data-op-texture') === tex) &&
     (!sel || Boolean(document.querySelector(sel))),
-    [pal.name, pal.scheme, extraSelector]
+    [pal.name, pal.scheme, extraSelector, extraPatch.ambientTexture || '']
   );
   await frames(page);
 }
@@ -122,25 +123,29 @@ async function assertGlowContinuous(page, host, label, canvas, options = {}) {
 }
 
 /**
- * Inserts a flat block behind the composer dock (inside the scroller, z-index:0) and estimates how opaque
- * the canvas paint over it is across a column from above the composer to the viewport bottom.
+ * Inserts a flat block behind the composer dock (prepended to main outside the masked scroller, z-index:0)
+ * and estimates how opaque the canvas paint over it is across a column from above the composer to the viewport bottom.
  */
 async function occlusionColumn(page, host, canvas) {
   const box = await composerBox(page, host);
   const backdrop = (canvas.r + canvas.g + canvas.b) / 3 > 128 ? { r: 0, g: 0, b: 0 } : { r: 255, g: 255, b: 255 };
   const top = box.top - 70;
-  await page.locator(LIVE_SELECTORS[host].scroller).evaluate((scroller, { top, color }) => {
+  await page.locator(LIVE_SELECTORS[host].main).evaluate((main, { top, color }) => {
     const block = document.createElement('div');
     block.id = 'prism-test-occlusion-block';
     block.style.cssText = `position:fixed;left:0;right:0;top:${top}px;bottom:0;z-index:0;pointer-events:none;background:${color}`;
-    scroller.append(block);
+    main.prepend(block);
   }, { top, color: fmt(backdrop) });
-  await frames(page);
-  const x = Math.round(box.left - 40);
-  const height = page.viewportSize().height;
-  const image = await capturePixels(page, { x, y: top + 20, width: 1, height: height - (top + 20) - 2 });
-  await page.evaluate(() => document.getElementById('prism-test-occlusion-block')?.remove());
-  await frames(page);
+  let image;
+  try {
+    await frames(page);
+    const x = Math.round(box.left - 40);
+    const height = page.viewportSize().height;
+    image = await capturePixels(page, { x, y: top + 20, width: 1, height: height - (top + 20) - 2 });
+  } finally {
+    await page.evaluate(() => document.getElementById('prism-test-occlusion-block')?.remove());
+    await frames(page);
+  }
   const span = { r: canvas.r - backdrop.r, g: canvas.g - backdrop.g, b: canvas.b - backdrop.b };
   const norm = span.r ** 2 + span.g ** 2 + span.b ** 2;
   const alphas = [];
@@ -205,18 +210,22 @@ async function textBlockStats(page, host, where) {
   const box = await composerBox(page, host);
   const clip = { x: Math.round(box.left - 180), y: Math.round(where === 'behind' ? box.centerY - 22 : box.top - 260), width: 150, height: 44 };
   const color = await page.evaluate(() => getComputedStyle(document.documentElement).getPropertyValue('--op-fg').trim() || getComputedStyle(document.body).color);
-  await page.locator(LIVE_SELECTORS[host].scroller).evaluate((scroller, { clip, color }) => {
+  await page.locator(LIVE_SELECTORS[host].main).evaluate((main, { clip, color }) => {
     const block = document.createElement('div');
     block.id = 'prism-test-text-block';
     block.textContent = 'MWMW WMWM MWMW WMWM MWMW WMWM MWMW WMWM';
     block.style.cssText = `position:fixed;left:${clip.x}px;top:${clip.y}px;width:${clip.width}px;height:${clip.height}px;z-index:0;overflow:hidden;pointer-events:none;font:700 15px/22px Arial,sans-serif;letter-spacing:1px;color:${color};background:transparent`;
-    scroller.append(block);
+    main.prepend(block);
   }, { clip, color });
-  await frames(page);
-  const stats = await regionStats(page, clip);
-  const edge = await sharpness(page, clip);
-  await page.evaluate(() => document.getElementById('prism-test-text-block')?.remove());
-  await frames(page);
+  let stats, edge;
+  try {
+    await frames(page);
+    stats = await regionStats(page, clip);
+    edge = await sharpness(page, clip);
+  } finally {
+    await page.evaluate(() => document.getElementById('prism-test-text-block')?.remove());
+    await frames(page);
+  }
   return { variance: stats.variance, sharpness: edge.ratio };
 }
 
@@ -284,11 +293,12 @@ async function dockPaint(page, host) {
   return page.locator(LIVE_SELECTORS[host].composer).first().evaluate((composer, mainSelector) => {
     const out = [];
     for (let node = composer.parentElement; node && !node.matches(mainSelector); node = node.parentElement) {
-      const style = getComputedStyle(node), before = getComputedStyle(node, '::before');
+      const style = getComputedStyle(node), before = getComputedStyle(node, '::before'), after = getComputedStyle(node, '::after');
       out.push({
-        tag: node.localName, background: style.backgroundColor, image: style.backgroundImage,
+        tag: node.localName, background: style.backgroundColor, image: style.backgroundImage, boxShadow: style.boxShadow,
         backdrop: style.backdropFilter || 'none', mask: style.maskImage || 'none', isolation: style.isolation, position: style.position,
-        before: { content: before.content, background: before.backgroundColor, image: before.backgroundImage, backdrop: before.backdropFilter || 'none', mask: before.maskImage || 'none' }
+        before: { content: before.content, background: before.backgroundColor, image: before.backgroundImage, backdrop: before.backdropFilter || 'none', mask: before.maskImage || 'none' },
+        after: { content: after.content, background: after.backgroundColor, image: after.backgroundImage, backdrop: after.backdropFilter || 'none', mask: after.maskImage || 'none', boxShadow: after.boxShadow }
       });
     }
     return out;
@@ -375,7 +385,7 @@ async function assertDisabledAndHomeRestore(page, host, label, native, restorePa
   const homeText = await textBlockStats(page, host, 'behind');
   assert.ok(homeText.sharpness >= open.sharpness * 0.8, `${label}: Home State does not blur beside composer`);
   assert.ok((await dockPaint(page, host)).every(layer => layer.backdrop === 'none' && layer.before.backdrop === 'none'), `${label}: Home State applies no backdrop blur`);
-  assert.equal(await page.locator('[data-op-composer-dock="true"],[data-op-composer-scrim="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"]').count(), 0, `${label}: Home State clears dock/scrim/sibling marks`);
+  assert.equal(await page.locator('[data-op-composer-dock="true"],[data-op-composer-overlaid="true"],[data-op-composer-scrim="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"]').count(), 0, `${label}: Home State clears dock/scrim/fade/sibling marks`);
 }
 
 /** ChatGPT in-flow dock across all 4 palettes: seamless horizon glow, zero veil/blur, compact bottom spacing. */
@@ -497,28 +507,305 @@ async function assertOverlayScrimActive(page, host, scheme, label, { checkFallba
   return occlusion;
 }
 
-/** ChatGPT sticky-overlay variant: #thread-bottom-container moved inside scroller with position:sticky. */
+/**
+ * Verifies ChatGPT independent-scroller Alpha bottom fade inside [data-prism-test-scroller]:
+ * an in-flow strip near the scroller bottom stays opaque above the 24px fade zone and fades
+ * smoothly to 0 across the bottom 24px, while Ambient Stage glyphs + aurora and Composer Surface stay untouched.
+ */
+async function assertScrollerAlphaFade(page, label, canvas) {
+  const sRect = await page.locator(LIVE_SELECTORS.chatgpt.scroller).evaluate(scroller => {
+    scroller.scrollTop = scroller.scrollHeight;
+    const r = scroller.getBoundingClientRect();
+    return { left: r.left, top: r.top, right: r.right, bottom: r.bottom, width: r.width, height: r.height, fadeAttr: scroller.getAttribute('data-op-scroller-fade'), mask: getComputedStyle(scroller).maskImage || getComputedStyle(scroller).webkitMaskImage };
+  });
+  assert.equal(sRect.fadeAttr, 'true', `${label}: independent scroller carries data-op-scroller-fade="true"`);
+  assert.match(sRect.mask, /linear-gradient/, `${label}: scroller applies Alpha mask-image`);
+
+  const stripColor = (canvas.r + canvas.g + canvas.b) / 3 > 128 ? { r: 10, g: 14, b: 22 } : { r: 245, g: 247, b: 252 };
+  const x = Math.round(sRect.left + 44);
+  const yStart = Math.round(sRect.bottom - 42);
+  const height = 40;
+  const bgImg = await capturePixels(page, { x, y: yStart, width: 1, height });
+  await page.locator(LIVE_SELECTORS.chatgpt.scroller).evaluate((scroller, color) => {
+    const strip = document.createElement('div');
+    strip.id = 'prism-test-alpha-strip';
+    strip.style.cssText = `height:44px;margin-top:-44px;width:120px;margin-left:16px;position:relative;z-index:1;pointer-events:none;background:${color}`;
+    scroller.append(strip);
+    scroller.scrollTop = scroller.scrollHeight;
+  }, fmt(stripColor));
+  let fgImg;
+  try {
+    await frames(page);
+    fgImg = await capturePixels(page, { x, y: yStart, width: 1, height });
+  } finally {
+    await page.evaluate(() => document.getElementById('prism-test-alpha-strip')?.remove());
+    await frames(page);
+  }
+  const alphas = [];
+  for (let row = 0; row < height; row++) {
+    const bg = bgImg.at(0, row);
+    const fg = fgImg.at(0, row);
+    const span = { r: stripColor.r - bg.r, g: stripColor.g - bg.g, b: stripColor.b - bg.b };
+    const norm = span.r ** 2 + span.g ** 2 + span.b ** 2;
+    alphas.push(norm > 0 ? Math.max(0, Math.min(1, ((fg.r - bg.r) * span.r + (fg.g - bg.g) * span.g + (fg.b - bg.b) * span.b) / norm)) : 0);
+  }
+  const topAlpha = alphas[2]; // ~40px above scroller bottom (well above 24px fade band)
+  const midAlpha = alphas[Math.round(height - 10)]; // inside 24px fade band
+  const botAlpha = alphas[height - 1]; // ~2px above scroller bottom
+  let maxStep = 0;
+  for (let i = 2; i < alphas.length; i += 2) maxStep = Math.max(maxStep, Math.abs(alphas[i] - alphas[i - 2]));
+  assert.ok(topAlpha >= 0.9, `${label}: scroller strip above 24px fade stays opaque (alpha ${topAlpha.toFixed(2)})`);
+  assert.ok(midAlpha > botAlpha && midAlpha < topAlpha, `${label}: scroller strip fades progressively across bottom 24px (${topAlpha.toFixed(2)} -> ${midAlpha.toFixed(2)} -> ${botAlpha.toFixed(2)})`);
+  assert.ok(botAlpha <= 0.18, `${label}: scroller strip fades out near bottom edge (alpha ${botAlpha.toFixed(2)})`);
+  assert.ok(maxStep <= 0.18, `${label}: Alpha fade has no sharp step (maxStep ${maxStep.toFixed(2)})`);
+}
+
+/** ChatGPT bottom-band reproduction variants across all 4 palettes with Ambient Stage glyphs enabled. */
+async function checkChatGPTBottomVariants(suite) {
+  const { engine, artifacts } = suite;
+  const host = 'chatgpt';
+  const initial = { ...PALETTES[0].patch, ambientStyle: 'aurora', ambientTexture: 'glyphs', motionLevel: 'off' };
+  await onLiveFixture(suite, host, { failure: 'chatgpt-bottom-variants-scrim-failure', colorScheme: 'dark', initial }, async ({ page, errors }) => {
+    await applyChatGPTBottomVariants(page, {
+      containerFadeAfter: true,
+      overlayHostAfter: true,
+      sharpEdgeShadow: true,
+      outerSpacersAndVtDisclaimer: true
+    });
+    await injectExtension(page, suite);
+
+    for (const pal of PALETTES) {
+      const label = `${engine} chatgpt bottom-variants ${pal.name}`;
+      await applyPalette(page, pal, '#thread-bottom-container[data-op-composer-backdrop="true"]', { ambientTexture: 'glyphs' });
+      await scrollToEnd(page, host);
+
+      const canvas = await canvasColor(page);
+      const occlusion = await occlusionColumn(page, host, canvas);
+      assert.ok(occlusion.max <= 0.08, `${label}: zero horizontal band across variants (max alpha ${occlusion.max.toFixed(2)})`);
+      assert.ok(occlusion.maxStep <= 0.08, `${label}: zero sharp band edge (max step ${occlusion.maxStep.toFixed(2)})`);
+
+      await assertGlowContinuous(page, host, label, canvas, { includeInFlowBands: true });
+      await applyPalette(page, pal, '', { ambientTexture: 'glyphs' });
+
+      const variantState = await page.evaluate(() => {
+        const dock = document.querySelector('#thread-bottom-container');
+        const fade = document.querySelector('.content-fade-container');
+        const scrollBtn = document.querySelector('.scroll-to-bottom-btn');
+        const outerDisc = document.querySelector('.disclaimer-outer-wrap');
+        const composer = document.querySelector('[data-composer-layout]');
+        const model = document.querySelector('button[aria-label="Select ChatGPT model"]');
+        const stage = document.querySelector('#op-ambient-stage');
+        const glyphs = document.querySelector('.op-ambient-glyphs');
+        const scroller = document.querySelector('[data-prism-test-scroller]');
+        const dockStyle = getComputedStyle(dock);
+        const dockAfter = getComputedStyle(dock, '::after');
+        const fadeStyle = getComputedStyle(fade);
+        const fadeAfter = getComputedStyle(fade, '::after');
+        const btnStyle = getComputedStyle(scrollBtn);
+        const compStyle = getComputedStyle(composer);
+        return {
+          dockBackdrop: dock.getAttribute('data-op-composer-backdrop'),
+          dockScrim: dock.getAttribute('data-op-composer-scrim'),
+          dockOverlaid: dock.getAttribute('data-op-composer-overlaid'),
+          dockBg: dockStyle.backgroundColor,
+          dockBgImg: dockStyle.backgroundImage,
+          dockShadow: dockStyle.boxShadow,
+          sharpBottom: dockStyle.getPropertyValue('--sharp-edge-bottom-shadow').trim(),
+          sharpTop: dockStyle.getPropertyValue('--sharp-edge-top-shadow').trim(),
+          sharpContent: dockStyle.getPropertyValue('--sharp-edge-bottom-shadow-placeholder-content').trim(),
+          dockAfterBg: dockAfter.backgroundColor,
+          dockAfterImg: dockAfter.backgroundImage,
+          dockAfterMask: dockAfter.maskImage || dockAfter.webkitMaskImage || 'none',
+          dockAfterShadow: dockAfter.boxShadow,
+          fadeBackdrop: fade.getAttribute('data-op-composer-backdrop'),
+          fadeAfterImg: fadeAfter.backgroundImage,
+          fadeAfterMask: fadeAfter.maskImage || fadeAfter.webkitMaskImage || 'none',
+          fadeBgImg: fadeStyle.backgroundImage,
+          btnBackdrop: scrollBtn.getAttribute('data-op-composer-backdrop'),
+          btnBg: btnStyle.backgroundColor,
+          btnOpacity: btnStyle.opacity,
+          outerDiscDisplay: getComputedStyle(outerDisc).display,
+          outerDiscHeight: Math.round(outerDisc.getBoundingClientRect().height * 10) / 10,
+          composerBackdrop: composer.getAttribute('data-op-composer-backdrop'),
+          composerSurface: composer.getAttribute('data-op-composer-surface'),
+          composerOpacity: compStyle.opacity,
+          composerBg: compStyle.backgroundColor,
+          composerShadow: compStyle.boxShadow,
+          modelColor: getComputedStyle(model).color,
+          stageInsideScroller: Boolean(scroller.contains(stage)),
+          glyphsDisplay: getComputedStyle(glyphs).display,
+          glyphsOpacity: parseFloat(getComputedStyle(glyphs).opacity)
+        };
+      });
+      const isTransparent = v => v === 'transparent' || /^rgba\(\s*0,\s*0,\s*0,\s*0\s*\)$/.test(v);
+      assert.equal(variantState.dockBackdrop, 'true', `${label}: dock marked backdrop`);
+      assert.equal(variantState.dockScrim, null, `${label}: ChatGPT dock never gets data-op-composer-scrim`);
+      assert.equal(variantState.dockOverlaid, null, `${label}: in-flow dock not marked overlaid`);
+      assert.ok(isTransparent(variantState.dockBg) && variantState.dockBgImg === 'none', `${label}: dock background cleared`);
+      assert.equal(variantState.dockShadow, 'none', `${label}: dock box-shadow cleared`);
+      assert.equal(variantState.sharpBottom, 'none', `${label}: --sharp-edge-bottom-shadow cleared`);
+      assert.equal(variantState.sharpTop, 'none', `${label}: --sharp-edge-top-shadow cleared`);
+      assert.equal(variantState.sharpContent, 'none', `${label}: --sharp-edge-bottom-shadow-placeholder-content cleared`);
+      assert.ok(isTransparent(variantState.dockAfterBg) && variantState.dockAfterImg === 'none' && variantState.dockAfterMask === 'none' && variantState.dockAfterShadow === 'none', `${label}: dock ::after completely cleared`);
+      assert.equal(variantState.fadeBackdrop, 'true', `${label}: container .content-fade marked backdrop`);
+      assert.equal(variantState.fadeBgImg, 'none', `${label}: .content-fade-container backgroundImage cleared`);
+      assert.equal(variantState.fadeAfterImg, 'none', `${label}: .content-fade-container::after backgroundImage cleared`);
+      assert.equal(variantState.fadeAfterMask, 'none', `${label}: .content-fade-container::after maskImage cleared`);
+      assert.equal(variantState.btnBackdrop, null, `${label}: scroll-to-bottom button never marked backdrop`);
+      assert.ok(!isTransparent(variantState.btnBg) && variantState.btnOpacity === '1', `${label}: scroll-to-bottom button retains own painted surface`);
+      assert.equal(variantState.outerDiscDisplay, 'none', `${label}: external vt disclaimer hidden`);
+      assert.equal(variantState.outerDiscHeight, 0, `${label}: external vt disclaimer height 0`);
+      assert.equal(variantState.composerBackdrop, null, `${label}: composer never marked backdrop`);
+      assert.equal(variantState.composerSurface, 'true', `${label}: composer restyled`);
+      assert.ok(variantState.composerOpacity === '1' && !isTransparent(variantState.composerBg) && variantState.composerShadow !== 'none', `${label}: Composer Surface retains opaque card & glow`);
+      assert.equal(variantState.stageInsideScroller, false, `${label}: Ambient Stage sits outside masked scroller`);
+      assert.equal(variantState.glyphsDisplay, 'block', `${label}: Ambient Stage glyphs visible`);
+      assert.ok(variantState.glyphsOpacity > 0, `${label}: Ambient Stage glyphs opacity > 0 (${variantState.glyphsOpacity})`);
+
+      // Verify injected [role="dialog"] and [role="menu"] inside main are strictly protected.
+      await page.evaluate(() => {
+        const main = document.querySelector('main');
+        const dlg = document.createElement('div');
+        dlg.id = 'prism-test-dialog';
+        dlg.setAttribute('role', 'dialog');
+        dlg.className = 'content-fade';
+        dlg.style.cssText = 'position:fixed;left:420px;top:300px;width:220px;height:80px;background:rgb(32,36,44);color:#fff;z-index:40';
+        dlg.textContent = 'Dialog sample';
+        const menu = document.createElement('div');
+        menu.id = 'prism-test-menu';
+        menu.setAttribute('role', 'menu');
+        menu.className = 'content-fade';
+        menu.style.cssText = 'position:fixed;left:420px;top:400px;width:180px;height:60px;background:rgb(38,42,52);color:#fff;z-index:40';
+        menu.textContent = 'Menu sample';
+        main.append(dlg, menu);
+        ObsidianPrismRuntime.refresh();
+      });
+      await frames(page);
+      const overlayCheck = await page.evaluate(() => {
+        const dlg = document.getElementById('prism-test-dialog');
+        const menu = document.getElementById('prism-test-menu');
+        const ds = getComputedStyle(dlg);
+        const ms = getComputedStyle(menu);
+        return {
+          dlgBackdrop: dlg.getAttribute('data-op-composer-backdrop'),
+          dlgBg: ds.backgroundColor,
+          dlgOpacity: ds.opacity,
+          menuBackdrop: menu.getAttribute('data-op-composer-backdrop'),
+          menuBg: ms.backgroundColor,
+          menuOpacity: ms.opacity
+        };
+      });
+      await page.evaluate(() => {
+        document.getElementById('prism-test-dialog')?.remove();
+        document.getElementById('prism-test-menu')?.remove();
+        ObsidianPrismRuntime.refresh();
+      });
+      await frames(page);
+      assert.equal(overlayCheck.dlgBackdrop, null, `${label}: [role="dialog"] protected from backdrop clearing`);
+      assert.ok(!isTransparent(overlayCheck.dlgBg) && overlayCheck.dlgOpacity === '1', `${label}: [role="dialog"] retains painted background & opacity`);
+      assert.equal(overlayCheck.menuBackdrop, null, `${label}: [role="menu"] protected from backdrop clearing`);
+      assert.ok(!isTransparent(overlayCheck.menuBg) && overlayCheck.menuOpacity === '1', `${label}: [role="menu"] retains painted background & opacity`);
+
+      await assertScrollerAlphaFade(page, label, canvas);
+      if (pal.name === 'obsidian' || pal.name === 'crystal') {
+        await page.screenshot({ path: path.join(artifacts, `${engine}-chatgpt-${pal.name}-bottom-variants.png`) });
+      }
+      console.log(`PASS ${label}: zero band/shadow/::after leak, safe scroller Alpha fade, glyphs & overlays intact`);
+    }
+
+    // Native Palette & disable restore variant native shadows, ::after gradients, disclaimer, and unmasked scroller.
+    for (const [modeName, patch, ready] of [
+      ['Native Palette', { palette: 'host', lightPreset: 'host' }, () => document.documentElement.getAttribute('data-op-effective-palette') === 'host'],
+      ['disabled', { enabled: false }, () => !document.documentElement.hasAttribute('data-op-enabled')]
+    ]) {
+      await patchConfig(page, patch, ready);
+      await frames(page);
+      const restored = await page.evaluate(() => {
+        const dock = document.querySelector('#thread-bottom-container');
+        const scroller = document.querySelector('[data-prism-test-scroller]');
+        const outerDisc = document.querySelector('.disclaimer-outer-wrap');
+        return {
+          dockShadow: getComputedStyle(dock).boxShadow,
+          dockAfterImg: getComputedStyle(dock, '::after').backgroundImage,
+          scrollerFadeAttr: scroller.getAttribute('data-op-scroller-fade'),
+          scrollerMask: getComputedStyle(scroller).maskImage || getComputedStyle(scroller).webkitMaskImage || 'none',
+          discDisplay: getComputedStyle(outerDisc).display
+        };
+      });
+      assert.notEqual(restored.dockShadow, 'none', `${engine} chatgpt variants ${modeName}: restores native sharp-edge box-shadow`);
+      assert.match(restored.dockAfterImg, /linear-gradient/, `${engine} chatgpt variants ${modeName}: restores native ::after gradient`);
+      assert.equal(restored.scrollerFadeAttr, null, `${engine} chatgpt variants ${modeName}: clears data-op-scroller-fade`);
+      assert.equal(restored.scrollerMask, 'none', `${engine} chatgpt variants ${modeName}: restores scroller maskImage none`);
+      assert.notEqual(restored.discDisplay, 'none', `${engine} chatgpt variants ${modeName}: restores external disclaimer`);
+      await patchConfig(page, { enabled: true, ...PALETTES[0].patch, ambientStyle: 'aurora', ambientTexture: 'glyphs' }, () => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
+    }
+    assert.deepEqual(errors, []);
+  });
+}
+
+/** ChatGPT sticky-overlay variant: #thread-bottom-container inside scroller skips Alpha fade & blur scrim, keeps clearance. */
 async function checkChatGPTStickyOverlay(suite) {
   const { engine } = suite;
   const host = 'chatgpt';
-  const initial = { ...PALETTES[0].patch, ambientStyle: 'aurora', ambientTexture: 'off', motionLevel: 'off' };
+  const initial = { ...PALETTES[0].patch, ambientStyle: 'aurora', ambientTexture: 'glyphs', motionLevel: 'off' };
   await onLiveFixture(suite, host, { failure: 'chatgpt-sticky-overlay-failure', colorScheme: 'dark', initial }, async ({ page, errors }) => {
-    await page.evaluate(() => {
-      const scroller = document.querySelector('[data-prism-test-scroller]');
-      const dock = document.querySelector('#thread-bottom-container');
-      dock.style.position = 'sticky';
-      dock.style.bottom = '0px';
-      scroller.append(dock);
+    await applyChatGPTBottomVariants(page, {
+      stickyInScroller: true,
+      containerFadeAfter: true,
+      overlayHostAfter: true,
+      sharpEdgeShadow: true
     });
     await injectExtension(page, suite);
     for (const pal of [PALETTES[0], PALETTES[2]]) {
       const label = `${engine} chatgpt sticky-overlay ${pal.name}`;
-      await applyPalette(page, pal, '#thread-bottom-container[data-op-composer-scrim="true"]');
+      await applyPalette(page, pal, '#thread-bottom-container[data-op-composer-overlaid="true"]', { ambientTexture: 'glyphs' });
       await scrollToEnd(page, host);
-      const threadPadBottom = await page.locator(LIVE_SELECTORS.chatgpt.column).evaluate(el => parseFloat(getComputedStyle(el).paddingBottom));
-      assert.ok(threadPadBottom >= 96, `${label}: overlaid thread column preserves scroll clearance >= 96px (got ${threadPadBottom})`);
-      const occlusion = await assertOverlayScrimActive(page, host, pal.scheme, label);
-      console.log(`PASS ${label}: overlay blur Composer Scrim active (alpha ${occlusion.atCenter.toFixed(2)}, padBottom ${threadPadBottom}px)`);
+      const state = await page.evaluate(() => {
+        const dock = document.querySelector('#thread-bottom-container');
+        const scroller = document.querySelector('[data-prism-test-scroller]');
+        const col = document.querySelector('[class*="transcriptContent"]');
+        const composer = document.querySelector('[data-composer-layout]');
+        const compStyle = getComputedStyle(composer);
+        return {
+          overlaid: dock.getAttribute('data-op-composer-overlaid'),
+          scrim: dock.getAttribute('data-op-composer-scrim'),
+          scrollerFade: scroller.getAttribute('data-op-scroller-fade'),
+          threadScroller: scroller.getAttribute('data-op-thread-scroller'),
+          scrollerMask: getComputedStyle(scroller).maskImage || getComputedStyle(scroller).webkitMaskImage || 'none',
+          threadPadBottom: parseFloat(getComputedStyle(col).paddingBottom),
+          dockShadow: getComputedStyle(dock).boxShadow,
+          dockAfterBg: getComputedStyle(dock, '::after').backgroundImage,
+          composerOpacity: compStyle.opacity,
+          composerBg: compStyle.backgroundColor
+        };
+      });
+      assert.equal(state.overlaid, 'true', `${label}: sticky dock receives data-op-composer-overlaid`);
+      assert.equal(state.scrim, null, `${label}: ChatGPT sticky dock NEVER receives data-op-composer-scrim`);
+      assert.equal(state.scrollerFade, null, `${label}: sticky-in-scroller skips data-op-scroller-fade`);
+      assert.equal(state.threadScroller, null, `${label}: sticky dock inside scroller skips data-op-thread-scroller`);
+      assert.equal(state.scrollerMask, 'none', `${label}: scroller applies NO Alpha mask when containing sticky composer`);
+      assert.ok(state.threadPadBottom >= 96, `${label}: overlaid thread column preserves scroll clearance >= 96px (got ${state.threadPadBottom})`);
+      assert.equal(state.dockShadow, 'none', `${label}: sticky dock box-shadow cleared`);
+      assert.equal(state.dockAfterBg, 'none', `${label}: sticky dock ::after cleared`);
+      assert.equal(state.composerOpacity, '1', `${label}: Composer Surface remains 100% opaque`);
+      assert.notEqual(state.composerBg, 'rgba(0, 0, 0, 0)', `${label}: Composer Surface keeps card paint`);
+
+      const canvas = await canvasColor(page);
+      const occlusion = await occlusionColumn(page, host, canvas);
+      assert.ok(occlusion.max <= 0.08, `${label}: zero canvas veil on ChatGPT sticky dock (max alpha ${occlusion.max.toFixed(2)})`);
+      assert.ok(occlusion.maxStep <= 0.08, `${label}: zero sharp band step (max step ${occlusion.maxStep.toFixed(2)})`);
+
+      const declared = await scrimBackdropFilter(page, host);
+      assert.equal(declared.value, 'none', `${label}: ChatGPT sticky dock applies no backdrop blur`);
+      assert.ok((await dockPaint(page, host)).every(layer => layer.backdrop === 'none' && layer.before.backdrop === 'none'), `${label}: computed dock paint has no blur`);
+
+      await assertGlowContinuous(page, host, label, canvas);
+      await applyPalette(page, pal, '', { ambientTexture: 'glyphs' });
+      const open = await textBlockStats(page, host, 'open');
+      const behind = await textBlockStats(page, host, 'behind');
+      assert.ok(behind.sharpness >= open.sharpness * 0.8, `${label}: sticky dock does not blur beside composer (${behind.sharpness.toFixed(2)} vs ${open.sharpness.toFixed(2)})`);
+      await assertCrispAndClickable(page, host, label);
+      console.log(`PASS ${label}: zero veil/blur/::after, skipped scroller Alpha fade, opaque Composer Surface, padBottom ${state.threadPadBottom}px`);
     }
     assert.deepEqual(errors, []);
   });
@@ -619,9 +906,9 @@ async function checkFallback(suite, host, pal, { stickyOverlay = false } = {}) {
 
 export async function checkLiveComposerScrim(options) {
   await checkChatGPTInFlow(options);
+  await checkChatGPTBottomVariants(options);
   await checkChatGPTStickyOverlay(options);
   await checkGeminiOverlay(options);
   await checkFallback(options, 'gemini', PALETTES[0]);
   await checkFallback(options, 'gemini', PALETTES[2]);
-  await checkFallback(options, 'chatgpt', PALETTES[0], { stickyOverlay: true });
 }

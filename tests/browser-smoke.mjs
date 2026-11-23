@@ -1204,7 +1204,7 @@ async function exerciseFixture(browser, host) {
     assert.equal(await page.locator('[data-fixture-composer]').getAttribute('data-op-composer-surface'), 'fixture-original');
     await settleComposerControls(page);
     assert.deepEqual(await composerControlsSnapshot(page), originalComposerControls, `${host}: disable restores native composer, add button, model capsule, and chips`);
-    assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-sidebar-active="true"],[data-op-composer-backdrop="true"],[data-op-composer-dock="true"],[data-op-composer-scrim="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-sidebar-active="true"],[data-op-composer-backdrop="true"],[data-op-composer-dock="true"],[data-op-composer-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"]').count(), 0);
     assert.equal(await page.locator('pre code').textContent(), originalText);
     assert.equal(await page.evaluate(() => ObsidianPrismRuntime.diagnostics().observing), false);
     await page.evaluate(() => __prismFixture.patch({ enabled: true, contentWidth: 'standard' }));
@@ -1254,10 +1254,12 @@ async function exerciseFixture(browser, host) {
     assert.equal(stopped.codeBlocks, 0);
     assert.equal(stopped.thoughtBlocks, 0);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
-    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-composer-dock="true"],[data-op-composer-scrim="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"],[data-op-composer-grid="true"],[data-op-composer-header-empty="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-composer-dock="true"],[data-op-composer-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"],[data-op-composer-grid="true"],[data-op-composer-header-empty="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-enabled')), false);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-instance')), false);
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-scroller-fade-start')), '');
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-scroller-fade-end')), '');
     assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-x')), '');
     assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-y')), '');
     await page.evaluate(() => { __prismFixture.patch({ enabled: true }); window.dispatchEvent(new Event('pageshow')); document.body.append(document.createElement('div')); });
