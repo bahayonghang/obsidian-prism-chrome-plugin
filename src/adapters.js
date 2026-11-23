@@ -56,7 +56,9 @@
       sidebars: ['#stage-slideover-sidebar', '#stage-sidebar', '#app-rail', '[data-testid="app-rail"]', '[data-testid="app-sidebar"]', '[data-testid="history-sidebar"]', '[data-testid="sidebar"]', '[data-testid="sidebar-container"]', '[data-testid="stage-thread-flyout"]', '[data-testid="conversation-history"]', '[data-testid="chat-history"]'],
       sidebarLinks: 'a[href^="/c/"],a[href^="/g/"],a[href^="/project/"]',
       thoughts: '[data-testid="reasoning-content"], [data-testid="thoughts-content"], [data-testid="thinking-content"]',
-      streaming: '[data-testid="stop-button"], [data-is-streaming="true"]'
+      streaming: '[data-testid="stop-button"], [data-is-streaming="true"]',
+      usesOverlayScrim: false,
+      usesScrollerAlphaFade: true
     },
     gemini: {
       users: 'user-query, [data-test-id="user-query"], .user-query-container',
@@ -92,7 +94,9 @@
       sidebars: ['bard-sidenav', 'side-navigation-v2', 'side-navigation', 'mat-sidenav', '[data-test-id="side-nav"]', '[data-test-id="side-navigation"]', '[data-testid="sidebar"]'],
       sidebarLinks: 'a[href^="/app/"]',
       thoughts: 'model-thoughts .thoughts-content, model-thoughts .thought-content, model-thoughts .markdown, [data-test-id="thoughts-content"], [data-test-id="thinking-content"]',
-      streaming: '[data-test-id="stop-button"], [data-test-id="stop-response-button"], .stop-button'
+      streaming: '[data-test-id="stop-button"], [data-test-id="stop-response-button"], .stop-button',
+      usesOverlayScrim: true,
+      usesScrollerAlphaFade: false
     }
   });
 
@@ -131,12 +135,40 @@
   // A detached copy excludes our sibling controls without mutating framework-owned text.
   function textOf(element) {
     if (!element) return '';
-    if (!element.querySelector('[data-op-owned],script,style,[hidden],[aria-hidden="true"]')) {
-      return element.textContent || '';
+    const hiddenSelector = '[data-op-owned],script,style,[hidden],[aria-hidden="true"]';
+    if (element.matches?.(hiddenSelector)) return '';
+    if (!element.querySelector?.(hiddenSelector)) return element.textContent || '';
+    if (typeof element.cloneNode === 'function') {
+      const copy = element.cloneNode(true);
+      copy.querySelectorAll(hiddenSelector).forEach(node => node.remove());
+      return copy.textContent || '';
     }
-    const copy = element.cloneNode(true);
-    copy.querySelectorAll('[data-op-owned],script,style,[hidden],[aria-hidden="true"]').forEach(node => node.remove());
-    return copy.textContent || '';
+    const collect = node => {
+      if (!node) return '';
+      if (node.nodeType === 3) return node.nodeValue ?? node.textContent ?? '';
+      if (node !== element && node.matches?.(hiddenSelector)) return '';
+      if (Array.isArray(node.children) && node.children.length) {
+        return node.children.map(collect).filter(Boolean).join('');
+      }
+      return node.textContent || '';
+    };
+    return collect(element);
+  }
+  function hasVisibleText(node) {
+    if (!node || isOwned(node) || !isVisible(node)) return false;
+    if (node.matches?.('script,style,template')) return false;
+    if (node.childNodes?.length) {
+      for (const child of node.childNodes) {
+        if (child.nodeType === 3) {
+          if ((child.nodeValue || '').trim()) return true;
+        } else if (child.nodeType === 1 && hasVisibleText(child)) {
+          return true;
+        }
+      }
+      return false;
+    }
+    if (node.children?.length && node.children.some(child => hasVisibleText(child))) return true;
+    return Boolean(textOf(node).trim());
   }
   const TURN_NOISE_SELECTOR = '[data-op-owned],script,style,svg,[hidden],[aria-hidden="true"],.sr-only,button,[role="button"],.turn-actions,[data-testid="turn-actions"],.code-header,.code-block-decoration,[data-testid="code-block-header"],[data-test-id="code-block-header"],[data-testid="citation-pill"],.citation-chip,message-actions';
   function cleanTurnText(element, options = {}) {
@@ -244,10 +276,46 @@
   const MESSAGE_AREAS = '[data-content-search-unit-key],[data-user-message-bubble],[data-markdown-text-style="assistant-message"],[data-message-author-role],[data-turn="user"],[data-turn="assistant"],article[data-testid^="conversation-turn-"],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response,[data-test-id="model-response"],.model-response-text';
   const OVERLAY_EXCLUDED = 'dialog,[role="dialog"],[aria-modal="true"],[role="menu"],[role="listbox"],[data-radix-popper-content-wrapper],.mat-mdc-menu-panel';
   const FADE_LAYER_SELECTOR = '[class*="content-fade"],.content-fade,[class*="fade-mask"]';
-  const INTERACTIVE_DESCENDANT = 'a[href],button,[role="button"],input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex],details,summary';
-  const INTERACTIVE_CONTROL_SELF = 'button,a[href],input,textarea,select,[role="button"],[role="link"],[contenteditable],[contenteditable="true"],img,picture,svg,video,audio,canvas,iframe,details,summary';
+  const INTERACTIVE_CONTROL_SELF = 'a[href],button,[role="button"],[role="link"],input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],details,summary';
+  const INTERACTIVE_DESCENDANT = `${INTERACTIVE_CONTROL_SELF},[tabindex]`;
+  const hasVisibleInteractiveDescendant = node => Boolean(
+    node?.querySelectorAll && [...node.querySelectorAll(INTERACTIVE_DESCENDANT)].some(el => !isOwned(el) && isVisible(el))
+  );
+  const hasViewTransitionName = (node, view = node?.ownerDocument?.defaultView || global) => {
+    if (!node) return false;
+    const computed = view?.getComputedStyle?.(node);
+    if (computed?.viewTransitionName && computed.viewTransitionName !== 'none') return true;
+    if (node.style?.viewTransitionName && node.style.viewTransitionName !== 'none') return true;
+    const styleAttr = node.getAttribute?.('style') || '';
+    return /view-transition-name\s*:\s*(?!none\b)/i.test(styleAttr);
+  };
+  const hasNegativeMarginTop = (node, view = node?.ownerDocument?.defaultView || global) => {
+    if (!node) return false;
+    const computed = view?.getComputedStyle?.(node);
+    if (parseFloat(computed?.marginTop) < 0 || parseFloat(node.style?.marginTop) < 0) return true;
+    const styleAttr = node.getAttribute?.('style') || '';
+    return /(?:^|;)\s*margin-top\s*:\s*-/i.test(styleAttr);
+  };
   const THOUGHT_AREAS = 'model-thoughts,[data-testid="reasoning-content"],[data-testid="thoughts-content"],[data-testid="thinking-content"],[data-test-id="thoughts-content"],[data-test-id="thinking-content"]';
   const FORM_FIELD = 'input,textarea,select,[contenteditable],[contenteditable="true"]';
+  const NON_DISCLAIMER_TAGS = 'script,style,template,details,summary,nav,aside,header,article,form,fieldset,table,pre,code';
+  const NON_DISCLAIMER_DESCENDANTS = 'details,summary,nav,aside,header,article,table,pre';
+  const isExcludedTrailingNode = (node, composer = null, dock = null) => Boolean(
+    !node ||
+    isOwned(node) ||
+    (dock && (node === dock || node.contains?.(dock))) ||
+    (composer && (node === composer || node.contains?.(composer) || composer.contains?.(node))) ||
+    node.matches?.(NON_DISCLAIMER_TAGS) ||
+    node.hasAttribute?.('hidden') ||
+    node.matches?.(OVERLAY_EXCLUDED) || node.closest?.(OVERLAY_EXCLUDED) || node.querySelector?.(OVERLAY_EXCLUDED) ||
+    node.matches?.(MESSAGE_AREAS) || node.closest?.(MESSAGE_AREAS) || node.querySelector?.(MESSAGE_AREAS) ||
+    node.matches?.(THOUGHT_AREAS) || node.closest?.(THOUGHT_AREAS) || node.querySelector?.(THOUGHT_AREAS)
+  );
+  const hasExcludedInnerControl = node => Boolean(
+    node.querySelector?.(NON_DISCLAIMER_DESCENDANTS) ||
+    node.matches?.(FORM_FIELD) ||
+    node.querySelector?.(FORM_FIELD)
+  );
   const DISCLAIMER_SELECTOR = '[class*="disclaimer"], [data-testid*="disclaimer"], [data-test-id*="disclaimer"], hallucination-disclaimer, .composer-hint';
   const DISCLAIMER_TEXT_RE = /(?:chatgpt|gemini|ai)\s+(?:is\s+ai\s+and\s+)?(?:can|may|might)\s+make\s+mistakes|check\s+important\s+info|double[- ]check\s+(?:its\s+)?responses|可能会犯错|可能会出错|请核查重要信息|内容由\s*ai\s*生成|仅供参考/i;
   function firstVisible(selectors, root, predicate = () => true) {
@@ -326,11 +394,10 @@
       if (spec.attachments && (node.matches?.(spec.attachments) || node.closest?.(spec.attachments))) return true;
       return false;
     };
-    const hasInteractiveDescendant = node => Boolean(node.querySelector(INTERACTIVE_DESCENDANT));
     const isEmptyFadeBox = node =>
       !node.contains(composer) && !composer.contains(node) && !isOwned(node) &&
-      !node.matches('[role="button"],[role="link"],[tabindex],[contenteditable],a[href],button,input,textarea,select,img,picture,svg,video,audio,canvas,iframe') &&
-      !textOf(node).trim() && !hasInteractiveDescendant(node);
+      !node.matches?.(INTERACTIVE_DESCENDANT) &&
+      !textOf(node).trim() && !node.querySelector?.(INTERACTIVE_DESCENDANT);
     const isContainerFadeLayer = (node, maxHeight) => {
       if (!node?.matches?.(FADE_LAYER_SELECTOR)) return false;
       if (isProtectedBackdrop(node) || node.matches?.(INTERACTIVE_CONTROL_SELF)) return false;
@@ -347,10 +414,7 @@
       return false;
     };
     const isAdjacentDisclaimerShell = (node, maxHeight) => {
-      if (!node || isProtectedBackdrop(node) || node.contains?.(composer) || node.matches?.(INTERACTIVE_CONTROL_SELF)) return false;
-      if (node.matches?.('script,style,template') || node.hasAttribute?.('hidden')) return false;
-      if (node.querySelector?.(MESSAGE_AREAS) || node.querySelector?.(OVERLAY_EXCLUDED)) return false;
-      if (node.matches?.(FORM_FIELD) || node.querySelector?.(FORM_FIELD)) return false;
+      if (isProtectedBackdrop(node) || isExcludedTrailingNode(node, composer) || hasExcludedInnerControl(node) || node.matches?.(INTERACTIVE_CONTROL_SELF)) return false;
       const sStyle = view.getComputedStyle(node);
       if (sStyle && (sStyle.display === 'none' || /(auto|scroll)/.test(sStyle.overflowY || ''))) return false;
       const sRect = node.getBoundingClientRect();
@@ -358,8 +422,7 @@
       const txt = textOf(node).trim();
       if (node.matches?.(DISCLAIMER_SELECTOR) || node.querySelector?.(DISCLAIMER_SELECTOR)) return true;
       if (txt && txt.length <= 240 && DISCLAIMER_TEXT_RE.test(txt)) return true;
-      const hasVt = node.matches?.('[style*="view-transition-name"]') || Boolean(sStyle?.viewTransitionName && sStyle.viewTransitionName !== 'none');
-      return Boolean(hasVt && sRect.height <= 140 && txt.length > 0 && txt.length <= 240 && !node.querySelector?.('svg'));
+      return Boolean(hasViewTransitionName(node, view) && sRect.height <= 140 && txt.length > 0 && txt.length <= 240 && !node.querySelector?.('svg'));
     };
     // Native fade siblings may sit above the shell, inside dock surfaces, or as adjacent wrappers
     // in outerDock.parentElement. Protected surfaces (composer/card/attachments/dialogs/menus) are never returned.
@@ -824,17 +887,9 @@
     const idx = [...children].indexOf(node);
     return idx > 0 ? [...children].slice(0, idx).reverse() : [];
   }
-  function isDisclaimerCandidate(node, composer, { allowGenericBelow = false } = {}) {
-    if (!node || isOwned(node)) return false;
-    if (composer && (node === composer || node.contains?.(composer) || composer.contains?.(node))) return false;
-    if (node.matches?.('script,style,template,details,summary,nav,aside,header,article,form,fieldset,table,pre,code') || node.hasAttribute?.('hidden')) return false;
-    if (node.querySelector?.('details,summary,nav,aside,header,article,table,pre')) return false;
-    if (node.matches?.(OVERLAY_EXCLUDED) || node.closest?.(OVERLAY_EXCLUDED) || node.querySelector?.(OVERLAY_EXCLUDED)) return false;
-    if (node.matches?.(MESSAGE_AREAS) || node.closest?.(MESSAGE_AREAS) || node.querySelector?.(MESSAGE_AREAS)) return false;
-    if (node.matches?.(THOUGHT_AREAS) || node.closest?.(THOUGHT_AREAS) || node.querySelector?.(THOUGHT_AREAS)) return false;
-    if (node.matches?.(FORM_FIELD) || node.querySelector?.(FORM_FIELD)) return false;
+  function isDisclaimerCandidate(node, composer, { allowGenericBelow = false, allowShellSignals = false } = {}) {
+    if (isExcludedTrailingNode(node, composer) || hasExcludedInnerControl(node)) return false;
     const view = node.ownerDocument?.defaultView || global;
-    const computed = view?.getComputedStyle?.(node);
     const selfMarked = node.getAttribute?.('data-op-composer-disclaimer') === 'true';
     const txt = textOf(node).trim();
     const markedChildren = !selfMarked && node.querySelectorAll ? [...node.querySelectorAll('[data-op-composer-disclaimer="true"]')] : [];
@@ -851,21 +906,14 @@
     if (node.matches?.('svg,button,[role="button"]') || node.querySelector?.('svg')) return false;
     if ((node.querySelectorAll?.('button,[role="button"]')?.length || 0) > 2) return false;
     if (node.matches?.(DISCLAIMER_SELECTOR) || DISCLAIMER_TEXT_RE.test(txt)) return true;
-    if (!allowGenericBelow) return selfMarked || wrapsMarkedDisclaimer;
     if (selfMarked || wrapsMarkedDisclaimer) return true;
-    const styleAttr = node.getAttribute?.('style') || '';
-    const hasVt = Boolean(
-      (node.style?.viewTransitionName && node.style.viewTransitionName !== 'none') ||
-      (computed?.viewTransitionName && computed.viewTransitionName !== 'none') ||
-      /view-transition-name\s*:/i.test(styleAttr)
-    );
-    const negMargin =
-      parseFloat(computed?.marginTop) < 0 ||
-      parseFloat(node.style?.marginTop) < 0 ||
-      /margin-top\s*:\s*-/i.test(styleAttr);
+    if (!allowShellSignals && !allowGenericBelow) return false;
     const rect = typeof node.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null;
-    if (hasVt || negMargin) return Boolean(rect && rect.height > 0 && rect.height <= 140);
-    return Boolean(rect && rect.height > 0 && rect.height <= 96);
+    if (allowShellSignals && (hasViewTransitionName(node, view) || hasNegativeMarginTop(node, view))) {
+      return Boolean(rect && rect.height > 0 && rect.height <= 140);
+    }
+    if (allowGenericBelow) return Boolean(rect && rect.height > 0 && rect.height <= 96);
+    return false;
   }
   function outermostDisclaimerWrapper(node, boundary, composer) {
     let current = node;
@@ -920,25 +968,26 @@
       node.matches?.('infinite-scroller,[data-prism-test-scroller]') ||
       (scrollerNode && (node === scrollerNode || node.contains?.(scrollerNode)))
     );
-    const classifyTrailingSibling = (sib, boundary) => {
-      if (!sib || isOwned(sib)) return;
-      if (sib.matches?.('script,style,template,details,summary,nav,aside,header,article,form,fieldset,table,pre,code') || sib.hasAttribute?.('hidden')) return;
-      if (dock && (sib === dock || sib.contains?.(dock))) return;
-      if (composer && (sib === composer || sib.contains?.(composer))) return;
-      if (sib.matches?.(MESSAGE_AREAS) || sib.closest?.(MESSAGE_AREAS) || sib.querySelector?.(MESSAGE_AREAS)) return;
-      if (sib.matches?.(THOUGHT_AREAS) || sib.closest?.(THOUGHT_AREAS) || sib.querySelector?.(THOUGHT_AREAS)) return;
-      if (sib.matches?.(OVERLAY_EXCLUDED) || sib.closest?.(OVERLAY_EXCLUDED) || sib.querySelector?.(OVERLAY_EXCLUDED)) return;
+    const classifyTrailingSibling = (sib, boundary, { insideDock = false } = {}) => {
+      if (isExcludedTrailingNode(sib, composer, dock)) return;
       const sibStyle = view?.getComputedStyle?.(sib);
       if (isScrollNode(sib, sibStyle)) return;
       const selfMarked = sib.getAttribute?.('data-op-composer-disclaimer') === 'true';
       if (!selfMarked && sibStyle && sibStyle.display === 'none') return;
       const isPositioned = Boolean(sibStyle && ['absolute', 'fixed'].includes(sibStyle.position));
-      const txt = textOf(sib).trim();
-      if (!selfMarked && !isPositioned && !txt && !sib.matches?.(INTERACTIVE_DESCENDANT) && !sib.querySelector?.(INTERACTIVE_DESCENDANT)) {
+      if (
+        !selfMarked &&
+        !isPositioned &&
+        !hasExcludedInnerControl(sib) &&
+        !sib.matches?.(INTERACTIVE_DESCENDANT) &&
+        !sib.querySelector?.('[data-op-composer-disclaimer="true"]') &&
+        !hasVisibleText(sib) &&
+        !hasVisibleInteractiveDescendant(sib)
+      ) {
         empty.push(sib);
         return;
       }
-      if (isDisclaimerCandidate(sib, composer, { allowGenericBelow: !isPositioned })) {
+      if (isDisclaimerCandidate(sib, composer, { allowGenericBelow: insideDock && !isPositioned, allowShellSignals: !isPositioned })) {
         pushDisclaimer(sib, boundary);
       } else if (!isPositioned) {
         scanExplicitInside(sib, boundary);
@@ -953,7 +1002,7 @@
         for (const sib of followingSiblings(current)) {
           if (!sib || seenFollowing.has(sib)) continue;
           seenFollowing.add(sib);
-          classifyTrailingSibling(sib, dock);
+          classifyTrailingSibling(sib, dock, { insideDock: true });
         }
         for (const sib of precedingSiblings(current)) {
           if (!sib || seenPreceding.has(sib) || isOwned(sib)) continue;
@@ -978,7 +1027,7 @@
         for (const sib of followingSiblings(cur)) {
           if (!sib || seenOutsideFollowing.has(sib)) continue;
           seenOutsideFollowing.add(sib);
-          classifyTrailingSibling(sib, container);
+          classifyTrailingSibling(sib, container, { insideDock: false });
         }
       }
     }
@@ -1266,6 +1315,8 @@
     const messages = () => sortByDocumentOrder([...userTurns(), ...assistantTurns()]);
     return Object.freeze({
       host,
+      usesOverlayScrim: Boolean(spec.usesOverlayScrim),
+      usesScrollerAlphaFade: Boolean(spec.usesScrollerAlphaFade),
       contentWidth: Object.freeze({ native: spec.contentWidth.native, targets: [...spec.contentWidth.targets], composerTargets: [...spec.contentWidth.composerTargets] }),
       userTurns,
       assistantTurns,

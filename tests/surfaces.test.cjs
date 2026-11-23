@@ -159,6 +159,8 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
 
   const fakeAdapter = {
     host,
+    usesOverlayScrim: host === 'gemini',
+    usesScrollerAlphaFade: host === 'chatgpt',
     contentWidth: { native: 768, targets: [], composerTargets: [] },
     userTurns: () => (homeMode ? [] : [userTurn]),
     assistantTurns: () => (homeMode ? [] : [assistantTurn]),
@@ -1192,6 +1194,8 @@ test('v0.4.0 handover: isolated-world reload adopts DOM marks & root vars withou
     ...real2,
     forHost: () => ({
       host: 'chatgpt',
+      usesOverlayScrim: false,
+      usesScrollerAlphaFade: true,
       contentWidth: { native: 768, targets: [], composerTargets: [] },
       userTurns: () => [ctx1.elements.get('userTurn')],
       assistantTurns: () => [ctx1.elements.get('assistantTurn')],

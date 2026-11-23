@@ -92,30 +92,32 @@ test('hosts.css tightens ChatGPT active conversation bottom spacer, thread colum
 
   for (const block of blocks) {
     for (const sel of block.selectors) {
-      const isLegacyFixtureContainerRule = sel.includes('.composer-container') && !sel.includes(':not(.composer-container)') || sel.endsWith('.composer-hint');
       if (
-        !isLegacyFixtureContainerRule &&
-        (
-          sel.includes('[data-op-composer-dock="true"]') ||
-          sel.includes('[data-op-composer-empty-sibling="true"]') ||
-          sel.includes('[data-op-composer-disclaimer="true"]') ||
-          sel.includes('hallucination-disclaimer')
-        )
+        sel.includes('[data-op-composer-dock="true"]') ||
+        sel.includes('[data-op-composer-empty-sibling="true"]') ||
+        sel.includes('[data-op-composer-disclaimer="true"]') ||
+        sel.includes('hallucination-disclaimer')
       ) {
         assert.ok(sel.includes('[data-op-composer="true"]'), `bottom pinning / disclaimer / empty-sibling rule must gate on [data-op-composer="true"]: ${sel}`);
       }
     }
   }
 
-  const composerColRule = findRule(
-    s => s.startsWith(chatgptPrefix) && s.includes('[data-op-composer-dock="true"]') && s.includes('.composer-container')
+  const overlaidDockRule = findRule(
+    s => s.startsWith('html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"])') && s.endsWith('[data-op-composer-overlaid="true"]')
   );
-  assert.ok(composerColRule, 'must tighten .composer-container inside dock');
+  assert.ok(overlaidDockRule, 'must elevate overlaid composer dock above sticky code headers');
+  assert.match(overlaidDockRule.body, /z-index:\s*6\s*!important/);
+
+  const composerColRule = findRule(
+    s => s.startsWith(chatgptComposerPrefix) && s.includes('[data-op-composer-dock="true"]') && s.includes('.composer-container')
+  );
+  assert.ok(composerColRule, 'must tighten .composer-container inside dock only when composerRestyle is active');
   assert.match(composerColRule.body, /padding-top:\s*8px\s*!important/);
   assert.match(composerColRule.body, /padding-bottom:\s*14px\s*!important/);
 
-  const hintRule = findRule(s => s.startsWith(chatgptPrefix) && s.includes('[data-op-composer-dock="true"]') && s.includes('.composer-hint'));
-  assert.ok(hintRule, 'must tighten .composer-hint inside dock');
+  const hintRule = findRule(s => s.startsWith(chatgptComposerPrefix) && s.includes('[data-op-composer-dock="true"]') && s.includes('.composer-hint'));
+  assert.ok(hintRule, 'must tighten .composer-hint inside dock only when composerRestyle is active');
   assert.match(hintRule.body, /margin-top:\s*6px\s*!important/);
   assert.match(hintRule.body, /margin-bottom:\s*0\s*!important/);
 

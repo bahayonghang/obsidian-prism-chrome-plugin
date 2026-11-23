@@ -1418,6 +1418,8 @@ test('v0.4.1 #31: composerBelowSiblings detects external trailing empty spacers,
   const wrappedMarkedInner = el('div', { 'data-op-composer-disclaimer': 'true' }, { textContent: 'Already marked inner generic notice.', rect: { left: 260, right: 1020, top: 858, bottom: 858, width: 760, height: 0 } });
   wrappedMarkedOuter.append(wrappedMarkedInner);
 
+  const explicitOuterDisclaimer = el('div', { class: 'disclaimer_outer' }, { textContent: 'External explicit disclaimer.', rect: { left: 260, right: 1020, top: 858, bottom: 894, width: 760, height: 36 } });
+  const textOuterDisclaimer = el('div', { class: 'outer-ai-note' }, { textContent: 'ChatGPT can make mistakes. Check important info.', rect: { left: 260, right: 1020, top: 858, bottom: 894, width: 760, height: 36 } });
   const genericOuter = el('div', { class: 'outer-plain-note' }, { textContent: 'Plain trailing external note.', rect: { left: 260, right: 1020, top: 860, bottom: 896, width: 760, height: 36 } });
 
   // Strictly excluded siblings after dock:
@@ -1446,6 +1448,8 @@ test('v0.4.1 #31: composerBelowSiblings detects external trailing empty spacers,
     vtAttrShell,
     vtComputedShell,
     wrappedMarkedOuter,
+    explicitOuterDisclaimer,
+    textOuterDisclaimer,
     genericOuter,
     dialogAfter,
     menuAfter,
@@ -1463,7 +1467,9 @@ test('v0.4.1 #31: composerBelowSiblings detects external trailing empty spacers,
   const adapter = A.forHost('chatgpt', doc);
   const res = adapter.composerBelowSiblings(composer, dock);
   assert.deepEqual([...res.empty], [innerTrailingEmpty, midTrailingEmpty, outerEmpty, preMarkedEmpty]);
-  assert.deepEqual([...res.disclaimers], [negMarginWrap, vtAttrShell, vtComputedShell, wrappedMarkedOuter, genericOuter]);
+  assert.deepEqual([...res.disclaimers], [negMarginWrap, vtAttrShell, vtComputedShell, wrappedMarkedOuter, explicitOuterDisclaimer, textOuterDisclaimer]);
+  assert.equal(res.disclaimers.includes(genericOuter), false, 'plain non-disclaimer external widget outside dock must stay visible');
+  assert.equal(res.empty.includes(genericOuter), false);
   assert.equal(res.empty.includes(afterMainEmpty), false, 'stops before main and never touches siblings outside main');
 
   // Simulate CSS collapsing empty spacers and hiding disclaimers (display: none, 0px height).
@@ -1516,4 +1522,88 @@ test('v0.4.1 #31: composerBelowSiblings scans dock.parentElement when dock sits 
   assert.deepEqual([...res.empty], [trailingEmpty]);
   assert.deepEqual([...res.disclaimers], [vtNotice]);
   assert.equal(res.empty.includes(outsideChatWindow), false);
+});
+
+test('v0.4.1 #28: composerBelowSiblings collapses hidden-content shells (hidden attrs, display:none, visibility:hidden) while respecting exclusions', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const parent = el('div', { class: 'composer-parent' });
+  const dock = el('div', { id: 'thread-bottom-container' });
+  const form = el('form', { 'data-chatgpt-composer': '' });
+  const composer = el('div', { 'data-composer-layout': 'single-line' });
+  const hiddenInsideDock = el('div', { class: 'inner-hidden-shell' }, { rect: { left: 260, right: 1020, top: 858, bottom: 882, width: 760, height: 24 } });
+  hiddenInsideDock.append(
+    el('svg', { 'aria-hidden': 'true' }),
+    el('a', { href: '#hidden-inner' }, { textContent: 'Hidden inner', style: { display: 'none', visibility: 'visible', opacity: '1', contentVisibility: 'visible' } })
+  );
+  hiddenInsideDock.childNodes = hiddenInsideDock.children;
+  form.append(composer);
+  dock.append(form, hiddenInsideDock);
+
+  const hiddenAttrShell = el('div', { class: 'hidden-attr-shell' }, { textContent: 'Hidden attr text Hidden link', rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  hiddenAttrShell.append(
+    el('span', { hidden: '' }, { textContent: 'Hidden attr text' }),
+    el('a', { href: '#terms', hidden: '' }, { textContent: 'Hidden link' }),
+    el('svg', { 'aria-hidden': 'true' })
+  );
+  hiddenAttrShell.childNodes = hiddenAttrShell.children;
+
+  const cssHiddenShell = el('div', { class: 'css-hidden-shell' }, { textContent: 'CSS hidden text CSS hidden link', rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  const hideStyle = { display: 'none', visibility: 'visible', opacity: '1', contentVisibility: 'visible' };
+  cssHiddenShell.append(
+    el('span', {}, { textContent: 'CSS hidden text', style: hideStyle }),
+    el('a', { href: '#css-hidden' }, { textContent: 'CSS hidden link', style: hideStyle }),
+    el('button', {}, { textContent: 'Hidden btn', style: hideStyle }),
+    el('svg', {}, { style: hideStyle })
+  );
+  cssHiddenShell.childNodes = cssHiddenShell.children;
+
+  const visHiddenShell = el('div', { class: 'vis-hidden-shell' }, { textContent: 'Invisible height shell', rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 }, style: { display: 'block', visibility: 'hidden', opacity: '1', contentVisibility: 'visible', position: 'static' } });
+
+  // Shells that must NEVER collapse into empty:
+  const visibleLinkShell = el('div', { class: 'visible-link-shell' }, { rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  visibleLinkShell.append(el('a', { href: '#live' }, { textContent: '' }));
+  const hiddenInputShell = el('div', { class: 'hidden-input-shell' }, { rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  hiddenInputShell.append(el('input', { type: 'file', hidden: '' }));
+  const hiddenDetailsShell = el('div', { class: 'hidden-details-shell' }, { rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  const closedDetails = el('details', {});
+  closedDetails.append(el('summary', { hidden: '' }, { textContent: 'Hidden summary' }));
+  hiddenDetailsShell.append(closedDetails);
+  const hiddenMsgShell = el('div', { class: 'hidden-msg-shell' }, { rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  hiddenMsgShell.append(el('div', { 'data-message-author-role': 'assistant', hidden: '' }));
+  const hiddenThoughtShell = el('div', { class: 'hidden-thought-shell' }, { rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  hiddenThoughtShell.append(el('div', { 'data-testid': 'thoughts-content', hidden: '' }));
+  const hiddenDialogShell = el('div', { class: 'hidden-dialog-shell' }, { rect: { left: 0, right: 1280, top: 858, bottom: 886, width: 1280, height: 28 } });
+  hiddenDialogShell.append(el('div', { role: 'dialog', hidden: '' }));
+
+  parent.append(
+    dock,
+    hiddenAttrShell,
+    cssHiddenShell,
+    visHiddenShell,
+    visibleLinkShell,
+    hiddenInputShell,
+    hiddenDetailsShell,
+    hiddenMsgShell,
+    hiddenThoughtShell,
+    hiddenDialogShell
+  );
+  main.append(parent);
+  body.append(main);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const res = adapter.composerBelowSiblings(composer, dock);
+  assert.deepEqual([...res.empty], [hiddenInsideDock, hiddenAttrShell, cssHiddenShell, visHiddenShell]);
+  assert.deepEqual([...res.disclaimers], []);
+});
+
+test('v0.4.1 review: adapters expose per-host scrim and scroller Alpha fade capability flags', () => {
+  const A = adapters();
+  const chatgpt = A.forHost('chatgpt', {});
+  const gemini = A.forHost('gemini', {});
+  assert.equal(chatgpt.usesOverlayScrim, false);
+  assert.equal(chatgpt.usesScrollerAlphaFade, true);
+  assert.equal(gemini.usesOverlayScrim, true);
+  assert.equal(gemini.usesScrollerAlphaFade, false);
 });

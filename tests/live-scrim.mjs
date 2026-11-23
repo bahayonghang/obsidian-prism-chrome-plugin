@@ -548,6 +548,32 @@ async function checkChatGPTInFlow(suite) {
         assert.equal(aboveMetrics.height, 0, `${label}: above-composer disclaimer takes 0px height`);
         await page.evaluate(() => {
           document.getElementById('prism-above-disclaimer')?.remove();
+          const dock = document.getElementById('thread-bottom-container');
+          const shell = document.createElement('div');
+          shell.id = 'prism-hidden-shell';
+          shell.style.height = '28px';
+          const hiddenText = document.createElement('span');
+          hiddenText.hidden = true;
+          hiddenText.textContent = 'Hidden text';
+          const cssHiddenText = document.createElement('span');
+          cssHiddenText.style.display = 'none';
+          cssHiddenText.textContent = 'Display none text';
+          const hiddenLink = document.createElement('a');
+          hiddenLink.href = '#hidden';
+          hiddenLink.style.display = 'none';
+          hiddenLink.textContent = 'Hidden link';
+          const hiddenSvg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+          hiddenSvg.setAttribute('aria-hidden', 'true');
+          shell.append(hiddenText, cssHiddenText, hiddenLink, hiddenSvg);
+          dock.after(shell);
+          ObsidianPrismRuntime.refresh();
+        });
+        await page.waitForFunction(() => document.getElementById('prism-hidden-shell')?.getAttribute('data-op-composer-empty-sibling') === 'true');
+        await frames(page);
+        const hiddenShellHeight = await page.evaluate(() => Math.round(document.getElementById('prism-hidden-shell').getBoundingClientRect().height * 10) / 10);
+        assert.equal(hiddenShellHeight, 0, `${label}: hidden-content outer shell collapses to 0px`);
+        await page.evaluate(() => {
+          document.getElementById('prism-hidden-shell')?.remove();
           ObsidianPrismRuntime.refresh();
         });
         await frames(page);

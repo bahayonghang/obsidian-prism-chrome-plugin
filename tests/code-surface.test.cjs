@@ -212,6 +212,6 @@ test('hosts.css Code Surface Readability section gates every rule against host p
   };
   checkRuleList(rules);
 
-  assert.match(HOSTS_CSS, /\[data-op-sticky-code="true"\][\s\S]*?position:\s*sticky\s*!important/);
+  assert.match(HOSTS_CSS, /\[data-op-sticky-code="true"\][\s\S]*?position:\s*sticky\s*!important;\s*top:\s*0;\s*z-index:\s*5;/);
   assert.match(HOSTS_CSS, /pre\.op-code-folded\s*\{[\s\S]*?max-height:\s*260px\s*!important/);
 });

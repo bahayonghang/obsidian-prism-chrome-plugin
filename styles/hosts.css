@@ -226,7 +226,7 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-m
 html[data-op-enabled="true"][data-op-sticky-code="true"] :is([data-op-code-header="true"],code-block .code-block-decoration,[data-message-author-role="assistant"] .code-header,[data-turn="assistant"] .code-header,[data-testid="code-block-header"],[data-test-id="code-block-header"]) {
   position: sticky !important;
   top: 0;
-  z-index: 1;
+  z-index: 5;
 }
 html[data-op-enabled="true"][data-op-sticky-code="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"],code-block .code-block-decoration,[data-message-author-role="assistant"] .code-header,[data-turn="assistant"] .code-header,[data-testid="code-block-header"],[data-test-id="code-block-header"]) {
   background: var(--op-code-header) !important;
@@ -554,17 +554,17 @@ html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([
   padding-bottom: max(24px, var(--op-dock-clearance, 96px)) !important;
 }
 html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-overlaid="true"] {
-  z-index: 6;
+  z-index: 6 !important;
 }
 html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-scroller-fade="true"] {
   -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--op-scroller-fade-start, 24px)), transparent calc(100% - var(--op-scroller-fade-end, 0px)), transparent 100%) !important;
   mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--op-scroller-fade-start, 24px)), transparent calc(100% - var(--op-scroller-fade-end, 0px)), transparent 100%) !important;
 }
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-container {
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-container {
   padding-top: 8px !important;
   padding-bottom: 14px !important;
 }
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-hint {
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-hint {
   margin-top: 6px !important;
   margin-bottom: 0 !important;
 }

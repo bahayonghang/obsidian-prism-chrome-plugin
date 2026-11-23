@@ -43,8 +43,8 @@
   let dockScrim = null;
   let dockScroller = null;
   let dockOverlaidHost = null;
-  let fadeScroller = null;
-  let fadeDock = null;
+  let alphaFadeScroller = null;
+  let alphaFadeDock = null;
   let geometryFrame = null;
   const surfaceMarks = new Map();
   const codes = new Map();
@@ -114,7 +114,7 @@
     if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = null;
     if (geometryFrame) cancelAnimationFrame(geometryFrame); geometryFrame = null;
     dockObserver?.disconnect(); dockObserver = null; observedDock = null;
-    dockScrim = dockScroller = dockOverlaidHost = fadeScroller = fadeDock = null;
+    dockScrim = dockScroller = dockOverlaidHost = alphaFadeScroller = alphaFadeDock = null;
     railSignature = ''; lastEstimate = 0; lastModelLabel = ''; lastAttachments = 0; activeTurn = -1;
     if (permanent) {
       stopped = true;
@@ -735,7 +735,7 @@
     };
     const isNativePalette = Schema.resolvePalette(cfg) === 'host';
     const isHome = !adapter.userTurns().length && !adapter.assistantTurns().length;
-    let dockHost = null, nextScrim = null, nextScroller = null, nextClearanceScroller = null, nextOverlaidDock = null, nextFadeScroller = null, nextFadeDock = null, nextObservedDock = null;
+    let dockHost = null, nextScrim = null, nextScroller = null, nextThreadScroller = null, nextOverlaidDock = null, nextAlphaFadeScroller = null, nextAlphaFadeDock = null, nextObservedDock = null;
     const nextPrimary = adapter.primarySurface?.() || null;
     add(nextPrimary,'data-op-main-surface');
     for (const element of adapter.threadColumns?.() || []) add(element,'data-op-thread-column');
@@ -753,21 +753,21 @@
         if (isOverlaid) {
           nextOverlaidDock = dockHost;
           add(dockHost, 'data-op-composer-overlaid');
-          if (host === 'gemini') {
+          if (adapter.usesOverlayScrim) {
             nextScrim = dockHost;
             add(nextScrim, 'data-op-composer-scrim');
           }
           nextScroller = overlaidScroller(dockHost, scroller);
           add(nextScroller, 'data-op-thread-scroller');
           if (nextScroller) {
-            nextClearanceScroller = nextScroller;
+            nextThreadScroller = nextScroller;
           } else if (scroller && ![document.scrollingElement, document.documentElement, document.body].includes(scroller) && !dockHost.contains?.(scroller)) {
-            nextClearanceScroller = scroller;
+            nextThreadScroller = scroller;
           }
         }
-        if (host === 'chatgpt' && Adapters.isIndependentMessageScroller(scroller, composer, dockHost)) {
-          nextFadeScroller = scroller;
-          nextFadeDock = dockHost;
+        if (adapter.usesScrollerAlphaFade && Adapters.isIndependentMessageScroller(scroller, composer, dockHost)) {
+          nextAlphaFadeScroller = scroller;
+          nextAlphaFadeDock = dockHost;
           add(scroller, 'data-op-scroller-fade');
         }
         if (cfg.composerRestyle) {
@@ -841,8 +841,8 @@
         dockObserver.observe(observedDock);
       }
     }
-    dockScrim = nextScrim; dockOverlaidHost = nextOverlaidDock; dockScroller = nextClearanceScroller;
-    fadeScroller = nextFadeScroller; fadeDock = nextFadeDock;
+    dockScrim = nextScrim; dockOverlaidHost = nextOverlaidDock; dockScroller = nextThreadScroller;
+    alphaFadeScroller = nextAlphaFadeScroller; alphaFadeDock = nextAlphaFadeDock;
     const home = String(isHome);
     if (document.documentElement.getAttribute('data-op-home') !== home) document.documentElement.setAttribute('data-op-home',home);
     document.documentElement.setAttribute('data-op-visibility',document.hidden?'hidden':'visible');
@@ -866,7 +866,7 @@
     syncDockAvoidance();
   }
   function scheduleGeometry() {
-    if (lostOwnership() || !enabled || stopped || document.hidden || (!ambient && !dock && !dockOverlaidHost && !fadeDock) || geometryFrame) return;
+    if (lostOwnership() || !enabled || stopped || document.hidden || (!ambient && !dock && !dockOverlaidHost && !alphaFadeDock) || geometryFrame) return;
     geometryFrame=requestAnimationFrame(updateAmbientGeometry);
   }
   /* Root custom properties owned by the runtime (review fix S2), following the --op-ambient-alpha pattern in
@@ -958,9 +958,9 @@
     if (clearance) setRootVar('--op-dock-clearance',clearance+'px'); else clearRootVar('--op-dock-clearance');
   }
   function syncScrollerFade() {
-    if (enabled && fadeScroller?.isConnected && fadeDock?.isConnected) {
-      const sRect = fadeScroller.getBoundingClientRect();
-      const dRect = fadeDock.getBoundingClientRect();
+    if (enabled && alphaFadeScroller?.isConnected && alphaFadeDock?.isConnected) {
+      const sRect = alphaFadeScroller.getBoundingClientRect();
+      const dRect = alphaFadeDock.getBoundingClientRect();
       if (dRect.top < sRect.bottom - 1) {
         const overlap = Math.max(0, Math.ceil(sRect.bottom - dRect.top));
         setRootVar('--op-scroller-fade-start', overlap + 'px');
