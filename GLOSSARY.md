@@ -59,11 +59,11 @@ The complete code presentation inside a conversation turn, encompassing its oute
 _Avoid_: Code box, pre block, snippet
 
 **Composer Surface**:
-The elevated input card housing the host's native prompt editor, circular add button, Model Capsule, and action controls. When restyled it uses the prototype two-row layout: attachment previews, then the editor on a full-width row, then the add button on the left and the Model Capsule with voice/send controls on the right, arranged only by overriding the host's own grid areas.
+The elevated input card housing the host's native prompt editor, circular add button, Model Capsule, and action controls. When restyled it uses the prototype two-row layout: attachment previews, then the editor on a full-width row, then the add button on the left and the Model Capsule with voice/send controls on the right, arranged only by overriding the host's own grid areas (on a ChatGPT grid without area names, by naming the areas of its existing children).
 _Avoid_: Input box, prompt bar, chat form
 
 **Composer Scrim**:
-The top-feathered blur occlusion behind the Composer Surface in an active conversation: a translucent (about 45%) canvas tint with a backdrop blur and no solid base, so the horizon glow shows through continuously while scrolled conversation text blurs behind floating controls. Without backdrop-filter support it falls back to a low-opacity gradient.
+The top-feathered blur occlusion behind the Composer Surface in an active conversation: a translucent (about 45%) canvas tint with a backdrop blur and no solid base, so the horizon glow shows through continuously while scrolled conversation text blurs behind floating controls. Without backdrop-filter support it falls back to a low-opacity gradient. Where the dock overlays the conversation (Gemini), the thread gets trailing space so the last reply stays above it.
 _Avoid_: Footer mask, white slab, solid fade, transparent overlay
 
 **Model Capsule**:
