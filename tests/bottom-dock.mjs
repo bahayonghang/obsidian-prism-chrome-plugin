@@ -114,6 +114,7 @@ async function assertZeroOverlapAndHitTest(page, host, label) {
     const composer = document.querySelector(cardSel);
     const rail = document.querySelector('#op-rail-root');
     return {
+      composerRestyle: document.documentElement.getAttribute('data-op-composer'),
       vw: document.documentElement.clientWidth || window.innerWidth,
       vh: document.documentElement.clientHeight || window.innerHeight,
       dock: box(dock),
@@ -124,7 +125,18 @@ async function assertZeroOverlapAndHitTest(page, host, label) {
       hits: {
         corner: hitOk(corner),
         widthBtn: hitOk(widthBtn),
-        vialBtn: hitOk(vialBtn)
+        vialBtn: hitOk(vialBtn),
+        trailing: trailingSelectors.map(sel => {
+          const node = document.querySelector(sel);
+          if (!node) return { rect: null, hit: true, blockedByDock: false };
+          const r = node.getBoundingClientRect();
+          const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+          return {
+            rect: { left: r.left, top: r.top, right: r.right, bottom: r.bottom },
+            hit: Boolean(hit && (hit === node || node.contains(hit))),
+            blockedByDock: Boolean(hit && dock && (hit === dock || dock.contains(hit)))
+          };
+        })
       }
     };
   }, { cardSel: COMPOSER_CARD[host], cornerSel: s.cornerFloat, trailingSelectors });
@@ -137,9 +149,19 @@ async function assertZeroOverlapAndHitTest(page, host, label) {
   assert.ok(geom.corner, `${label}: corner float button exists`);
   assert.equal(rectsOverlap(geom.dock, geom.corner, 0), false, `${label}: dock must not overlap corner float (${JSON.stringify(geom.dock)} vs ${JSON.stringify(geom.corner)})`);
   assert.ok(geom.composer, `${label}: composer card exists`);
+  if (geom.composerRestyle === 'true') {
+    const composerBottomGap = Math.round((geom.vh - geom.composer.bottom) * 10) / 10;
+    assert.ok(composerBottomGap >= 3.5 && composerBottomGap <= 6.5, `${label}: lowered Composer Surface bottomGap sits in 4-6px range (got ${composerBottomGap}px)`);
+  }
   assert.equal(rectsOverlap(geom.dock, geom.composer, 0), false, `${label}: dock must not overlap composer (${JSON.stringify(geom.dock)} vs ${JSON.stringify(geom.composer)})`);
   for (const [idx, ctrl] of geom.trailing.entries()) {
     assert.equal(rectsOverlap(geom.dock, ctrl, 0), false, `${label}: dock must not overlap trailing control #${idx}`);
+  }
+  for (const [idx, entry] of geom.hits.trailing.entries()) {
+    assert.equal(entry.blockedByDock, false, `${label}: #op-bottom-dock must not intercept trailing control #${idx}`);
+    if (entry.rect && !rectsOverlap(entry.rect, geom.corner, 0)) {
+      assert.equal(entry.hit, true, `${label}: trailing control #${idx} is hit-testable`);
+    }
   }
   if (geom.rail) {
     assert.equal(rectsOverlap(geom.dock, geom.rail, 0), false, `${label}: dock must not overlap rail (${JSON.stringify(geom.dock)} vs ${JSON.stringify(geom.rail)})`);
@@ -275,6 +297,10 @@ export async function checkBottomDock(suite) {
   for (const host of ['chatgpt', 'gemini']) {
     const s = LIVE_SELECTORS[host];
     await onLiveFixture(suite, host, { failure: `${host}-bottom-dock-failure`, colorScheme: 'dark' }, async ({ page, errors }) => {
+      const nativeBottomGap = await page.evaluate(sel => {
+        const c = document.querySelector(sel);
+        return Math.round((window.innerHeight - c.getBoundingClientRect().bottom) * 10) / 10;
+      }, COMPOSER_CARD[host]);
       await verifySingletonAndHandover(page, suite, host, s);
 
       // 3. Button typography, anti-squish & contrast (dark obsidian + light crystal).
@@ -346,6 +372,7 @@ export async function checkBottomDock(suite) {
       await page.evaluate(() => window.ObsidianPrismRuntime.refresh());
       await page.waitForTimeout(200);
       await settle(page);
+      await assertZeroOverlapAndHitTest(page, host, `${engine} ${host} 820x500 short-viewport`);
       const flipped = await assertPopoverInsideViewport(page, `${engine} ${host} 820x500 short-viewport popover`);
       assert.equal(flipped.side, 'below', `${engine} ${host}: popover flips below when clipped at top`);
       await page.evaluate(editorSel => {
@@ -353,20 +380,45 @@ export async function checkBottomDock(suite) {
         if (editor) editor.style.removeProperty('min-height');
       }, s.editor);
 
+      // 5b. Toggling composerRestyle: false restores native composer position & updates Bottom Dock offset cleanly.
+      await page.setViewportSize({ width: 1280, height: 900 });
+      await patchConfig(page, { contentWidth: 'full' }, () => document.documentElement.getAttribute('data-op-content-width') === 'full');
+      await settle(page);
+      await page.waitForTimeout(80);
+      await assertZeroOverlapAndHitTest(page, host, `${engine} ${host} 1280x900 before composerRestyle:false`);
+      await patchConfig(page, { composerRestyle: false }, () => document.documentElement.getAttribute('data-op-composer') === 'false');
+      await page.waitForTimeout(80);
+      await settle(page);
+      const unstyledGap = await page.evaluate(sel => {
+        const c = document.querySelector(sel);
+        return Math.round((window.innerHeight - c.getBoundingClientRect().bottom) * 10) / 10;
+      }, COMPOSER_CARD[host]);
+      assert.ok(Math.abs(unstyledGap - nativeBottomGap) <= 1.0, `${engine} ${host}: composerRestyle: false restores native composer bottomGap (${unstyledGap} vs ${nativeBottomGap})`);
+      await assertZeroOverlapAndHitTest(page, host, `${engine} ${host} 1280x900 composerRestyle:false`);
+      await patchConfig(page, { composerRestyle: true }, () => document.documentElement.getAttribute('data-op-composer') === 'true');
+      await page.waitForTimeout(80);
+      await settle(page);
+      await assertZeroOverlapAndHitTest(page, host, `${engine} ${host} 1280x900 composerRestyle:true restored`);
+
       // 6. Disable extension -> zero nodes, zero data-op-instance, zero surface marks, zero root CSS variables.
       await page.setViewportSize({ width: 1280, height: 900 });
       await patchConfig(page, { enabled: false }, () => !document.documentElement.hasAttribute('data-op-enabled'));
       await settle(page);
       await assertNoRuntimeResidue(page, `${engine} ${host} disable`);
+      const disabledGap = await page.evaluate(sel => Math.round((window.innerHeight - document.querySelector(sel).getBoundingClientRect().bottom) * 10) / 10, COMPOSER_CARD[host]);
+      assert.ok(Math.abs(disabledGap - nativeBottomGap) <= 1.0, `${engine} ${host}: disable restores native bottomGap (${disabledGap} vs ${nativeBottomGap})`);
 
-      // Re-enable -> stop() also removes everything with zero residue.
+      // Re-enable -> stop() also removes everything with zero residue and restores native composer position.
       await patchConfig(page, { enabled: true, contentWidth: 'full' }, () => document.querySelector('#op-bottom-dock'));
       await settle(page);
       await page.evaluate(() => window.ObsidianPrismRuntime.stop());
+      await settle(page);
       await assertNoRuntimeResidue(page, `${engine} ${host} stop()`);
+      const stoppedGap = await page.evaluate(sel => Math.round((window.innerHeight - document.querySelector(sel).getBoundingClientRect().bottom) * 10) / 10, COMPOSER_CARD[host]);
+      assert.ok(Math.abs(stoppedGap - nativeBottomGap) <= 1.0, `${engine} ${host}: stop() restores native bottomGap (${stoppedGap} vs ${nativeBottomGap})`);
 
       assert.deepEqual(errors, []);
-      console.log(`PASS ${engine} ${host} bottom dock: singleton handover, typography/anti-squish, zero-overlap matrix (1707/1280/820 x standard/wide/full), popover containment & clean teardown`);
+      console.log(`PASS ${engine} ${host} bottom dock: singleton handover, typography/anti-squish, zero-overlap matrix (1707/1280/820 x standard/wide/full + 820x500), composerRestyle restore, popover containment & clean teardown`);
     });
   }
 }

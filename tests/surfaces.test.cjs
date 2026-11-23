@@ -1443,3 +1443,73 @@ test('v0.4.1 #30: ChatGPT skips data-op-composer-scrim, sets safe Alpha fade onl
     ctx.runtime.stop();
   }
 });
+
+test('v0.4.1 #31: composerRestyle: false clears empty-sibling and disclaimer marks without altering DOM structure, while preserving dock/scrim/fade marks', async () => {
+  const styles = new Map();
+  const scroller = {
+    nodeType: 1, tagName: 'DIV', isConnected: true, children: [], childNodes: [],
+    attributesMap: new Map(),
+    getAttribute(k) { return this.attributesMap.get(k) ?? null; },
+    setAttribute(k, v) { this.attributesMap.set(k, String(v)); },
+    removeAttribute(k) { this.attributesMap.delete(k); },
+    hasAttribute(k) { return this.attributesMap.has(k); },
+    contains(t) { return t === this; },
+    getBoundingClientRect() { return { left: 0, top: 52, right: 1280, bottom: 720, width: 1280, height: 668 }; }
+  };
+  const ctx = createRuntimeDom({}, {
+    host: 'chatgpt',
+    withBelowSiblings: true,
+    useCustomScroller: true,
+    scroller,
+    getComputedStyle: el => styles.get(el) || { position: 'relative', paddingBottom: '0px' }
+  });
+  const e = Object.fromEntries(ctx.elements);
+  e.scrim.getBoundingClientRect = () => ({ left: 0, top: 720, right: 1280, bottom: 900, width: 1280, height: 180 });
+  styles.set(e.scrim, { position: 'relative', paddingBottom: '0px' });
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+
+  const snapshotDomOrder = () => ({
+    primaryChildren: [...e.primary.children].filter(n => !n.hasAttribute?.('data-op-owned')),
+    scrimParent: e.scrim.parentElement,
+    scrimChildren: [...e.scrim.children].filter(n => !n.hasAttribute?.('data-op-owned')),
+    composerParent: e.composer.parentElement,
+    emptySiblingParent: e.emptySibling.parentElement,
+    disclaimerParent: e.disclaimerSibling.parentElement
+  });
+  const initialOrder = snapshotDomOrder();
+
+  assert.equal(e.docEl.getAttribute('data-op-composer'), 'true');
+  assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'true');
+  assert.equal(e.emptySibling.getAttribute('data-op-composer-empty-sibling'), 'true');
+  assert.equal(e.disclaimerSibling.getAttribute('data-op-composer-disclaimer'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-dock'), 'true');
+  assert.equal(scroller.getAttribute('data-op-scroller-fade'), 'true');
+
+  // Toggle composerRestyle: false -> clears empty-sibling, disclaimer, and composer surface marks; preserves dock, backdrop, and scroller fade; never mutates DOM tree order.
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', composerRestyle: false }
+  });
+  await new Promise(resolve => setTimeout(resolve, 15));
+
+  assert.equal(e.docEl.getAttribute('data-op-composer'), 'false');
+  assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'host-orig');
+  assert.equal(e.emptySibling.getAttribute('data-op-composer-empty-sibling'), null);
+  assert.equal(e.disclaimerSibling.getAttribute('data-op-composer-disclaimer'), null);
+  assert.equal(e.scrim.getAttribute('data-op-composer-dock'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-backdrop'), 'true');
+  assert.equal(scroller.getAttribute('data-op-scroller-fade'), 'true');
+  assert.deepEqual(snapshotDomOrder(), initialOrder, 'ADR-0002: parent/child/sibling order remains intact');
+
+  // Re-enable composerRestyle: true -> restores marks cleanly.
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', composerRestyle: true }
+  });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(e.docEl.getAttribute('data-op-composer'), 'true');
+  assert.equal(e.emptySibling.getAttribute('data-op-composer-empty-sibling'), 'true');
+  assert.equal(e.disclaimerSibling.getAttribute('data-op-composer-disclaimer'), 'true');
+
+  ctx.runtime.stop();
+  assert.deepEqual(snapshotDomOrder(), initialOrder, 'ADR-0002: stop() leaves DOM parent/child/sibling order intact');
+});

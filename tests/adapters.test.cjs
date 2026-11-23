@@ -1383,3 +1383,137 @@ test('v0.4.1 #30: isIndependentMessageScroller distinguishes independent sibling
   compWrap.append(innerEdScroller);
   assert.equal(A.isIndependentMessageScroller(innerEdScroller, compWrap, null), false);
 });
+
+test('v0.4.1 #31: composerBelowSiblings detects external trailing empty spacers, negative-margin & view-transition shells up to 2 levels above dock without oscillation', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const parent = el('div', { class: 'composer-parent' });
+  const scroller = el('div', { 'data-prism-test-scroller': '' });
+  const turn = el('div', { 'data-message-author-role': 'assistant' }, { textContent: 'Assistant turn' });
+  scroller.append(turn);
+
+  const dockOuter = el('div', { class: 'dock-outer' });
+  const dockInner = el('div', { class: 'dock-inner' });
+  const dock = el('div', { id: 'thread-bottom-container' });
+  const form = el('form', { 'data-chatgpt-composer': '' });
+  const composer = el('div', { 'data-composer-layout': 'single-line' });
+  form.append(composer);
+  dock.append(form);
+
+  const innerTrailingEmpty = el('div', { class: 'inner-trailing-empty' });
+  const midTrailingEmpty = el('div', { class: 'mid-trailing-empty' });
+  dockInner.append(dock, innerTrailingEmpty);
+  dockOuter.append(dockInner, midTrailingEmpty);
+
+  const outerEmpty = el('div', { class: 'dock-outer-spacer' }, { rect: { left: 0, right: 1280, top: 830, bottom: 858, width: 1280, height: 28 } });
+  const preMarkedEmpty = el('div', { class: 'pre-marked-empty', 'data-op-composer-empty-sibling': 'true' }, { rect: { left: 0, right: 1280, top: 858, bottom: 858, width: 1280, height: 0 } });
+  const negMarginWrap = el('div', { style: 'margin-top: -8px' }, { textContent: 'Synthetic negative margin footer.', rect: { left: 260, right: 1020, top: 850, bottom: 886, width: 760, height: 36 }, style: { display: 'block', visibility: 'visible', opacity: '1', contentVisibility: 'visible', position: 'relative', marginTop: '-8px' } });
+  const vtAttrShell = el('div', { style: 'view-transition-name: footer-shell' }, { textContent: 'View transition attr notice.', rect: { left: 260, right: 1020, top: 858, bottom: 900, width: 760, height: 42 } });
+  const vtComputedInner = el('span', {}, { textContent: 'View transition computed notice.' });
+  const vtComputedShell = el('div', { class: 'vt-computed-outer' }, { textContent: 'View transition computed notice.', rect: { left: 260, right: 1020, top: 858, bottom: 900, width: 760, height: 42 }, style: { display: 'block', visibility: 'visible', opacity: '1', contentVisibility: 'visible', position: 'relative', viewTransitionName: 'disclaimer-shell' } });
+  vtComputedShell.append(vtComputedInner);
+
+  const wrappedMarkedOuter = el('div', { class: 'wrapped-marked-outer' }, { textContent: 'Already marked inner generic notice.', rect: { left: 260, right: 1020, top: 858, bottom: 894, width: 760, height: 36 } });
+  const wrappedMarkedInner = el('div', { 'data-op-composer-disclaimer': 'true' }, { textContent: 'Already marked inner generic notice.', rect: { left: 260, right: 1020, top: 858, bottom: 858, width: 760, height: 0 } });
+  wrappedMarkedOuter.append(wrappedMarkedInner);
+
+  const genericOuter = el('div', { class: 'outer-plain-note' }, { textContent: 'Plain trailing external note.', rect: { left: 260, right: 1020, top: 860, bottom: 896, width: 760, height: 36 } });
+
+  // Strictly excluded siblings after dock:
+  const dialogAfter = el('div', { role: 'dialog', style: 'view-transition-name: dlg-shell; margin-top: -8px' }, { textContent: 'Dialog must stay visible', rect: { left: 400, right: 800, top: 300, bottom: 380, width: 400, height: 80 } });
+  const menuAfter = el('div', { role: 'menu' }, { textContent: 'Menu must stay visible', rect: { left: 400, right: 600, top: 300, bottom: 380, width: 200, height: 80 } });
+  const threeButtonsAfter = el('div', {}, { textContent: 'Choose action', rect: { left: 260, right: 1020, top: 850, bottom: 890, width: 760, height: 40 } });
+  threeButtonsAfter.append(el('button', {}, { textContent: 'A' }), el('button', {}, { textContent: 'B' }), el('button', {}, { textContent: 'C' }));
+  const svgAfter = el('div', {}, { textContent: 'Icon bar', rect: { left: 260, right: 1020, top: 850, bottom: 890, width: 760, height: 40 } });
+  svgAfter.append(el('svg', {}));
+  const formAfter = el('div', {}, { textContent: 'Input bar', rect: { left: 260, right: 1020, top: 850, bottom: 890, width: 760, height: 40 } });
+  formAfter.append(el('input', { type: 'text' }));
+  const msgAfter = el('div', {}, { textContent: 'ChatGPT is AI and can make mistakes.', rect: { left: 260, right: 1020, top: 850, bottom: 890, width: 760, height: 40 } });
+  msgAfter.append(el('div', { 'data-message-author-role': 'assistant' }, { textContent: 'ChatGPT is AI and can make mistakes.' }));
+  const detailsAfter = el('details', { id: 'closed-thought-fixture' }, { textContent: 'Collapsed thoughts', rect: { left: 260, right: 1020, top: 860, bottom: 882, width: 760, height: 22 } });
+  const detailsSummary = el('summary', {}, { textContent: 'Collapsed thoughts' });
+  const detailsBody = el('div', { 'data-testid': 'thoughts-content' }, { textContent: 'Only translate after opening.' });
+  detailsAfter.append(detailsSummary, detailsBody);
+  const ownedAfter = el('div', { 'data-op-owned': '' });
+
+  parent.append(
+    scroller,
+    dockOuter,
+    outerEmpty,
+    preMarkedEmpty,
+    negMarginWrap,
+    vtAttrShell,
+    vtComputedShell,
+    wrappedMarkedOuter,
+    genericOuter,
+    dialogAfter,
+    menuAfter,
+    threeButtonsAfter,
+    svgAfter,
+    formAfter,
+    msgAfter,
+    detailsAfter,
+    ownedAfter
+  );
+  main.append(parent);
+  const afterMainEmpty = el('div', { class: 'after-main-empty' });
+  body.append(main, afterMainEmpty);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const res = adapter.composerBelowSiblings(composer, dock);
+  assert.deepEqual([...res.empty], [innerTrailingEmpty, midTrailingEmpty, outerEmpty, preMarkedEmpty]);
+  assert.deepEqual([...res.disclaimers], [negMarginWrap, vtAttrShell, vtComputedShell, wrappedMarkedOuter, genericOuter]);
+  assert.equal(res.empty.includes(afterMainEmpty), false, 'stops before main and never touches siblings outside main');
+
+  // Simulate CSS collapsing empty spacers and hiding disclaimers (display: none, 0px height).
+  for (const node of res.empty) {
+    node.setAttribute('data-op-composer-empty-sibling', 'true');
+    node.rect = { left: 0, right: 1280, top: 900, bottom: 900, width: 1280, height: 0 };
+  }
+  for (const node of res.disclaimers) {
+    node.setAttribute('data-op-composer-disclaimer', 'true');
+    node.rect = { left: 260, right: 1020, top: 900, bottom: 900, width: 760, height: 0 };
+  }
+  const origGetStyle = doc.defaultView.getComputedStyle;
+  doc.defaultView.getComputedStyle = n => {
+    const base = origGetStyle(n);
+    if (res.disclaimers.includes(n) || n === wrappedMarkedInner) {
+      return { ...base, display: 'none', visibility: 'visible', opacity: '1', contentVisibility: 'visible' };
+    }
+    return base;
+  };
+
+  // Repeated rescans must keep all empty spacers and disclaimers identically without bounce-back.
+  for (let i = 0; i < 3; i++) {
+    const rescan = adapter.composerBelowSiblings(composer, dock);
+    assert.deepEqual([...rescan.empty], [...res.empty], `rescan #${i + 1} keeps external empty spacers`);
+    assert.deepEqual([...rescan.disclaimers], [...res.disclaimers], `rescan #${i + 1} keeps external disclaimers`);
+  }
+
+  // If a previously empty spacer receives text/interactive content, it drops out cleanly.
+  outerEmpty.textContent = 'Dynamic attachment bar';
+  const afterContent = adapter.composerBelowSiblings(composer, dock);
+  assert.equal(afterContent.empty.includes(outerEmpty), false, 'non-empty spacer is no longer marked empty');
+});
+
+test('v0.4.1 #31: composerBelowSiblings scans dock.parentElement when dock sits directly inside chat-window/main without escaping it', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('gemini');
+  const chatWindow = el('chat-window');
+  const scroller = el('infinite-scroller');
+  const dock = el('input-container', { class: 'input-gradient' });
+  const composer = el('div', { class: 'text-input-field' });
+  dock.append(composer);
+  const trailingEmpty = el('div', { class: 'gemini-outer-spacer' });
+  const vtNotice = el('div', { style: 'view-transition-name: gemini-footer-shell' }, { textContent: 'Gemini custom footer notice.', rect: { left: 260, right: 1020, top: 860, bottom: 896, width: 760, height: 36 } });
+  const outsideChatWindow = el('div', { class: 'outside-chat-window' });
+  chatWindow.append(scroller, dock, trailingEmpty, vtNotice);
+  body.append(chatWindow, outsideChatWindow);
+
+  const adapter = A.forHost('gemini', doc);
+  const res = adapter.composerBelowSiblings(composer, dock);
+  assert.deepEqual([...res.empty], [trailingEmpty]);
+  assert.deepEqual([...res.disclaimers], [vtNotice]);
+  assert.equal(res.empty.includes(outsideChatWindow), false);
+});
