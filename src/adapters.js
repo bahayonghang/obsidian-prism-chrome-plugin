@@ -23,14 +23,25 @@
       modelLabels: '[data-testid="model-switcher-dropdown-button"], [data-testid="composer-model-switcher"], .model-label',
       addTriggers: '[data-testid="composer-plus-btn"], button[aria-label*="Add files" i], button[aria-label*="Attach" i], button[aria-label*="上传"], button[aria-label*="添加"]',
       composerChips: '[data-testid="composer-mode-pill"], [data-testid="composer-chip"], [data-testid="composer-tool-chip"]',
-      attachments: '[data-testid="attachment-card"], [data-testid="file-attachment"], [data-testid="uploaded-file"], [data-testid="image-attachment"], .native-footer-attachment',
-      /* v0.3.1 #21 Content Width Presets: the reading (text) width is 48rem natively (the 808px
+      attachments: '[data-testid="attachment-card"], [data-testid="file-attachment"], [data-testid="uploaded-file"], [data-testid="image-attachment"], [class*="file-tile"], .native-footer-attachment',
+      primaryActions: '[data-testid="send-button"], [data-testid="composer-speech-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="Start Voice" i], button[aria-label*="Voice" i], button[aria-label*="发送"], button[aria-label*="语音"]',
+      /* v0.3.1 #21 / v0.4.0 #26 Content Width Presets: the reading (text) width is 48rem natively (the 808px
        * transcript = 48rem + 2 × 20px padding, probe 2026-11-22). This declaration owns the width
        * limiters: hosts.css repeats them in its static width rules (CSS cannot read it) and
        * tests/content-width.test.cjs fails if the two drift. The runtime reads only `native`.
-       * No geometry search, no per-node marks. The first composer limiter is inferred (not probed); the
-       * second (review fix P3) sizes the probed composer form only when that limiter is absent. */
-      contentWidth: { native: 768, targets: ['[class*="transcriptContent"]'], composerTargets: ['#thread-bottom [class*="--thread-content-max-width"]', '#thread-bottom:not(:has([class*="--thread-content-max-width"])) form[data-chatgpt-composer]'] },
+       * Bridges --thread-content-max-width onto main and dock containers, sizes both transcript and
+       * #thread-bottom column wrapper, and keeps direct-form fallback if #thread-bottom > form exists. */
+      contentWidth: {
+        native: 768,
+        targets: ['main', '[class*="transcriptContent"]'],
+        composerTargets: [
+          '#thread-bottom-container',
+          '#thread-bottom',
+          '#thread-bottom [class*="--thread-content-max-width"]',
+          '#thread-bottom > :has(form[data-chatgpt-composer])',
+          '#thread-bottom > form[data-chatgpt-composer]'
+        ]
+      },
       threadColumns: '.thread, [data-testid="conversation-thread"], [class*="thread-content"]',
       composerColumns: '.composer-container, [data-testid="composer-container"]',
       // v0.3.1 #19: grid area names the two-row Composer Surface rearranges. Inferred: the probe
@@ -58,7 +69,8 @@
       modelLabels: 'bard-mode-switcher button, [data-test-id="bard-mode-menu-button"], .input-area-switch, .model-label',
       addTriggers: '[data-test-id="upload-file-button"], button[aria-label*="Add files" i], button[aria-label*="Upload" i], button[aria-label*="上传"], button[aria-label*="添加"]',
       composerChips: '.toolbox-drawer-item-button, [data-test-id="composer-chip"]',
-      attachments: '[data-test-id="file-preview-chip"], [data-test-id="attachment-card"], file-preview-chip, .native-footer-attachment',
+      attachments: '[data-test-id="file-preview-chip"], [data-test-id="attachment-card"], .file-preview-chip, uploader-file-preview, file-preview-chip, .native-footer-attachment',
+      primaryActions: '[data-test-id="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="Microphone" i], button[aria-label*="发送"], button[aria-label*="麦克风"]',
       /* v0.3.1 #21: Gemini caps every markdown block at 708px (not the outer panel), plus the
        * User Turn, the response footer, the disclaimer and the 660px input area (probe 2026-11-22).
        * Owned here and mirrored by the hosts.css width rules (see the ChatGPT note above). */
@@ -481,13 +493,13 @@
     }
     return out;
   }
-  function findVisibleAttachments(spec, messages, composer, root) {
-    if (!spec.attachments) return [];
+  function collectAttachments(selector, scopes) {
+    if (!selector) return [];
     const candidates = new Set();
-    for (const scope of [...messages, composer?.parentElement || composer, root]) {
+    for (const scope of scopes) {
       if (!scope?.querySelectorAll) continue;
-      for (const node of scope.querySelectorAll(spec.attachments)) {
-        if (isOwned(node) || !isVisible(node) || node.closest('dialog,[role="dialog"],[aria-modal="true"]')) continue;
+      for (const node of scope.querySelectorAll(selector)) {
+        if (isOwned(node) || !isVisible(node) || node.closest?.('dialog,[role="dialog"],[aria-modal="true"]')) continue;
         const rect = node.getBoundingClientRect ? node.getBoundingClientRect() : null;
         if (rect && rect.width > 0 && rect.height > 0 && rect.width <= 36 && rect.height <= 36) continue;
         candidates.add(node);
@@ -495,6 +507,13 @@
     }
     const list = [...candidates];
     return list.filter(node => !list.some(other => other !== node && other.contains(node)));
+  }
+  function findVisibleAttachments(spec, messages, composer, root) {
+    return collectAttachments(spec.attachments, [...messages, composer?.parentElement || composer, root]);
+  }
+  function findComposerAttachments(spec, composer) {
+    if (!composer || isOwned(composer)) return [];
+    return collectAttachments(spec.attachments, [composer]);
   }
   function findComposerAddTrigger(spec, composer) {
     if (!composer || !spec.addTriggers) return null;
@@ -517,7 +536,7 @@
     }
     return chips.filter(node => !chips.some(other => other !== node && other.contains(node)));
   }
-  // v0.3.1 #19 two-row composer: the host's own grid that lays out the editor row, as { element, slots }.
+  // v0.3.1 #19 two-row composer: the host's own grid that lays out the editor row, as { element, slots, trailing }.
   // It qualifies when its direct children are placed by every expected area name (slots: null). Children
   // are read, not the container, because our override changes the container's template.
   // Review fix (P1): the ChatGPT area names are inferred; the probe only saw a "36px | input | trailing"
@@ -545,19 +564,52 @@
     const view = composer.ownerDocument?.defaultView;
     const editor = firstVisible(spec.editors, composer, node => composer.contains(node));
     if (!editor || !view?.getComputedStyle) return null;
+    const trailingArea = spec.composerGridAreas[spec.composerGridAreas.length - 1];
     for (let node = editor.parentElement; node; node = node.parentElement) {
       if (/grid/.test(view.getComputedStyle(node).display)) {
         const names = new Set();
+        let hostTrailing = null;
         for (const child of node.children) {
           if (COMPOSER_SLOT_MARKS.some(mark => child.hasAttribute(mark))) continue;
           const style = view.getComputedStyle(child);
           names.add(style.gridRowStart); names.add(style.gridColumnStart);
+          if (!hostTrailing && !isOwned(child) && (style.gridColumnStart === trailingArea || style.gridRowStart === trailingArea)) {
+            hostTrailing = child;
+          }
         }
-        if (spec.composerGridAreas.every(name => names.has(name))) return { element: node, slots: null };
+        if (spec.composerGridAreas.every(name => names.has(name))) return { element: node, slots: null, trailing: hostTrailing };
         const slots = spec.composerGridSlots ? composerGridSlots(spec, node, editor, view) : null;
-        if (slots) return { element: node, slots };
+        if (slots) return { element: node, slots, trailing: slots.trailing };
       }
       if (node === composer) break;
+    }
+    return null;
+  }
+  function findModelCapsuleSlot(trailing, modelTrigger) {
+    if (!trailing || !modelTrigger || isOwned(trailing) || isOwned(modelTrigger)) return null;
+    if (!trailing.contains(modelTrigger)) return null;
+    return [...trailing.children].find(child => !isOwned(child) && (child === modelTrigger || child.contains(modelTrigger))) || null;
+  }
+  function findComposerPrimaryAction(spec, composer, addTrigger, modelTrigger, trailing) {
+    if (!composer || isOwned(composer)) return null;
+    const isCandidate = node => {
+      if (!node || node === composer || isOwned(node) || !isVisible(node) || !composer.contains(node)) return false;
+      if (node.closest?.('dialog,[role="dialog"],[aria-modal="true"]')) return false;
+      if (addTrigger && (node === addTrigger || node.contains(addTrigger) || addTrigger.contains?.(node))) return false;
+      if (modelTrigger && (node === modelTrigger || node.contains(modelTrigger) || modelTrigger.contains?.(node))) return false;
+      if (spec.attachments && node.closest?.(spec.attachments)) return false;
+      if (spec.composerChips && node.closest?.(spec.composerChips)) return false;
+      const aria = node.getAttribute?.('aria-label') || '';
+      if (/\bdictate\b|听写/i.test(aria)) return false;
+      return true;
+    };
+    if (spec.primaryActions) {
+      const matched = [...composer.querySelectorAll(spec.primaryActions)].filter(isCandidate);
+      if (matched.length) return matched[matched.length - 1];
+    }
+    if (trailing && composer.contains(trailing)) {
+      const fallback = [...trailing.querySelectorAll('button')].filter(isCandidate);
+      if (fallback.length) return fallback[fallback.length - 1];
     }
     return null;
   }
@@ -636,6 +688,16 @@
       composerGrid: (composer) => findComposerGrid(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerAddTrigger: (composer) => findComposerAddTrigger(spec, composer === undefined ? findComposer(spec, root) : composer),
       modelSelectorTrigger: () => findModelTrigger(spec, root),
+      modelCapsuleSlot: (trailing, modelTrigger) => findModelCapsuleSlot(
+        trailing === undefined ? findComposerGrid(spec, findComposer(spec, root))?.trailing : trailing,
+        modelTrigger === undefined ? findModelTrigger(spec, root) : modelTrigger
+      ),
+      composerPrimaryAction: (composer) => {
+        const comp = composer === undefined ? findComposer(spec, root) : composer;
+        const grid = findComposerGrid(spec, comp);
+        return findComposerPrimaryAction(spec, comp, findComposerAddTrigger(spec, comp), findModelTrigger(spec, root), grid?.trailing || null);
+      },
+      composerAttachments: (composer) => findComposerAttachments(spec, composer === undefined ? findComposer(spec, root) : composer),
       activeModelLabel: () => findActiveModelLabel(spec, root),
       composerChips: (composer) => {
         const comp = composer === undefined ? findComposer(spec, root) : composer;

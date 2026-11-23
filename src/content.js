@@ -556,8 +556,13 @@
         const grid = adapter.composerGrid?.(composer);
         add(grid?.element,'data-op-composer-grid');
         for (const [slot, element] of Object.entries(grid?.slots || {})) add(element,`data-op-composer-${slot}`);
+        add(grid?.trailing,'data-op-composer-toolbar');
+        const modelTrigger = adapter.modelSelectorTrigger?.() || null;
         add(adapter.composerAddTrigger?.(composer),'data-op-composer-add');
-        add(adapter.modelSelectorTrigger?.(),'data-op-model-capsule');
+        add(modelTrigger,'data-op-model-capsule');
+        add(adapter.modelCapsuleSlot?.(grid?.trailing,modelTrigger),'data-op-model-capsule-item');
+        add(adapter.composerPrimaryAction?.(composer),'data-op-composer-primary-action');
+        for (const element of adapter.composerAttachments?.(composer) || []) add(element,'data-op-composer-attachment');
         for (const element of adapter.composerChips?.(composer) || []) add(element,'data-op-composer-chip');
       }
     }
