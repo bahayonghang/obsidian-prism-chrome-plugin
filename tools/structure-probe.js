@@ -44,8 +44,12 @@
       composerLayout: '[data-composer-layout]',
       composerGrids: { selector: 'form[data-chatgpt-composer] *', where: 'grid' },
       composerButtons: 'form[data-chatgpt-composer] button',
-      composerAncestors: { ancestorsOf: 'form[data-chatgpt-composer]', depth: 6 },
+      composerAncestors: { ancestorsOf: 'form[data-chatgpt-composer]', depth: 12 },
       composerSiblings: { siblingsAfter: 'form[data-chatgpt-composer]' },
+      contentFades: { selector: '[class*="content-fade"], .content-fade, [class*="fade-mask"]', limit: 12 },
+      threadBottomSiblings: { siblingsAfter: '#thread-bottom' },
+      dockSiblings: { siblingsAfter: '#thread-bottom-container' },
+      disclaimerShells: { selector: '[class*="disclaimer"], [data-testid*="disclaimer"], [style*="view-transition-name"]', limit: 12 },
       cornerFloats: { cornerFloats: true }
     },
     gemini: {
@@ -67,25 +71,44 @@
       composerGrids: { selector: 'input-area-v2 *', where: 'grid' },
       composerButtons: 'input-area-v2 button',
       filePreviews: 'input-area-v2 [class*="file-preview"]',
+      inputAncestors: { ancestorsOf: 'input-area-v2', depth: 10 },
       inputSiblings: { siblingsAfter: '.input-area-container' },
       cornerFloats: { cornerFloats: true }
     }
   };
   const STYLE_KEYS = [
-    'display', 'position', 'boxSizing', 'width', 'minWidth', 'maxWidth', 'height', 'minHeight', 'marginLeft', 'marginRight',
+    'display', 'position', 'boxSizing', 'width', 'minWidth', 'maxWidth', 'height', 'minHeight',
+    'marginTop', 'marginBottom', 'marginLeft', 'marginRight',
     'paddingLeft', 'paddingRight', 'paddingTop', 'paddingBottom', 'top', 'bottom', 'zIndex', 'opacity',
-    'color', 'backgroundColor', 'backgroundImage', 'maskImage', 'webkitMaskImage', 'backdropFilter',
+    'color', 'backgroundColor', 'backgroundImage', 'boxShadow', 'maskImage', 'webkitMaskImage', 'backdropFilter',
+    'viewTransitionName',
     'fontFamily', 'fontSize', 'fontWeight', 'lineHeight',
     'gridTemplateColumns', 'gridTemplateRows', 'gridTemplateAreas', 'gridArea', 'flexDirection', 'alignItems', 'justifyContent'
   ];
   const PSEUDO_STYLE_KEYS = [
-    'display', 'position', 'height', 'top', 'bottom', 'opacity',
-    'backgroundColor', 'backgroundImage', 'maskImage', 'webkitMaskImage', 'backdropFilter'
+    'display', 'position', 'height', 'top', 'bottom', 'left', 'right', 'zIndex', 'opacity',
+    'backgroundColor', 'backgroundImage', 'boxShadow', 'maskImage', 'webkitMaskImage', 'backdropFilter'
   ];
   const INTERACTIVE_SELECTOR = 'a[href],button,[role="button"],input,textarea,select';
   const CORNER_EXCLUDED_SELF = 'main, [role="main"]';
   const CORNER_EXCLUDED_ANCESTOR = 'dialog, [role="dialog"], [aria-modal="true"], [data-op-owned], form[data-chatgpt-composer], input-area-v2, input-container';
-  const CUSTOM_PROPERTIES = ['--thread-content-max-width', '--user-chat-width', '--bard-chat-window-content-width-default'];
+  const CUSTOM_PROPERTIES = [
+    '--thread-content-max-width',
+    '--user-chat-width',
+    '--bard-chat-window-content-width-default',
+    '--sharp-edge-bottom-shadow',
+    '--sharp-edge-bottom-shadow-placeholder-content',
+    '--sharp-edge-top-shadow',
+    '--sharp-edge-top-shadow-placeholder-content',
+    '--composer-surface-primary',
+    '--main-surface-primary'
+  ];
+  const VALUE_REDACTED_STYLES = new Set(['viewTransitionName']);
+  const CSS_UNIT_NUMBER = /^\d+(?:px|em|rem|vh|vw|vmin|vmax|ch|ex|pt|pc|in|cm|mm|deg|rad|turn|ms|s|fr)$/i;
+  const BOTTOM_SELECTORS = {
+    chatgpt: { dock: '#thread-bottom-container', composer: '[data-composer-layout]' },
+    gemini: { dock: 'input-container', composer: 'input-area-v2' }
+  };
 
   // UUIDs, long hex runs and anything with a 5+ digit run are treated as identifiers.
   const ID_LIKE = /^(?:.*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.*|.*[0-9a-f]{12,}.*|.*\d{5,}.*)$/i;
@@ -100,6 +123,7 @@
   function redactValue(value) {
     if (value === '') return '';
     if (/^[a-z][a-z0-9+.-]*:\/\//i.test(value) || /^(\/|\.\/|\?|#|data:|blob:)/i.test(value)) return '[url]';
+    if (/^url\(/i.test(value)) return 'url([url])';
     // Structured keys such as "<conversation>:<turn>:<role>" keep their non-id segments.
     return value.split(':').map(redactToken).join(':');
   }
@@ -107,7 +131,14 @@
     return ID_LIKE.test(token) && !/[[\]:]/.test(token) ? '[id]' : token;
   }
   function redactStyle(value) {
-    return String(value).replace(/url\((['"]?)[^)]*\1\)/g, 'url([url])');
+    return String(value)
+      .replace(/url\((['"]?)[^)]*\1\)/g, 'url([url])')
+      .replace(/#[0-9a-f]{3,8}\b|\.[0-9]+|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[A-Za-z0-9_]{8,}/gi, token => {
+        if (token[0] === '#' || token[0] === '.') return token;
+        if (token.includes('-')) return '[id]';
+        if (CSS_UNIT_NUMBER.test(token) || /^(?:matrix|rotate|translate|perspective)3d$/i.test(token)) return token;
+        return /[0-9a-f]{12,}/i.test(token) || MIXED_ID.test(token) ? '[id]' : token;
+      });
   }
 
   function descriptor(element) {
@@ -121,28 +152,46 @@
     }
     return out;
   }
+  const round = number => Math.round(number * 10) / 10;
   function rect(element) {
     const box = element.getBoundingClientRect();
-    const round = number => Math.round(number * 10) / 10;
-    return { x: round(box.x), y: round(box.y), width: round(box.width), height: round(box.height) };
+    const bottom = box.bottom ?? (box.y + box.height);
+    return {
+      x: round(box.x),
+      y: round(box.y),
+      width: round(box.width),
+      height: round(box.height),
+      bottom: round(bottom),
+      viewportBottomOffset: round(innerHeight - bottom)
+    };
+  }
+  function bottomOffset(selector) {
+    const node = selector ? document.querySelector(selector) : null;
+    if (!node) return null;
+    const box = node.getBoundingClientRect();
+    return round(innerHeight - (box.bottom ?? (box.y + box.height)));
   }
   function styles(element) {
     const computed = getComputedStyle(element);
     const out = {};
     for (const key of STYLE_KEYS) {
       const value = computed[key];
-      if (value !== undefined && value !== '') out[key] = redactStyle(value);
+      if (value !== undefined && value !== '') {
+        out[key] = VALUE_REDACTED_STYLES.has(key) ? redactValue(String(value)) : redactStyle(value);
+      }
     }
     for (const property of CUSTOM_PROPERTIES) {
       const value = computed.getPropertyValue(property).trim();
-      if (value) out[property] = redactStyle(value);
+      if (value) {
+        out[property] = property.endsWith('-placeholder-content') ? redactValue(value) : redactStyle(value);
+      }
     }
     return out;
   }
   function pseudoStyles(element, pseudo) {
     const computed = getComputedStyle(element, pseudo);
     const content = computed.content;
-    const out = { hasContent: Boolean(content && content !== 'none') };
+    const out = { hasContent: Boolean(content && content !== 'none' && content !== 'normal') };
     for (const key of PSEUDO_STYLE_KEYS) {
       const value = computed[key];
       if (value !== undefined && value !== '') out[key] = redactStyle(value);
@@ -192,9 +241,10 @@
     if (typeof spec !== 'string' && spec.siblingsAfter) {
       const nodes = [];
       for (let node = document.querySelector(spec.siblingsAfter)?.nextElementSibling; node; node = node.nextElementSibling) nodes.push(node);
+      const limit = spec.limit != null ? Math.max(1, Number(spec.limit) || nodes.length) : nodes.length;
       return {
         count: nodes.length,
-        samples: nodes.map(node => ({
+        samples: nodes.slice(0, limit).map(node => ({
           ...describe(node),
           childCount: node.children.length,
           hasInteractive: node.matches(INTERACTIVE_SELECTOR) || Boolean(node.querySelector(INTERACTIVE_SELECTOR))
@@ -202,10 +252,10 @@
       };
     }
     let nodes;
-    let limit = SAMPLE_LIMIT;
+    let limit = typeof spec !== 'string' && spec.limit != null ? Math.max(1, Number(spec.limit) || SAMPLE_LIMIT) : SAMPLE_LIMIT;
     if (typeof spec === 'string') nodes = [...document.querySelectorAll(spec)];
     else if (spec.ancestorsOf) {
-      limit = Math.max(1, Number(spec.depth) || 4);
+      limit = Math.max(1, Number(spec.depth || spec.limit) || 4);
       nodes = [];
       for (let node = document.querySelector(spec.ancestorsOf)?.parentElement; node && nodes.length < limit; node = node.parentElement) nodes.push(node);
     } else if (spec.cornerFloats) {
@@ -220,6 +270,7 @@
   const hostname = location.hostname;
   const site = /(^|\.)chatgpt\.com$|(^|\.)chat\.openai\.com$/.test(hostname) ? 'chatgpt' : /(^|\.)gemini\.google\.com$/.test(hostname) ? 'gemini' : 'unknown';
   const targets = { ...(TARGETS[site] || {}), ...(options.targets || {}) };
+  const bottomSpec = BOTTOM_SELECTORS[site];
   const result = {
     probe: 'obsidian-prism-structure-probe',
     version: 1,
@@ -228,6 +279,10 @@
     viewport: { width: innerWidth, height: innerHeight, devicePixelRatio },
     colorScheme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
     root: { html: describe(document.documentElement), body: document.body ? describe(document.body) : null },
+    bottomOffsets: {
+      dockBottomOffset: bottomSpec ? bottomOffset(bottomSpec.dock) : null,
+      composerBottomOffset: bottomSpec ? bottomOffset(bottomSpec.composer) : null
+    },
     targets: {}
   };
   for (const [name, spec] of Object.entries(targets)) {
