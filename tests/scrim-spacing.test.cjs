@@ -78,24 +78,82 @@ test('hosts.css tightens ChatGPT active conversation bottom spacer, thread colum
   assert.match(threadRule.body, /padding-bottom:\s*24px\s*!important/);
 
   const composerColRule = findRule(
-    s => s.startsWith(chatgptPrefix) && s.includes('[data-op-composer-scrim="true"]') && (s.includes('.composer-container') || s.includes('[data-op-composer-column="true"]'))
+    s => s.startsWith(chatgptPrefix) && s.includes('[data-op-composer-dock="true"]') && s.includes('.composer-container')
   );
-  assert.ok(composerColRule, 'must tighten .composer-container / [data-op-composer-column="true"] inside scrim');
+  assert.ok(composerColRule, 'must tighten .composer-container inside dock');
   assert.match(composerColRule.body, /padding-top:\s*8px\s*!important/);
   assert.match(composerColRule.body, /padding-bottom:\s*14px\s*!important/);
 
-  const hintRule = findRule(s => s.startsWith(chatgptPrefix) && s.includes('[data-op-composer-scrim="true"]') && s.includes('.composer-hint'));
-  assert.ok(hintRule, 'must tighten .composer-hint inside scrim');
+  const hintRule = findRule(s => s.startsWith(chatgptPrefix) && s.includes('[data-op-composer-dock="true"]') && s.includes('.composer-hint'));
+  assert.ok(hintRule, 'must tighten .composer-hint inside dock');
   assert.match(hintRule.body, /margin-top:\s*6px\s*!important/);
   assert.match(hintRule.body, /margin-bottom:\s*0\s*!important/);
+
+  const dockTightRule = blocks.find(
+    b =>
+      b.selectors.some(s => s.startsWith(chatgptPrefix) && s.endsWith('[data-op-composer-dock="true"]')) &&
+      b.selectors.some(s => s.startsWith(chatgptPrefix) && s.includes('[data-op-composer-dock="true"] [data-op-composer-column="true"]:not(.composer-container)'))
+  );
+  assert.ok(dockTightRule, 'must tighten [data-op-composer-dock="true"] and non-.composer-container column');
+  assert.match(dockTightRule.body, /padding-top:\s*4px\s*!important/);
+  assert.match(dockTightRule.body, /padding-bottom:\s*0\s*!important/);
+
+  const noDisclaimerRule = findRule(
+    s => s.startsWith(chatgptPrefix) && s.includes('[data-op-composer-dock="true"]:not(:has([data-op-composer-disclaimer="true"])):not(:has(.composer-hint))')
+  );
+  assert.ok(noDisclaimerRule, 'must keep 10px bottom padding when no disclaimer or hint is present');
+  assert.match(noDisclaimerRule.body, /padding-bottom:\s*10px\s*!important/);
+
+  const emptyRule = findRule(s => s.startsWith(chatgptPrefix) && s.includes('[data-op-composer-empty-sibling="true"]'));
+  assert.ok(emptyRule, 'must collapse empty non-interactive siblings below form');
+  for (const prop of [
+    /height:\s*0\s*!important/,
+    /min-height:\s*0\s*!important/,
+    /max-height:\s*0\s*!important/,
+    /padding-top:\s*0\s*!important/,
+    /padding-bottom:\s*0\s*!important/,
+    /margin-top:\s*0\s*!important/,
+    /margin-bottom:\s*0\s*!important/,
+    /border:\s*0\s*!important/
+  ]) {
+    assert.match(emptyRule.body, prop);
+  }
+
+  const disclaimerRule = findRule(
+    s => s.startsWith(chatgptPrefix) && s.includes('[data-op-composer-disclaimer="true"]:not(.composer-hint)')
+  );
+  assert.ok(disclaimerRule, 'must compact visible disclaimer siblings without touching .composer-hint');
+  for (const prop of [
+    /min-height:\s*0\s*!important/,
+    /padding-top:\s*4px\s*!important/,
+    /padding-bottom:\s*6px\s*!important/,
+    /margin-top:\s*2px\s*!important/,
+    /margin-bottom:\s*0\s*!important/,
+    /font-size:\s*11px\s*!important/,
+    /line-height:\s*1\.35\s*!important/,
+    /text-align:\s*center\s*!important/
+  ]) {
+    assert.match(disclaimerRule.body, prop);
+  }
 });
 
-test('hosts.css keeps non-scrim composer backdrop layers and native fades transparent', () => {
+test('hosts.css keeps non-scrim composer backdrop layers and native fades transparent and mask-free', () => {
+  const allBlocks = parseRuleBlocks(hostsCss);
+  const dualPrefix = 'html[data-op-enabled="true"]:not([data-op-effective-palette="host"])';
+  const baseBackdropRule = allBlocks.find(
+    b =>
+      b.selectors.some(s => s === `${dualPrefix} [data-op-composer-backdrop="true"]`) &&
+      b.selectors.some(s => s === `${dualPrefix} [data-op-composer-backdrop="true"]::before`) &&
+      b.selectors.some(s => s === `${dualPrefix} [data-op-composer-backdrop="true"]::after`)
+  );
+  assert.ok(baseBackdropRule, 'base [data-op-composer-backdrop="true"] rule must clear background and mask');
+  assert.match(baseBackdropRule.body, /-webkit-mask-image:\s*none\s*!important/);
+  assert.match(baseBackdropRule.body, /\bmask-image:\s*none\s*!important/);
+
   const idx = hostsCss.indexOf(SECTION_MARKER);
   assert.notEqual(idx, -1);
   const nextIdx = hostsCss.indexOf('/* === ', idx + SECTION_MARKER.length);
   const blocks = parseRuleBlocks(nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx));
-  const dualPrefix = 'html[data-op-enabled="true"]:not([data-op-effective-palette="host"])';
 
   const innerRule = blocks.find(
     b =>
@@ -103,13 +161,45 @@ test('hosts.css keeps non-scrim composer backdrop layers and native fades transp
       b.selectors.some(s => s.includes('::before')) &&
       b.selectors.some(s => s.includes('::after'))
   );
-  assert.ok(innerRule, 'must keep non-scrim backdrop layers and their ::before/::after transparent');
+  assert.ok(innerRule, 'must keep non-scrim backdrop layers and their ::before/::after transparent and mask-free');
   assert.match(innerRule.body, /background-color:\s*transparent\s*!important/);
   assert.match(innerRule.body, /background-image:\s*none\s*!important/);
+  assert.match(innerRule.body, /-webkit-mask-image:\s*none\s*!important/);
+  assert.match(innerRule.body, /\bmask-image:\s*none\s*!important/);
 
   const fadeRule = blocks.find(b => b.selectors.some(s => s.startsWith(dualPrefix) && s.includes('.native-composer-fade:not([data-op-composer-scrim="true"])')));
   assert.ok(fadeRule, 'must keep .native-composer-fade transparent when not scrim host');
   assert.match(fadeRule.body, /background-color:\s*transparent\s*!important/);
   assert.match(fadeRule.body, /background-image:\s*none\s*!important/);
+  assert.match(fadeRule.body, /-webkit-mask-image:\s*none\s*!important/);
+  assert.match(fadeRule.body, /\bmask-image:\s*none\s*!important/);
+});
 
+test('hosts.css tunes Blur Composer Scrim opacity separately for dark and light schemes', () => {
+  const blurMarker = '/* === Blur Composer Scrim (v0.3.1 #22) === */';
+  const idx = hostsCss.indexOf(blurMarker);
+  assert.notEqual(idx, -1);
+  const nextIdx = hostsCss.indexOf('/* === ', idx + blurMarker.length);
+  const section = nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx);
+  const supportsIdx = section.indexOf('@supports');
+  assert.notEqual(supportsIdx, -1);
+  const fallbackBlocks = parseRuleBlocks(section.slice(0, supportsIdx));
+  const blurBlocks = parseRuleBlocks(section.slice(supportsIdx));
+
+  const darkFallback = fallbackBlocks.find(b => b.selectors.some(s => s.endsWith('[data-op-composer-scrim="true"]::before') && !s.includes('[data-op-scheme="light"]')));
+  assert.ok(darkFallback);
+  assert.match(darkFallback.body, /var\(--op-canvas\) 56%/);
+
+  const lightFallback = fallbackBlocks.find(b => b.selectors.some(s => s.includes('[data-op-scheme="light"]') && s.endsWith('[data-op-composer-scrim="true"]::before')));
+  assert.ok(lightFallback);
+  assert.match(lightFallback.body, /var\(--op-canvas\) 20%[\s\S]*var\(--op-canvas\) 36%/);
+
+  const darkBlur = blurBlocks.find(b => b.selectors.some(s => s.endsWith('[data-op-composer-scrim="true"]::before') && !s.includes('[data-op-scheme="light"]')));
+  assert.ok(darkBlur);
+  assert.match(darkBlur.body, /var\(--op-canvas\) 44%/);
+
+  const lightBlur = blurBlocks.find(b => b.selectors.some(s => s.includes('[data-op-scheme="light"]') && s.endsWith('[data-op-composer-scrim="true"]::before')));
+  assert.ok(lightBlur);
+  assert.match(lightBlur.body, /var\(--op-canvas\) 26%/);
+  assert.match(lightBlur.body, /background-image:\s*none\s*!important/);
 });

@@ -141,7 +141,10 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
   const assistantTurn = makeEl('article', { 'data-turn': 'assistant' });
   assistantTurn.textContent = 'Sample assistant answer';
 
-  for (const [k, v] of Object.entries({ docEl, body, primary, threadCol, composerCol, composer, scrim, addBtn, modelBtn, chip, codeSurface, codeHeader, spacer, userTurn, assistantTurn })) {
+  const emptySibling = makeEl('div');
+  const disclaimerSibling = makeEl('div');
+  const scrollerEl = options.scroller || makeEl('div');
+  for (const [k, v] of Object.entries({ docEl, body, primary, threadCol, composerCol, composer, scrim, addBtn, modelBtn, chip, codeSurface, codeHeader, spacer, userTurn, assistantTurn, emptySibling, disclaimerSibling, scrollerEl })) {
     elements.set(k, v);
   }
 
@@ -158,6 +161,10 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     composerSurface: () => composer,
     composerBackdropSurfaces: () => [scrim],
     composerScrimSurface: () => scrim,
+    composerBelowSiblings: () => ({
+      empty: options.withBelowSiblings ? [emptySibling] : [],
+      disclaimers: options.withBelowSiblings ? [disclaimerSibling] : []
+    }),
     composerAddTrigger: () => addBtn,
     modelSelectorTrigger: () => modelBtn,
     composerChips: () => [chip],
@@ -174,8 +181,9 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     thoughtBlocks: () => [],
     isAssistantNode: () => false,
     isStreaming: () => false,
-    scrollContainer: () => body
+    scrollContainer: () => (options.useCustomScroller ? scrollerEl : body)
   };
+  if (options.getComputedStyle) h.context.getComputedStyle = options.getComputedStyle;
 
   h.context.document = {
     documentElement: docEl,
@@ -566,6 +574,7 @@ test('runtime suppresses composer scrim and tail spacer in Home State and clears
 
   assert.equal(e.docEl.getAttribute('data-op-home'), 'true');
   assert.equal(e.scrim.getAttribute('data-op-composer-backdrop'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-dock'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), null);
   assert.equal(e.composer.getAttribute('data-op-composer-surface'), 'true');
@@ -576,6 +585,7 @@ test('runtime suppresses composer scrim and tail spacer in Home State and clears
   });
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(e.docEl.getAttribute('data-op-home'), 'false');
+  assert.equal(e.scrim.getAttribute('data-op-composer-dock'), 'true');
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), 'true');
   assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), 'true');
 
@@ -585,6 +595,7 @@ test('runtime suppresses composer scrim and tail spacer in Home State and clears
   });
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(e.docEl.getAttribute('data-op-home'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-dock'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), null);
 
@@ -655,4 +666,83 @@ test('root reading width restores the original inline value and priority, and le
   assert.deepEqual([ownedRoot.style.getPropertyValue('--op-reading-width'), ownedRoot.style.getPropertyPriority('--op-reading-width')], ['640px', 'important']);
   assert.equal(ownedRoot.style.getPropertyValue('--op-ambient-alpha'), '', 'stop also removes the ambient alpha');
   assert.ok(ownedRoot.getAttribute('style').includes('--host-gap: 4px'), `the host's own declarations survive (${ownedRoot.getAttribute('style')} vs ${original})`);
+});
+
+test('runtime distinguishes in-flow composer dock from overlaid composer scrim, marks below-form siblings, and restores cleanly', async () => {
+  const styles = new Map();
+  const rects = new Map();
+  const scroller = {
+    nodeType: 1, tagName: 'DIV', isConnected: true, children: [], childNodes: [],
+    attributesMap: new Map(),
+    getAttribute(k) { return this.attributesMap.get(k) ?? null; },
+    setAttribute(k, v) { this.attributesMap.set(k, String(v)); },
+    removeAttribute(k) { this.attributesMap.delete(k); },
+    hasAttribute(k) { return this.attributesMap.has(k); },
+    contains(t) { return t === this; },
+    getBoundingClientRect() { return rects.get(this) || { left: 0, top: 52, right: 1280, bottom: 720, width: 1280, height: 668 }; }
+  };
+  const inFlow = createRuntimeDom({}, {
+    host: 'chatgpt',
+    withBelowSiblings: true,
+    useCustomScroller: true,
+    scroller,
+    getComputedStyle: el => styles.get(el) || { position: 'relative', paddingBottom: '0px' }
+  });
+  const e = Object.fromEntries(inFlow.elements);
+  e.scrim.getBoundingClientRect = () => ({ left: 0, top: 720, right: 1280, bottom: 900, width: 1280, height: 180 });
+  styles.set(e.scrim, { position: 'relative', paddingBottom: '0px' });
+  inFlow.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+
+  assert.equal(e.scrim.getAttribute('data-op-composer-dock'), 'true', 'in-flow dock receives data-op-composer-dock');
+  assert.equal(e.scrim.getAttribute('data-op-composer-backdrop'), 'true', 'in-flow dock receives data-op-composer-backdrop');
+  assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null, 'in-flow dock must NOT receive data-op-composer-scrim');
+  assert.equal(scroller.getAttribute('data-op-thread-scroller'), null, 'in-flow scroller must NOT receive data-op-thread-scroller');
+  assert.equal(e.docEl.style.getPropertyValue('--op-dock-clearance'), '', 'in-flow dock must NOT set --op-dock-clearance');
+  assert.equal(e.emptySibling.getAttribute('data-op-composer-empty-sibling'), 'true');
+  assert.equal(e.disclaimerSibling.getAttribute('data-op-composer-disclaimer'), 'true');
+
+  // Native Palette and stop restore all dock/sibling marks cleanly.
+  await inFlow.h.schema.callApi(inFlow.h.api.storage.local, 'set', { [inFlow.h.schema.STORAGE_KEY]: { ...inFlow.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'host', themeMode: 'dark' } });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(e.scrim.getAttribute('data-op-composer-dock'), null);
+  assert.equal(e.emptySibling.getAttribute('data-op-composer-empty-sibling'), null);
+  assert.equal(e.disclaimerSibling.getAttribute('data-op-composer-disclaimer'), null);
+
+  await inFlow.h.schema.callApi(inFlow.h.api.storage.local, 'set', { [inFlow.h.schema.STORAGE_KEY]: { ...inFlow.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark' } });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(e.scrim.getAttribute('data-op-composer-dock'), 'true');
+  inFlow.runtime.stop();
+  assert.equal(e.scrim.getAttribute('data-op-composer-dock'), null);
+  assert.equal(e.emptySibling.getAttribute('data-op-composer-empty-sibling'), null);
+  assert.equal(e.disclaimerSibling.getAttribute('data-op-composer-disclaimer'), null);
+
+  // Overlaid dock (Gemini style): receives both data-op-composer-dock and data-op-composer-scrim + clearance.
+  const overlaidStyles = new Map();
+  const overlaidScroller = {
+    ...scroller,
+    attributesMap: new Map(),
+    getBoundingClientRect: () => ({ left: 0, top: 64, right: 1280, bottom: 900, width: 1280, height: 836 })
+  };
+  const overlaid = createRuntimeDom({}, {
+    host: 'gemini',
+    useCustomScroller: true,
+    scroller: overlaidScroller,
+    getComputedStyle: el => overlaidStyles.get(el) || { position: 'absolute', paddingBottom: '24px' }
+  });
+  const oe = Object.fromEntries(overlaid.elements);
+  oe.scrim.getBoundingClientRect = () => ({ left: 0, top: 760, right: 1280, bottom: 900, width: 1280, height: 140 });
+  overlaidStyles.set(oe.scrim, { position: 'absolute', paddingBottom: '0px' });
+  overlaid.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+
+  assert.equal(oe.scrim.getAttribute('data-op-composer-dock'), 'true');
+  assert.equal(oe.scrim.getAttribute('data-op-composer-scrim'), 'true');
+  assert.equal(overlaidScroller.getAttribute('data-op-thread-scroller'), 'true');
+  assert.notEqual(oe.docEl.style.getPropertyValue('--op-dock-clearance'), '');
+  overlaid.runtime.stop();
+  assert.equal(oe.scrim.getAttribute('data-op-composer-dock'), null);
+  assert.equal(oe.scrim.getAttribute('data-op-composer-scrim'), null);
+  assert.equal(overlaidScroller.getAttribute('data-op-thread-scroller'), null);
+  assert.equal(oe.docEl.style.getPropertyValue('--op-dock-clearance'), '');
 });

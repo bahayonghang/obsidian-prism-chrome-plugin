@@ -647,3 +647,123 @@ test('ChatGPT adapter sorts mixed turns in DOM order, recognizes zh .sr-only fal
   assert.deepEqual([...adapter.threadTailSpacers()], [tailSpacer]);
   assert.equal(adapter.composerAddTrigger(composer), iconAddBtn);
 });
+
+test('ChatGPT live dock detection covers #thread-bottom-container, .content-fade, transcriptContent and .composer-column', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', { id: 'main' });
+  const parent = el('div', { class: 'composer-parent' });
+  const scroller = el('div', { 'data-prism-test-scroller': '' }, { rect: { left: 0, right: 1280, top: 52, bottom: 720, width: 1280, height: 668 }, style: { display: 'block', visibility: 'visible', opacity: '1', overflowY: 'auto' } });
+  const transcript = el('div', { class: 'flex flex-col transcriptContent_q8xz' });
+  const turn = el('div', { 'data-turn-key': 't1' });
+  turn.append(el('div', { 'data-content-search-unit-key': 'c:1:assistant', 'data-markdown-text-style': 'assistant-message' }, { textContent: 'Hello' }));
+  transcript.append(turn);
+  scroller.append(transcript);
+
+  const dockOuter = el('div', { id: 'thread-bottom-container', class: 'content-fade_b9xk' }, { rect: { left: 0, right: 1280, top: 720, bottom: 900, width: 1280, height: 180 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'relative' } });
+  const fadeSibling = el('div', { class: 'content-fade' }, { rect: { left: 0, right: 1280, top: 696, bottom: 720, width: 1280, height: 24 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'sticky', pointerEvents: 'auto' } });
+  const nonEmptyFade = el('div', { class: 'content-fade' }, { textContent: 'Keep me out', rect: { left: 0, right: 1280, top: 700, bottom: 720, width: 1280, height: 20 } });
+  const dockInner = el('div', { id: 'thread-bottom' }, { rect: { left: 0, right: 1280, top: 720, bottom: 900, width: 1280, height: 180 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'static' } });
+  const col = el('div', { class: 'composer-column' }, { rect: { left: 236, right: 1044, top: 724, bottom: 894, width: 808, height: 170 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'static' } });
+  const form = el('form', { 'data-chatgpt-composer': '' }, { rect: { left: 256, right: 1024, top: 724, bottom: 834, width: 768, height: 110 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'static' } });
+  const composer = el('div', { class: 'ComposerLayoutRoot_m3kp', 'data-composer-layout': 'single-line' }, { rect: { left: 256, right: 1024, top: 724, bottom: 834, width: 768, height: 110 } });
+  const editor = el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' });
+  const addBtn = el('button', { type: 'button', 'aria-label': 'Add files and more' });
+  composer.append(editor, addBtn);
+  form.append(composer);
+  col.append(form);
+  dockInner.append(col);
+  dockOuter.append(fadeSibling, nonEmptyFade, dockInner);
+  parent.append(scroller, dockOuter);
+  main.append(parent);
+  body.append(main);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const backdrops = adapter.composerBackdropSurfaces(composer);
+  assert.equal(backdrops.includes(dockOuter), true, 'collects #thread-bottom-container');
+  assert.equal(backdrops.includes(dockInner), true, 'collects #thread-bottom');
+  assert.equal(backdrops.includes(fadeSibling), true, 'collects empty non-interactive .content-fade sibling in dock subtree');
+  assert.equal(backdrops.includes(nonEmptyFade), false, 'never collects text-bearing .content-fade sibling');
+  assert.equal(adapter.composerScrimSurface(composer), dockOuter);
+  assert.deepEqual([...adapter.threadColumns()], [transcript]);
+  assert.equal(adapter.composerColumns(composer).includes(col), true);
+
+  // Also test generic unnamed in-flow dock wrapper under .composer-parent without matching class/id.
+  dockOuter.setAttribute('id', 'unnamed-dock');
+  dockOuter.setAttribute('class', 'plain-box');
+  assert.equal(adapter.composerBackdropSurfaces(composer).includes(dockOuter), true, 'nearBottomInFlowDock collects unnamed in-flow dock under .composer-parent');
+  assert.equal(adapter.composerScrimSurface(composer), dockOuter);
+});
+
+test('isComposerDockOverlaid distinguishes in-flow flex siblings from overlaid and sticky-in-scroller docks', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const view = doc.defaultView;
+  assert.equal(A.isComposerDockOverlaid(null, null, view), false);
+
+  const scroller = el('div', {}, { rect: { left: 0, right: 1280, top: 52, bottom: 720, width: 1280, height: 668 } });
+  const inFlowDock = el('div', {}, { rect: { left: 0, right: 1280, top: 720, bottom: 900, width: 1280, height: 180 }, style: { position: 'relative' } });
+  const stickySiblingDock = el('div', {}, { rect: { left: 0, right: 1280, top: 720, bottom: 900, width: 1280, height: 180 }, style: { position: 'sticky' } });
+  const overlaidSiblingDock = el('div', {}, { rect: { left: 0, right: 1280, top: 760, bottom: 900, width: 1280, height: 140 }, style: { position: 'absolute' } });
+  body.append(scroller, inFlowDock, stickySiblingDock, overlaidSiblingDock);
+
+  // Headless DOM without getComputedStyle falls back to true for unit test compatibility.
+  assert.equal(A.isComposerDockOverlaid(inFlowDock, scroller, {}), true);
+  // In-flow sibling docks (even position: sticky when not overlapping scroller) are not overlaid.
+  assert.equal(A.isComposerDockOverlaid(inFlowDock, scroller, view), false);
+  assert.equal(A.isComposerDockOverlaid(stickySiblingDock, scroller, view), false);
+  // Overlaid sibling dock overlaps scroller vertically.
+  const overlayScroller = el('div', {}, { rect: { left: 0, right: 1280, top: 52, bottom: 900, width: 1280, height: 848 } });
+  body.append(overlayScroller);
+  assert.equal(A.isComposerDockOverlaid(overlaidSiblingDock, overlayScroller, view), true);
+  // Non-overlapping sibling (even with position: absolute) is not overlaid.
+  assert.equal(A.isComposerDockOverlaid(overlaidSiblingDock, scroller, view), false);
+
+  // Dock inside scroller: sticky/fixed/absolute overlays scrolled content, relative does not.
+  const stickyChild = el('div', {}, { style: { position: 'sticky' } });
+  const relChild = el('div', {}, { style: { position: 'relative' } });
+  scroller.append(stickyChild, relChild);
+  assert.equal(A.isComposerDockOverlaid(stickyChild, scroller, view), true);
+  assert.equal(A.isComposerDockOverlaid(relChild, scroller, view), false);
+
+  // Dock containing scroller is never overlaid.
+  assert.equal(A.isComposerDockOverlaid(body, scroller, view), false);
+
+  // Document-level or missing scroller checks sticky/fixed/absolute positioning.
+  assert.equal(A.isComposerDockOverlaid(overlaidSiblingDock, doc.documentElement, view), true);
+  assert.equal(A.isComposerDockOverlaid(inFlowDock, doc.documentElement, view), false);
+  assert.equal(A.isComposerDockOverlaid(overlaidSiblingDock, null, view), true);
+  assert.equal(A.isComposerDockOverlaid(inFlowDock, null, view), false);
+});
+
+test('composerBelowSiblings separates empty spacers from visible disclaimers below the form inside dock', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const dock = el('div', { id: 'thread-bottom-container' });
+  const col = el('div', { class: 'composer-column' });
+  const preAttachment = el('div', { class: 'pre-form-attachment' }, { textContent: 'sample.txt', rect: { left: 260, right: 400, top: 700, bottom: 720, width: 140, height: 20 } });
+  const form = el('form', { 'data-chatgpt-composer': '' });
+  const composer = el('div', { 'data-composer-layout': 'single-line' });
+  form.append(composer);
+
+  const emptySpacer = el('div', { class: 'composer-below-spacer' }, { rect: { left: 260, right: 1020, top: 834, bottom: 858, width: 760, height: 24 } });
+  const nestedEmpty = el('div', { class: 'empty-wrap' });
+  nestedEmpty.append(el('div', {}));
+  const disclaimer = el('div', { class: 'disclaimer_v7rk' }, { textContent: 'Offline disclaimer. ', rect: { left: 260, right: 1020, top: 858, bottom: 900, width: 760, height: 42 } });
+  disclaimer.append(el('a', { href: '#prefs' }, { textContent: 'Cookie Preferences' }));
+  const hiddenDisclaimer = el('div', { class: 'disclaimer_hidden', hidden: '' }, { textContent: 'Hidden notice', rect: { left: 260, right: 1020, top: 858, bottom: 890, width: 760, height: 32 } });
+  const inputSibling = el('div', { class: 'disclaimer_input' }, { textContent: 'Input row', rect: { left: 260, right: 1020, top: 858, bottom: 890, width: 760, height: 32 } });
+  inputSibling.append(el('input', { type: 'text' }));
+  const tallSibling = el('div', {}, { textContent: 'Tall non-disclaimer panel', rect: { left: 260, right: 1020, top: 858, bottom: 990, width: 760, height: 132 } });
+
+  col.append(preAttachment, form, emptySpacer, nestedEmpty, disclaimer, hiddenDisclaimer, inputSibling, tallSibling);
+  const dockLevelDisclaimer = el('div', { class: 'composer-hint' }, { textContent: 'Dock level hint', rect: { left: 260, right: 1020, top: 890, bottom: 900, width: 760, height: 10 } });
+  const outsideSibling = el('div', { class: 'outside-after-dock' });
+  dock.append(col, dockLevelDisclaimer);
+  body.append(dock, outsideSibling);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const res = adapter.composerBelowSiblings(composer, dock);
+  assert.deepEqual([...res.empty], [emptySpacer, nestedEmpty]);
+  assert.deepEqual([...res.disclaimers], [disclaimer, dockLevelDisclaimer]);
+});
