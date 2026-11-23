@@ -340,6 +340,7 @@
   }
 
   const WIDTH_LABELS = {standard:'widthStandard', wide:'widthWide', full:'widthFull'};
+  const CAPACITY_SOURCE_KEYS = {manual:'vialSourceManual', matched:'vialSourceAutoMatched', fallback:'vialSourceAutoFallback', unrecognized:'vialSourceUnrecognized'};
   function setDockOpen(open) {
     if (!dock) return;
     const popover = dock.querySelector('.op-vial-popover');
@@ -401,7 +402,7 @@
     const format = number => number>=1000000 ? (number/1000000).toFixed(1)+'M' : number>=1000 ? (number/1000).toFixed(1)+'K' : String(number);
     const percent=Math.min(100,capacity.tokens>0?estimate.total/capacity.tokens*100:0);
     // v0.3.1 #18: `?` marks an unrecognized auto capacity so a fallback never reads as the real window.
-    const unsure=capacity.unrecognized?'?':'';
+    const unsure=capacity.source==='unrecognized'?'?':'';
     setText(vial.querySelector('.op-vial-summary'),`≈ ${format(estimate.total)}${attachments>0?'+':''} / ${format(capacity.tokens)}${unsure}`);
     vial.setAttribute('aria-label',`${t('vialTitle')}: ${estimate.total.toLocaleString()}${attachments>0?'+':''} / ${capacity.tokens.toLocaleString()}${unsure} tokens${unsure?` (${t('vialSourceUnrecognized')})`:''}`);
     const liquid=vial.querySelector('.op-vial-liquid');
@@ -414,7 +415,7 @@
       popover.dataset.signature=signature;
       const details=popover.querySelector('.op-vial-details');
       const fragment=document.createDocumentFragment();
-      const sourceKey=capacity.mode==='manual'?'vialSourceManual':capacity.matched?'vialSourceAutoMatched':capacity.unrecognized?'vialSourceUnrecognized':'vialSourceAutoFallback';
+      const sourceKey=CAPACITY_SOURCE_KEYS[capacity.source]||'vialSourceAutoFallback';
       const sourceText=capacity.modelLabel?`${t(sourceKey)} · ${capacity.modelLabel}`:t(sourceKey);
       const rows=[
         ['vialTotal',estimate.total.toLocaleString()],

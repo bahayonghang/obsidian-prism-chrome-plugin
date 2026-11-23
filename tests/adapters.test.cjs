@@ -430,56 +430,52 @@ test('estimateTurnTokens separates prose and code without double counting', () =
 test('resolveReferenceCapacity maps ChatGPT and Gemini models, falls back cleanly, and honors manual overrides', () => {
   const A = adapters();
   assert.deepEqual({ ...A.resolveReferenceCapacity('chatgpt', 'ChatGPT 5.2', 128000) }, {
-    tokens: 128000, mode: 'manual', matched: true, unrecognized: false, modelLabel: 'ChatGPT 5.2'
+    tokens: 128000, source: 'manual', modelLabel: 'ChatGPT 5.2'
   });
 
   // Gemini auto mappings
   assert.deepEqual({ ...A.resolveReferenceCapacity('gemini', 'Gemini 1.5 Pro', 'auto') }, {
-    tokens: 2000000, mode: 'auto', matched: true, unrecognized: false, modelLabel: 'Gemini 1.5 Pro'
+    tokens: 2000000, source: 'matched', modelLabel: 'Gemini 1.5 Pro'
   });
   for (const label of ['Gemini 2.5 Pro', 'Gemini 2.0 Flash', 'Gemini 3', '2.5 Flash', 'Thinking', 'Gemini Ultra']) {
     const res = A.resolveReferenceCapacity('gemini', label, 'auto');
     assert.equal(res.tokens, 1000000, label);
-    assert.equal(res.mode, 'auto', label);
-    assert.equal(res.matched, true, label);
+    assert.equal(res.source, 'matched', label);
   }
   for (const label of ['Gemini', '', 'Unknown']) {
     const res = A.resolveReferenceCapacity('gemini', label, 'auto');
     assert.equal(res.tokens, 1000000, label);
-    assert.equal(res.mode, 'auto', label);
-    assert.equal(res.matched, false, label);
+    assert.equal(res.source, 'fallback', label);
   }
 
   // ChatGPT auto mappings
   assert.deepEqual({ ...A.resolveReferenceCapacity('chatgpt', 'GPT-4.1', 'auto') }, {
-    tokens: 1000000, mode: 'auto', matched: true, unrecognized: false, modelLabel: 'GPT-4.1'
+    tokens: 1000000, source: 'matched', modelLabel: 'GPT-4.1'
   });
   for (const label of ['ChatGPT 5.2', 'ChatGPT 5.1', 'GPT-5', 'ChatGPT 5']) {
     const res = A.resolveReferenceCapacity('chatgpt', label, 'auto');
     assert.equal(res.tokens, 400000, label);
-    assert.equal(res.mode, 'auto', label);
-    assert.equal(res.matched, true, label);
+    assert.equal(res.source, 'matched', label);
   }
   for (const label of ['o1', 'o3-mini', 'o4-mini']) {
     const res = A.resolveReferenceCapacity('chatgpt', label, 'auto');
     assert.equal(res.tokens, 200000, label);
-    assert.equal(res.mode, 'auto', label);
-    assert.equal(res.matched, true, label);
+    assert.equal(res.source, 'matched', label);
   }
   for (const label of ['GPT-4o', 'GPT-4']) {
     const res = A.resolveReferenceCapacity('chatgpt', label, 'auto');
     assert.equal(res.tokens, 128000, label);
-    assert.equal(res.mode, 'auto', label);
-    assert.equal(res.matched, true, label);
+    assert.equal(res.source, 'matched', label);
   }
   assert.equal(A.resolveReferenceCapacity('chatgpt', 'GPT-3.5', 'auto').tokens, 32000);
-  assert.equal(A.resolveReferenceCapacity('chatgpt', 'GPT-3.5', 'auto').matched, true);
+  assert.equal(A.resolveReferenceCapacity('chatgpt', 'GPT-3.5', 'auto').source, 'matched');
   for (const label of ['ChatGPT', '', 'Plus']) {
     const res = A.resolveReferenceCapacity('chatgpt', label, 'auto');
     assert.equal(res.tokens, 128000, label);
-    assert.equal(res.mode, 'auto', label);
-    assert.equal(res.matched, false, label);
+    assert.equal(res.source, 'unrecognized', label);
   }
+  // An unknown host is an unflagged auto fallback.
+  assert.deepEqual({ ...A.resolveReferenceCapacity('other', 'x', 'auto') }, { tokens: 128000, source: 'fallback', modelLabel: 'x' });
 });
 
 function withDocumentOrder(body) {
@@ -579,26 +575,24 @@ test('ChatGPT tier labels resolve the Reference Capacity; unknown labels fall ba
   const A = adapters();
   for (const label of ['Pro', 'Thinking', 'High', 'xHigh', 'Extra High', 'GPT-5 Thinking']) {
     const res = A.resolveReferenceCapacity('chatgpt', label, 'auto');
-    assert.equal(res.tokens, 400000, label);
-    assert.equal(res.matched, true, label);
-    assert.equal(res.unrecognized, false, label);
+    assert.deepEqual([res.tokens, res.source], [400000, 'matched'], label);
   }
   const instant = A.resolveReferenceCapacity('chatgpt', 'Instant', 'auto');
-  assert.deepEqual([instant.tokens, instant.matched, instant.unrecognized], [128000, true, false]);
+  assert.deepEqual([instant.tokens, instant.source], [128000, 'matched']);
   for (const label of ['Auto', 'Highlight', 'Select ChatGPT model', '']) {
     const res = A.resolveReferenceCapacity('chatgpt', label, 'auto');
-    assert.deepEqual([res.tokens, res.mode, res.matched, res.unrecognized], [128000, 'auto', false, true], label);
+    assert.deepEqual([res.tokens, res.source], [128000, 'unrecognized'], label);
   }
   // A manual capacity always wins and is never flagged.
   const manual = A.resolveReferenceCapacity('chatgpt', 'Mystery tier', 200000);
-  assert.deepEqual([manual.tokens, manual.mode, manual.unrecognized], [200000, 'manual', false]);
+  assert.deepEqual([manual.tokens, manual.source], [200000, 'manual']);
   assert.equal(A.resolveReferenceCapacity('chatgpt', 'Instant', 400000).tokens, 400000);
 });
 
 test('Gemini custom mode names keep the 1M auto fallback without the unrecognized flag', () => {
   const A = adapters();
   const res = A.resolveReferenceCapacity('gemini', 'Neon High', 'auto');
-  assert.deepEqual([res.tokens, res.mode, res.matched, res.unrecognized], [1000000, 'auto', false, false]);
+  assert.deepEqual([res.tokens, res.source], [1000000, 'fallback']);
 });
 
 test('ChatGPT adapter sorts mixed turns in DOM order, recognizes zh .sr-only fallbacks, filters pre-tail spacers, and prefers icon add trigger', () => {

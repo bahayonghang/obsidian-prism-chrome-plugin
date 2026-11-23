@@ -181,33 +181,34 @@
     }
     return { prose, code, total: prose + code };
   }
-  // `unrecognized` marks an auto fallback the user should check (ChatGPT only, v0.3.1 #18):
-  // the capsule shows `?` and the popover suggests a manual capacity. A Gemini custom mode
-  // name is an expected 1M site fallback, so it stays unflagged.
+  // Review fix S9: one `source` says where the Reference Capacity came from: 'manual' (user setting),
+  // 'matched' (recognized model label), 'fallback' (expected site default, e.g. a Gemini custom mode
+  // name, which stays unflagged) or 'unrecognized' (ChatGPT only, v0.3.1 #18: the capsule shows `?`
+  // and the popover suggests a manual capacity).
   function resolveReferenceCapacity(host, modelLabel, configured) {
     const rawLabel = String(modelLabel || '').trim();
-    const result = (tokens, mode, matched, unrecognized = false) => ({ tokens, mode, matched, unrecognized, modelLabel: rawLabel });
+    const result = (tokens, source) => ({ tokens, source, modelLabel: rawLabel });
     if (typeof configured === 'number' && Number.isFinite(configured) && configured > 0) {
-      return result(configured, 'manual', true);
+      return result(configured, 'manual');
     }
     const label = rawLabel.toLowerCase();
     if (host === 'gemini') {
-      if (/\b1\.5\s*pro\b/.test(label)) return result(2000000, 'auto', true);
-      if (/\b(?:3(?:\.\d+)?|2\.5|2\.0|flash|pro|thinking|ultra)\b/.test(label)) return result(1000000, 'auto', true);
-      return result(1000000, 'auto', false);
+      if (/\b1\.5\s*pro\b/.test(label)) return result(2000000, 'matched');
+      if (/\b(?:3(?:\.\d+)?|2\.5|2\.0|flash|pro|thinking|ultra)\b/.test(label)) return result(1000000, 'matched');
+      return result(1000000, 'fallback');
     }
     if (host === 'chatgpt') {
-      if (/\b4\.1\b/.test(label)) return result(1000000, 'auto', true);
-      if (/\b(?:gpt-?5|chatgpt\s*5|5\.[12])\b/.test(label)) return result(400000, 'auto', true);
-      if (/\bo[134]\b/.test(label)) return result(200000, 'auto', true);
-      if (/\b4o\b|gpt-?4/.test(label)) return result(128000, 'auto', true);
-      if (/\b3\.5\b/.test(label)) return result(32000, 'auto', true);
+      if (/\b4\.1\b/.test(label)) return result(1000000, 'matched');
+      if (/\b(?:gpt-?5|chatgpt\s*5|5\.[12])\b/.test(label)) return result(400000, 'matched');
+      if (/\bo[134]\b/.test(label)) return result(200000, 'matched');
+      if (/\b4o\b|gpt-?4/.test(label)) return result(128000, 'matched');
+      if (/\b3\.5\b/.test(label)) return result(32000, 'matched');
       // v0.3.1 #18: the live model button shows only the tier (probe 2026-11-22).
-      if (/\b(?:pro|thinking|x-?high|extra\s+high|high)\b/.test(label)) return result(400000, 'auto', true);
-      if (/\binstant\b/.test(label)) return result(128000, 'auto', true);
-      return result(128000, 'auto', false, true);
+      if (/\b(?:pro|thinking|x-?high|extra\s+high|high)\b/.test(label)) return result(400000, 'matched');
+      if (/\binstant\b/.test(label)) return result(128000, 'matched');
+      return result(128000, 'unrecognized');
     }
-    return result(128000, 'auto', false);
+    return result(128000, 'fallback');
   }
   function scrollContainer(element) {
     for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
