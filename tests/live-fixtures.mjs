@@ -74,6 +74,85 @@ export async function openLiveFixture(browser, host, { interceptFixtures, mainWi
 export const settle = page => page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
 
 /**
+ * Toggles composable ChatGPT bottom-dock reproduction variants on chatgpt-live.html using realistic
+ * host classes and DOM elements (no data-fixture-* hooks). Omitted flags default to false so callers
+ * can switch between combinations or pass {} to restore the default native fixture.
+ */
+export async function applyChatGPTBottomVariants(page, variants = {}) {
+  const opts = {
+    containerFadeAfter: Boolean(variants.containerFadeAfter),
+    overlayHostAfter: Boolean(variants.overlayHostAfter),
+    sharpEdgeShadow: Boolean(variants.sharpEdgeShadow),
+    outerSpacersAndVtDisclaimer: Boolean(variants.outerSpacersAndVtDisclaimer),
+    stickyInScroller: Boolean(variants.stickyInScroller)
+  };
+  await page.evaluate(v => {
+    const parent = document.querySelector('.composer-parent');
+    const scroller = document.querySelector('[data-prism-test-scroller]');
+    const dock = document.querySelector('#thread-bottom-container');
+    if (!parent || !dock) return;
+
+    if (v.stickyInScroller) {
+      dock.style.position = 'sticky';
+      dock.style.bottom = '0px';
+      if (scroller && dock.parentElement !== scroller) scroller.append(dock);
+    } else {
+      dock.style.removeProperty('position');
+      dock.style.removeProperty('bottom');
+      if (!dock.getAttribute('style')?.trim()) dock.removeAttribute('style');
+      if (scroller && dock.parentElement === scroller) scroller.after(dock);
+    }
+
+    let fadeContainer = dock.querySelector(':scope > .content-fade-container.content-fade');
+    if (v.containerFadeAfter) {
+      if (!fadeContainer) {
+        fadeContainer = document.createElement('div');
+        fadeContainer.className = 'content-fade-container content-fade';
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'scroll-to-bottom-btn';
+        btn.setAttribute('aria-label', 'Scroll to bottom');
+        const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        svg.setAttribute('viewBox', '0 0 24 24');
+        svg.setAttribute('aria-hidden', 'true');
+        const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        path.setAttribute('d', 'M12 5v14m0 0-6-6m6 6 6-6');
+        svg.append(path);
+        btn.append(svg);
+        fadeContainer.append(btn);
+        dock.prepend(fadeContainer);
+      }
+    } else {
+      fadeContainer?.remove();
+    }
+
+    dock.classList.toggle('has-host-after', v.overlayHostAfter);
+    dock.classList.toggle('has-sharp-edge-shadow', v.sharpEdgeShadow);
+
+    let outerSpacer = parent.querySelector(':scope > .dock-outer-spacer');
+    let outerDisclaimer = parent.querySelector(':scope > .disclaimer-outer-wrap');
+    if (v.outerSpacersAndVtDisclaimer) {
+      if (!outerSpacer) {
+        outerSpacer = document.createElement('div');
+        outerSpacer.className = 'dock-outer-spacer';
+      }
+      if (!outerDisclaimer) {
+        outerDisclaimer = document.createElement('div');
+        outerDisclaimer.className = 'disclaimer-outer-wrap';
+        outerDisclaimer.textContent = 'Offline external disclaimer. Synthetic placeholder notice.';
+      }
+      const anchor = dock.parentElement === parent ? dock : scroller;
+      if (anchor) anchor.after(outerSpacer, outerDisclaimer);
+      else parent.append(outerSpacer, outerDisclaimer);
+    } else {
+      outerSpacer?.remove();
+      outerDisclaimer?.remove();
+    }
+  }, opts);
+  await settle(page);
+}
+
+/**
  * Runs `body({ page, context, errors })` on a live fixture and always closes the context. `suite` is the shared
  * live-fixture bundle from browser-smoke.mjs ({ browser, engine, interceptFixtures, fixtureBridge, styles,
  * scripts, artifacts }); without a fixtureBridge the page runs bare (native baselines). Page errors collect
@@ -287,7 +366,9 @@ async function assertProbePrivacy(page, host, probeSource) {
     assert.ok(result.targets.composerGrids.samples.some(sample => sample.style.gridTemplateColumns.startsWith('36px ')), 'chatgpt: probe sees the 36px composer grid');
     assert.equal(first('composerLayout').data['data-composer-layout'], 'single-line');
     assert.equal(result.targets.legacyTurns.count, 0, 'chatgpt: no legacy turn markers in the live fixture');
-    assert.equal(result.targets.composerAncestors.samples.length, 6, 'chatgpt: composerAncestors captures full depth 6');
+    assert.ok(result.targets.composerAncestors.samples.length >= 8, `chatgpt: composerAncestors captures deep ancestor chain (got ${result.targets.composerAncestors.samples.length})`);
+    assert.ok(result.targets.composerAncestors.samples.some(sample => sample.classes.includes('page')), 'chatgpt: composerAncestors captures .page');
+    assert.ok(result.targets.composerAncestors.samples.some(sample => sample.tag === 'body'), 'chatgpt: composerAncestors captures body');
     const dockSample = result.targets.composerAncestors.samples.find(sample => sample.classes.includes('content-fade_b9xk'));
     assert.ok(dockSample, 'chatgpt: composerAncestors captures #thread-bottom-container');
     assert.equal(dockSample.style.position, 'relative');
@@ -312,6 +393,7 @@ async function assertProbePrivacy(page, host, probeSource) {
     assert.equal(normalize(first('textInputField').style.gridTemplateAreas), NATIVE_BASELINES.gemini.gridAreas);
     assert.equal(first('inputContainer').style.position, 'absolute');
     assert.equal(first('inputContainer').style.minHeight, '133px');
+    assert.ok(result.targets.inputAncestors.samples.length >= 5, `gemini: inputAncestors captures deep ancestor chain (got ${result.targets.inputAncestors.samples.length})`);
     const weights = Object.fromEntries(result.targets.headings.samples.map(sample => [sample.tag, Number(sample.style.fontWeight)]));
     assert.equal(weights.h2, 380);
     assert.equal(weights.h3, 470);
@@ -323,6 +405,93 @@ async function assertProbePrivacy(page, host, probeSource) {
   }
   await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
   await page.keyboard.press('Backspace');
+  return result;
+}
+
+const nearRgb = (pixel, target, tolerance, label) => {
+  assert.equal(pixel.a, 255, `${label}: expected opaque pixel, got alpha=${pixel.a}`);
+  assert.ok(
+    Math.abs(pixel.r - target[0]) <= tolerance && Math.abs(pixel.g - target[1]) <= tolerance && Math.abs(pixel.b - target[2]) <= tolerance,
+    `${label}: expected rgb(${target.join(',')})±${tolerance}, got rgba(${pixel.r},${pixel.g},${pixel.b},${pixel.a})`
+  );
+};
+
+async function checkChatGPTBottomVariantBaselines(suite) {
+  const { engine, probeSource } = suite;
+  await onLiveFixture({ ...suite, fixtureBridge: undefined }, 'chatgpt', { failure: 'chatgpt-bottom-variant-failure' }, async ({ page, errors }) => {
+    await applyChatGPTBottomVariants(page, {
+      containerFadeAfter: true,
+      overlayHostAfter: true,
+      sharpEdgeShadow: true,
+      outerSpacersAndVtDisclaimer: true
+    });
+    await page.locator(LIVE_SELECTORS.chatgpt.scroller).evaluate(node => { node.scrollTop = node.scrollHeight; });
+    await settle(page);
+
+    const result = await assertProbePrivacy(page, 'chatgpt', probeSource);
+
+    const fadeContainer = result.targets.contentFades.samples.find(s => s.classes.includes('content-fade-container'));
+    assert.ok(fadeContainer, 'chatgpt variant: contentFades captures .content-fade-container');
+    assert.ok(fadeContainer.children.includes('button.scroll-to-bottom-btn'), 'chatgpt variant: .content-fade-container is non-empty');
+    assert.equal(fadeContainer.pseudos?.after?.hasContent, true, 'chatgpt variant: .content-fade-container::after captured');
+    assert.match(fadeContainer.pseudos.after.backgroundImage, /linear-gradient/);
+    assert.ok(/linear-gradient/.test(fadeContainer.pseudos.after.maskImage || '') || /linear-gradient/.test(fadeContainer.pseudos.after.webkitMaskImage || ''), 'chatgpt variant: .content-fade-container::after mask captured');
+
+    const dockSample = result.targets.composerAncestors.samples.find(s => s.classes.includes('content-fade_b9xk'));
+    assert.equal(dockSample.pseudos?.after?.hasContent, true, 'chatgpt variant: host dock ::after captured');
+    assert.match(dockSample.pseudos.after.backgroundImage, /linear-gradient/);
+    assert.match(dockSample.pseudos.after.boxShadow, /43, 39, 56/);
+    assert.match(dockSample.style.boxShadow, /43, 39, 56/);
+    assert.match(dockSample.style['--sharp-edge-bottom-shadow'], /#2b2738/i);
+    assert.equal(dockSample.style['--sharp-edge-bottom-shadow-placeholder-content'], '[text]');
+    assert.equal(dockSample.style['--sharp-edge-top-shadow'], '0 2px 0 0 #2b2738');
+    assert.ok(dockSample.style['--composer-surface-primary'], 'chatgpt variant: --composer-surface-primary collected');
+    assert.ok(dockSample.rect.viewportBottomOffset >= 50, `chatgpt variant: dock lifted above viewport bottom (${dockSample.rect.viewportBottomOffset}px)`);
+
+    assert.equal(result.targets.dockSiblings.count, 2, 'chatgpt variant: dockSiblings captures external spacer and disclaimer');
+    const [outerSpacer, outerDisclaimer] = result.targets.dockSiblings.samples;
+    assert.ok(outerSpacer.classes.includes('dock-outer-spacer') && outerSpacer.childCount === 0 && outerSpacer.rect.height >= 24, 'chatgpt variant: external empty spacer captured');
+    assert.ok(outerDisclaimer.classes.includes('disclaimer-outer-wrap') && parseFloat(outerDisclaimer.style.marginTop) < 0 && outerDisclaimer.rect.height >= 36, 'chatgpt variant: external negative-margin disclaimer captured');
+    const supportsVt = await page.evaluate(() => typeof CSS !== 'undefined' && CSS.supports('view-transition-name', 'disclaimer-shell'));
+    if (supportsVt) assert.equal(outerDisclaimer.style.viewTransitionName, 'disclaimer-shell', 'chatgpt variant: viewTransitionName captured');
+    assert.ok(result.targets.disclaimerShells.samples.some(s => s.classes.includes('disclaimer-outer-wrap')), 'chatgpt variant: disclaimerShells captures .disclaimer-outer-wrap');
+
+    assert.ok(result.bottomOffsets.dockBottomOffset >= 50, `chatgpt variant: dockBottomOffset >= 50 (got ${result.bottomOffsets.dockBottomOffset})`);
+    assert.ok(result.bottomOffsets.composerBottomOffset >= 115, `chatgpt variant: composerBottomOffset >= 115 (got ${result.bottomOffsets.composerBottomOffset})`);
+
+    const belowComposer = await sampleBelow(page, LIVE_SELECTORS.chatgpt.composer, { offsetX: 6, offsetY: 6 });
+    nearRgb(belowComposer.pixel, [45, 42, 58], 4, `${engine} chatgpt variant below composer band`);
+
+    const belowDock = await sampleBelow(page, LIVE_SELECTORS.chatgpt.bottomDock, { offsetX: 6, offsetY: 6 });
+    nearRgb(belowDock.pixel, [43, 39, 56], 3, `${engine} chatgpt variant sharp-edge bottom shadow`);
+
+    // Verify containerFadeAfter and sharpEdgeShadow also reproduce independently when overlayHostAfter is off.
+    await applyChatGPTBottomVariants(page, { containerFadeAfter: true, outerSpacersAndVtDisclaimer: true });
+    const belowFadeOnly = await sampleBelow(page, LIVE_SELECTORS.chatgpt.composer, { offsetX: 6, offsetY: 6 });
+    nearRgb(belowFadeOnly.pixel, [45, 42, 58], 4, `${engine} chatgpt containerFadeAfter-only band`);
+
+    await applyChatGPTBottomVariants(page, { sharpEdgeShadow: true, outerSpacersAndVtDisclaimer: true });
+    const belowShadowOnly = await sampleBelow(page, LIVE_SELECTORS.chatgpt.composer, { offsetX: 6, offsetY: 6 });
+    nearRgb(belowShadowOnly.pixel, [43, 39, 56], 3, `${engine} chatgpt sharpEdgeShadow-only band`);
+
+    await applyChatGPTBottomVariants(page, { stickyInScroller: true, overlayHostAfter: true });
+    const stickyState = await page.locator(LIVE_SELECTORS.chatgpt.bottomDock).evaluate(node => ({
+      inScroller: Boolean(node.closest('[data-prism-test-scroller]')),
+      position: getComputedStyle(node).position
+    }));
+    assert.deepEqual(stickyState, { inScroller: true, position: 'sticky' }, 'chatgpt variant: stickyInScroller moves dock into scroller');
+
+    await applyChatGPTBottomVariants(page, {});
+    const resetState = await page.locator(LIVE_SELECTORS.chatgpt.bottomDock).evaluate(node => ({
+      inScroller: Boolean(node.closest('[data-prism-test-scroller]')),
+      position: getComputedStyle(node).position,
+      extraCount: document.querySelectorAll('.content-fade-container, .dock-outer-spacer, .disclaimer-outer-wrap').length
+    }));
+    assert.deepEqual(resetState, { inScroller: false, position: 'relative', extraCount: 0 }, 'chatgpt variant: {} restores default native DOM');
+
+    assert.deepEqual(errors, []);
+    console.log(`PASS ${engine} chatgpt bottom reproduction-variant baselines and probe privacy`);
+  });
 }
 
 /** Native baselines on the probe-derived fixtures, measured without the extension, plus probe privacy. */
@@ -347,4 +516,5 @@ export async function checkLiveFixtureBaselines(suite) {
       console.log(`PASS ${engine} ${host} live fixture native baselines (main 1280/1100) and read-only probe privacy`);
     });
   }
+  await checkChatGPTBottomVariantBaselines(suite);
 }
