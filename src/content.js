@@ -770,9 +770,11 @@
           nextFadeDock = dockHost;
           add(scroller, 'data-op-scroller-fade');
         }
-        const below = adapter.composerBelowSiblings?.(composer, dockHost);
-        for (const element of below?.empty || []) add(element, 'data-op-composer-empty-sibling');
-        for (const element of below?.disclaimers || []) add(element, 'data-op-composer-disclaimer');
+        if (cfg.composerRestyle) {
+          const below = adapter.composerBelowSiblings?.(composer, dockHost);
+          for (const element of below?.empty || []) add(element, 'data-op-composer-empty-sibling');
+          for (const element of below?.disclaimers || []) add(element, 'data-op-composer-disclaimer');
+        }
         for (const element of adapter.threadTailSpacers?.() || []) add(element, 'data-op-thread-spacer');
       }
       if (cfg.composerRestyle) {
@@ -859,10 +861,12 @@
         if (ambient.style[key]!==pixels) ambient.style[key]=pixels;
       }
     }
+    syncDockClearance();
+    syncScrollerFade();
     syncDockAvoidance();
   }
   function scheduleGeometry() {
-    if (lostOwnership() || !enabled || stopped || document.hidden || (!ambient && !dock) || geometryFrame) return;
+    if (lostOwnership() || !enabled || stopped || document.hidden || (!ambient && !dock && !dockOverlaidHost && !fadeDock) || geometryFrame) return;
     geometryFrame=requestAnimationFrame(updateAmbientGeometry);
   }
   /* Root custom properties owned by the runtime (review fix S2), following the --op-ambient-alpha pattern in

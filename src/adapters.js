@@ -235,17 +235,18 @@
   }
   function scrollContainer(element) {
     for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
-      const style = parent.ownerDocument.defaultView.getComputedStyle(parent);
-      if (/(auto|scroll)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight + 1) return parent;
+      const style = parent.ownerDocument?.defaultView?.getComputedStyle?.(parent);
+      if (style && /(auto|scroll)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight + 1) return parent;
     }
-    return element?.ownerDocument.scrollingElement || document.scrollingElement;
+    return element?.ownerDocument?.scrollingElement || global.document?.scrollingElement || null;
   }
   // v0.3.1 #18: live ChatGPT message markers lead; the rest are the v0.3.0 markers.
   const MESSAGE_AREAS = '[data-content-search-unit-key],[data-user-message-bubble],[data-markdown-text-style="assistant-message"],[data-message-author-role],[data-turn="user"],[data-turn="assistant"],article[data-testid^="conversation-turn-"],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response,[data-test-id="model-response"],.model-response-text';
   const OVERLAY_EXCLUDED = 'dialog,[role="dialog"],[aria-modal="true"],[role="menu"],[role="listbox"],[data-radix-popper-content-wrapper],.mat-mdc-menu-panel';
   const FADE_LAYER_SELECTOR = '[class*="content-fade"],.content-fade,[class*="fade-mask"]';
-  const INTERACTIVE_DESCENDANT = 'a[href],button,[role="button"],input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex]';
-  const INTERACTIVE_CONTROL_SELF = 'button,a[href],input,textarea,select,[role="button"],[role="link"],[contenteditable],[contenteditable="true"],img,picture,svg,video,audio,canvas,iframe';
+  const INTERACTIVE_DESCENDANT = 'a[href],button,[role="button"],input,textarea,select,img,picture,svg,video,audio,canvas,iframe,[contenteditable],[tabindex],details,summary';
+  const INTERACTIVE_CONTROL_SELF = 'button,a[href],input,textarea,select,[role="button"],[role="link"],[contenteditable],[contenteditable="true"],img,picture,svg,video,audio,canvas,iframe,details,summary';
+  const THOUGHT_AREAS = 'model-thoughts,[data-testid="reasoning-content"],[data-testid="thoughts-content"],[data-testid="thinking-content"],[data-test-id="thoughts-content"],[data-test-id="thinking-content"]';
   const FORM_FIELD = 'input,textarea,select,[contenteditable],[contenteditable="true"]';
   const DISCLAIMER_SELECTOR = '[class*="disclaimer"], [data-testid*="disclaimer"], [data-test-id*="disclaimer"], hallucination-disclaimer, .composer-hint';
   const DISCLAIMER_TEXT_RE = /(?:chatgpt|gemini|ai)\s+(?:is\s+ai\s+and\s+)?(?:can|may|might)\s+make\s+mistakes|check\s+important\s+info|double[- ]check\s+(?:its\s+)?responses|可能会犯错|可能会出错|请核查重要信息|内容由\s*ai\s*生成|仅供参考/i;
@@ -826,24 +827,44 @@
   function isDisclaimerCandidate(node, composer, { allowGenericBelow = false } = {}) {
     if (!node || isOwned(node)) return false;
     if (composer && (node === composer || node.contains?.(composer) || composer.contains?.(node))) return false;
-    if (node.matches?.('script,style,template') || node.hasAttribute?.('hidden')) return false;
+    if (node.matches?.('script,style,template,details,summary,nav,aside,header,article,form,fieldset,table,pre,code') || node.hasAttribute?.('hidden')) return false;
+    if (node.querySelector?.('details,summary,nav,aside,header,article,table,pre')) return false;
+    if (node.matches?.(OVERLAY_EXCLUDED) || node.closest?.(OVERLAY_EXCLUDED) || node.querySelector?.(OVERLAY_EXCLUDED)) return false;
     if (node.matches?.(MESSAGE_AREAS) || node.closest?.(MESSAGE_AREAS) || node.querySelector?.(MESSAGE_AREAS)) return false;
+    if (node.matches?.(THOUGHT_AREAS) || node.closest?.(THOUGHT_AREAS) || node.querySelector?.(THOUGHT_AREAS)) return false;
     if (node.matches?.(FORM_FIELD) || node.querySelector?.(FORM_FIELD)) return false;
+    const view = node.ownerDocument?.defaultView || global;
+    const computed = view?.getComputedStyle?.(node);
     const selfMarked = node.getAttribute?.('data-op-composer-disclaimer') === 'true';
+    const txt = textOf(node).trim();
+    const markedChildren = !selfMarked && node.querySelectorAll ? [...node.querySelectorAll('[data-op-composer-disclaimer="true"]')] : [];
+    const wrapsMarkedDisclaimer = markedChildren.some(child =>
+      !isOwned(child) && !child.closest?.('[hidden], [aria-hidden="true"]') && textOf(child).trim() === txt
+    );
     if (selfMarked) {
       if (!node.isConnected || node.closest?.('[hidden], [aria-hidden="true"]') || node.style?.display === 'none') return false;
       if (node.parentElement && !isVisible(node.parentElement)) return false;
     } else if (!isVisible(node)) {
       return false;
     }
-    const txt = textOf(node).trim();
     if (!txt || txt.length > 240) return false;
     if (node.matches?.('svg,button,[role="button"]') || node.querySelector?.('svg')) return false;
     if ((node.querySelectorAll?.('button,[role="button"]')?.length || 0) > 2) return false;
     if (node.matches?.(DISCLAIMER_SELECTOR) || DISCLAIMER_TEXT_RE.test(txt)) return true;
-    if (!allowGenericBelow) return false;
-    if (selfMarked) return true;
+    if (!allowGenericBelow) return selfMarked || wrapsMarkedDisclaimer;
+    if (selfMarked || wrapsMarkedDisclaimer) return true;
+    const styleAttr = node.getAttribute?.('style') || '';
+    const hasVt = Boolean(
+      (node.style?.viewTransitionName && node.style.viewTransitionName !== 'none') ||
+      (computed?.viewTransitionName && computed.viewTransitionName !== 'none') ||
+      /view-transition-name\s*:/i.test(styleAttr)
+    );
+    const negMargin =
+      parseFloat(computed?.marginTop) < 0 ||
+      parseFloat(node.style?.marginTop) < 0 ||
+      /margin-top\s*:\s*-/i.test(styleAttr);
     const rect = typeof node.getBoundingClientRect === 'function' ? node.getBoundingClientRect() : null;
+    if (hasVt || negMargin) return Boolean(rect && rect.height > 0 && rect.height <= 140);
     return Boolean(rect && rect.height > 0 && rect.height <= 96);
   }
   function outermostDisclaimerWrapper(node, boundary, composer) {
@@ -853,8 +874,10 @@
       const parent = current.parentElement;
       if (parent.matches?.('main,[role="main"],chat-window,body,html')) break;
       if (isOwned(parent) || (composer && parent.contains?.(composer))) break;
+      if (parent.matches?.(OVERLAY_EXCLUDED) || parent.querySelector?.(OVERLAY_EXCLUDED)) break;
       if (parent.matches?.(MESSAGE_AREAS) || parent.querySelector?.(MESSAGE_AREAS)) break;
       if (parent.matches?.(FORM_FIELD) || parent.querySelector?.(FORM_FIELD) || parent.querySelector?.('svg')) break;
+      if ((parent.querySelectorAll?.('button,[role="button"]')?.length || 0) > 2) break;
       if (textOf(parent).trim() !== targetText) break;
       current = parent;
     }
@@ -872,6 +895,8 @@
       disclaimers.push(target);
     };
     const scanExplicitInside = (container, boundary) => {
+      if (!container || isOwned(container)) return;
+      if (container.matches?.(OVERLAY_EXCLUDED) || container.closest?.(OVERLAY_EXCLUDED) || container.querySelector?.(OVERLAY_EXCLUDED)) return;
       if (isDisclaimerCandidate(container, composer, { allowGenericBelow: false })) {
         pushDisclaimer(container, boundary);
         return;
@@ -886,7 +911,39 @@
         }
       }
     };
-    const view = composer?.ownerDocument?.defaultView || global;
+    const doc = composer?.ownerDocument || dock?.ownerDocument || global.document;
+    const view = doc?.defaultView || global;
+    const rawScroller = lastMessage ? scrollContainer(lastMessage) : null;
+    const scrollerNode = rawScroller && ![doc?.scrollingElement, doc?.documentElement, doc?.body].includes(rawScroller) ? rawScroller : null;
+    const isScrollNode = (node, style) => Boolean(
+      (style && /(auto|scroll)/.test(style.overflowY || '')) ||
+      node.matches?.('infinite-scroller,[data-prism-test-scroller]') ||
+      (scrollerNode && (node === scrollerNode || node.contains?.(scrollerNode)))
+    );
+    const classifyTrailingSibling = (sib, boundary) => {
+      if (!sib || isOwned(sib)) return;
+      if (sib.matches?.('script,style,template,details,summary,nav,aside,header,article,form,fieldset,table,pre,code') || sib.hasAttribute?.('hidden')) return;
+      if (dock && (sib === dock || sib.contains?.(dock))) return;
+      if (composer && (sib === composer || sib.contains?.(composer))) return;
+      if (sib.matches?.(MESSAGE_AREAS) || sib.closest?.(MESSAGE_AREAS) || sib.querySelector?.(MESSAGE_AREAS)) return;
+      if (sib.matches?.(THOUGHT_AREAS) || sib.closest?.(THOUGHT_AREAS) || sib.querySelector?.(THOUGHT_AREAS)) return;
+      if (sib.matches?.(OVERLAY_EXCLUDED) || sib.closest?.(OVERLAY_EXCLUDED) || sib.querySelector?.(OVERLAY_EXCLUDED)) return;
+      const sibStyle = view?.getComputedStyle?.(sib);
+      if (isScrollNode(sib, sibStyle)) return;
+      const selfMarked = sib.getAttribute?.('data-op-composer-disclaimer') === 'true';
+      if (!selfMarked && sibStyle && sibStyle.display === 'none') return;
+      const isPositioned = Boolean(sibStyle && ['absolute', 'fixed'].includes(sibStyle.position));
+      const txt = textOf(sib).trim();
+      if (!selfMarked && !isPositioned && !txt && !sib.matches?.(INTERACTIVE_DESCENDANT) && !sib.querySelector?.(INTERACTIVE_DESCENDANT)) {
+        empty.push(sib);
+        return;
+      }
+      if (isDisclaimerCandidate(sib, composer, { allowGenericBelow: !isPositioned })) {
+        pushDisclaimer(sib, boundary);
+      } else if (!isPositioned) {
+        scanExplicitInside(sib, boundary);
+      }
+    };
     if (composer && dock && !isOwned(composer) && !isOwned(dock) && dock.contains?.(composer)) {
       const form = composer.closest?.('form');
       const anchor = form && dock.contains(form) && form !== dock ? form : composer;
@@ -894,24 +951,9 @@
       const seenPreceding = new Set();
       for (let current = anchor; current && current !== dock && dock.contains(current); current = current.parentElement) {
         for (const sib of followingSiblings(current)) {
-          if (!sib || seenFollowing.has(sib) || isOwned(sib)) continue;
+          if (!sib || seenFollowing.has(sib)) continue;
           seenFollowing.add(sib);
-          if (sib.matches?.('script,style,template') || sib.matches?.(MESSAGE_AREAS) || sib.querySelector?.(MESSAGE_AREAS)) continue;
-          if (sib.hasAttribute?.('hidden')) continue;
-          const selfMarked = sib.getAttribute?.('data-op-composer-disclaimer') === 'true';
-          const sibStyle = view?.getComputedStyle?.(sib);
-          if (!selfMarked && sibStyle && sibStyle.display === 'none') continue;
-          const isPositioned = Boolean(sibStyle && ['absolute', 'fixed'].includes(sibStyle.position));
-          const txt = textOf(sib).trim();
-          if (!selfMarked && !isPositioned && !txt && !sib.matches?.(INTERACTIVE_DESCENDANT) && !sib.querySelector?.(INTERACTIVE_DESCENDANT)) {
-            empty.push(sib);
-            continue;
-          }
-          if (isDisclaimerCandidate(sib, composer, { allowGenericBelow: !isPositioned })) {
-            pushDisclaimer(sib, dock);
-          } else if (!isPositioned) {
-            scanExplicitInside(sib, dock);
-          }
+          classifyTrailingSibling(sib, dock);
         }
         for (const sib of precedingSiblings(current)) {
           if (!sib || seenPreceding.has(sib) || isOwned(sib)) continue;
@@ -920,9 +962,23 @@
         }
       }
       if (dock.parentElement && !dock.parentElement.matches?.('body,html')) {
-        for (const sib of [...(dock.parentElement.children || [])]) {
+        for (const sib of precedingSiblings(dock)) {
           if (!sib || sib === dock || sib.contains?.(dock) || sib.contains?.(composer) || isOwned(sib)) continue;
+          if (sib.matches?.(OVERLAY_EXCLUDED) || sib.closest?.(OVERLAY_EXCLUDED) || sib.querySelector?.(OVERLAY_EXCLUDED)) continue;
+          const sibStyle = view?.getComputedStyle?.(sib);
+          if (isScrollNode(sib, sibStyle)) continue;
           scanExplicitInside(sib, dock.parentElement);
+        }
+      }
+      const seenOutsideFollowing = new Set();
+      for (let cur = dock, level = 0; cur && level <= 2; cur = cur.parentElement, level++) {
+        if (level > 0 && cur.matches?.('main,[role="main"],chat-window,body,html')) break;
+        const container = cur.parentElement;
+        if (!container || container.matches?.('body,html')) break;
+        for (const sib of followingSiblings(cur)) {
+          if (!sib || seenOutsideFollowing.has(sib)) continue;
+          seenOutsideFollowing.add(sib);
+          classifyTrailingSibling(sib, container);
         }
       }
     }
@@ -934,6 +990,7 @@
           seenPostThread.add(sib);
           if (dock && (sib === dock || sib.contains?.(dock) || dock.contains?.(sib))) continue;
           if (sib.contains?.(composer) || sib.matches?.(MESSAGE_AREAS) || sib.querySelector?.(MESSAGE_AREAS)) continue;
+          if (sib.matches?.(OVERLAY_EXCLUDED) || sib.closest?.(OVERLAY_EXCLUDED) || sib.querySelector?.(OVERLAY_EXCLUDED)) continue;
           scanExplicitInside(sib, cur.parentElement || primary);
         }
       }

@@ -226,7 +226,7 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-m
 html[data-op-enabled="true"][data-op-sticky-code="true"] :is([data-op-code-header="true"],code-block .code-block-decoration,[data-message-author-role="assistant"] .code-header,[data-turn="assistant"] .code-header,[data-testid="code-block-header"],[data-test-id="code-block-header"]) {
   position: sticky !important;
   top: 0;
-  z-index: 5;
+  z-index: 1;
 }
 html[data-op-enabled="true"][data-op-sticky-code="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"],code-block .code-block-decoration,[data-message-author-role="assistant"] .code-header,[data-turn="assistant"] .code-header,[data-testid="code-block-header"],[data-test-id="code-block-header"]) {
   background: var(--op-code-header) !important;
@@ -553,6 +553,9 @@ html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([
 html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]):has([data-op-composer-overlaid="true"]) [data-op-thread-column="true"] {
   padding-bottom: max(24px, var(--op-dock-clearance, 96px)) !important;
 }
+html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-overlaid="true"] {
+  z-index: 6;
+}
 html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-scroller-fade="true"] {
   -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--op-scroller-fade-start, 24px)), transparent calc(100% - var(--op-scroller-fade-end, 0px)), transparent 100%) !important;
   mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--op-scroller-fade-start, 24px)), transparent calc(100% - var(--op-scroller-fade-end, 0px)), transparent 100%) !important;
@@ -565,37 +568,39 @@ html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([
   margin-top: 6px !important;
   margin-bottom: 0 !important;
 }
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"],
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] [data-op-composer-column="true"]:not(.composer-container) {
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"],
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] [data-op-composer-column="true"]:not(.composer-container):not(:has(.composer-hint)),
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-column:not(.composer-container):not(:has(.composer-hint)) {
   padding-top: 4px !important;
   padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
 }
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"]:not(:has([data-op-composer-disclaimer="true"])):not(:has(.composer-hint)) {
-  padding-bottom: 10px !important;
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"]:not(:has([data-op-composer-disclaimer="true"])):not(:has(.composer-hint)) {
+  padding-bottom: 5px !important;
 }
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"]:not(:has(.composer-hint)) {
-  padding-bottom: 10px !important;
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"]:not(:has(.composer-hint)) {
+  padding-bottom: 5px !important;
   margin-bottom: 0 !important;
   min-height: 0 !important;
 }
-html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] :has([data-op-composer-surface="true"]):not(.composer-container) {
+html[data-op-enabled="true"][data-op-composer="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] :has([data-op-composer-surface="true"]):not(.composer-container) {
   padding-top: 0 !important;
   padding-bottom: 0 !important;
   margin-top: 0 !important;
   margin-bottom: 0 !important;
   min-height: 0 !important;
 }
-html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] [data-op-composer-surface="true"] {
+html[data-op-enabled="true"][data-op-composer="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] [data-op-composer-surface="true"] {
   margin-top: 0 !important;
   margin-bottom: 0 !important;
 }
-html[data-op-enabled="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] {
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] {
   min-height: 0 !important;
   padding-top: 16px !important;
-  padding-bottom: 10px !important;
+  padding-bottom: 5px !important;
   margin-bottom: 0 !important;
 }
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-empty-sibling="true"] {
+html[data-op-enabled="true"][data-op-composer="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-empty-sibling="true"] {
   height: 0 !important;
   min-height: 0 !important;
   max-height: 0 !important;
@@ -604,11 +609,12 @@ html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([
   margin-top: 0 !important;
   margin-bottom: 0 !important;
   border: 0 !important;
+  flex: 0 0 0 !important;
 }
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-disclaimer="true"]:not(.composer-hint) {
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-disclaimer="true"]:not(.composer-hint) {
   display: none !important;
 }
-html[data-op-enabled="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) :is([data-op-composer-disclaimer="true"], [data-op-composer-dock="true"] hallucination-disclaimer) {
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) :is([data-op-composer-disclaimer="true"], [data-op-composer-dock="true"] hallucination-disclaimer) {
   display: none !important;
 }
 
