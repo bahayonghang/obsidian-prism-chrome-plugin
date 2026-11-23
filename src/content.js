@@ -45,6 +45,80 @@
   const fades = ['op-stream-f0','op-stream-f1','op-stream-f2','op-stream-f3','op-stream-f4'];
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const instanceId = `op-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  let unsubscribe = () => {};
+  let yielded = false;
+  let claimedOwnership = false;
+  let mediaChanged = () => {};
+  let onHide = () => {};
+  let onShow = () => {};
+  const currentOwner = () => document.documentElement?.getAttribute('data-op-instance') || null;
+  const hasOtherOwner = () => {
+    if (!claimedOwnership) return false;
+    const owner = currentOwner();
+    return Boolean(owner && owner !== instanceId);
+  };
+  const isOwner = () => !hasOtherOwner();
+  const ownsRootAttr = () => currentOwner() === instanceId;
+  function yieldOwnership() {
+    if (yielded) return;
+    yielded = true;
+    stopped = true;
+    enabled = false;
+    observer?.disconnect(); observer = null;
+    documentObserver?.disconnect(); documentObserver = null; observedBody = null;
+    surfaceObserver?.disconnect(); surfaceObserver = null; primarySurface = null;
+    events?.abort(); events = null;
+    clearTimeout(pending); pending = null;
+    clearTimeout(streamIdle); streamIdle = null;
+    clearTimeout(fadeTimer); fadeTimer = null; fadeEntries = [];
+    if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = null;
+    if (geometryFrame) cancelAnimationFrame(geometryFrame); geometryFrame = null;
+    unsubscribe();
+    systemTheme.removeEventListener('change', mediaChanged);
+    reducedMotion.removeEventListener('change', mediaChanged);
+    window.removeEventListener('pagehide', onHide);
+    window.removeEventListener('pageshow', onShow);
+    surfaceMarks.clear();
+    codes.clear();
+    thoughts.clear();
+    rootVarOriginals.clear();
+    readingWidth = '';
+    dockScrim = dockScroller = null;
+    dock = rail = ambient = null;
+    railSignature = ''; lastEstimate = 0; lastModelLabel = ''; lastAttachments = 0; activeTurn = -1;
+  }
+  function yieldIfNotOwner() {
+    if (!hasOtherOwner()) return false;
+    yieldOwnership();
+    return true;
+  }
+  function queryAllNodes(selectorList) {
+    if (typeof document.querySelectorAll === 'function') {
+      try { return [...document.querySelectorAll(selectorList)]; } catch (_) {}
+    }
+    const out = [];
+    const roots = [document.body, document.documentElement].filter(Boolean);
+    for (const part of selectorList.split(',').map(s => s.trim()).filter(Boolean)) {
+      const simple = part.replace(/\[[^\]]+\]/g, '');
+      for (const root of roots) {
+        if (!root.querySelectorAll) continue;
+        for (const node of root.querySelectorAll(simple)) {
+          if (!out.includes(node) && (!part.includes('[data-op-owned]') || node.hasAttribute?.('data-op-owned'))) out.push(node);
+        }
+      }
+    }
+    return out;
+  }
+  function pruneOrphanRoots() {
+    const keepButtons = new Set([...codes.values()].map(entry => entry.button));
+    const keepToolbars = new Set([...thoughts.values()].map(entry => entry.toolbar));
+    for (const node of queryAllNodes('#op-bottom-dock, .op-dock[data-op-owned]')) if (node !== dock) node.remove();
+    for (const node of queryAllNodes('#op-rail-root, .op-rail[data-op-owned]')) if (node !== rail) node.remove();
+    for (const node of queryAllNodes('#op-ambient-stage, .op-ambient[data-op-owned]')) if (node !== ambient) node.remove();
+    for (const node of queryAllNodes('.op-code-fold-bar[data-op-owned]')) if (!keepButtons.has(node)) node.remove();
+    for (const node of queryAllNodes('.op-thought-toolbar[data-op-owned]')) if (!keepToolbars.has(node)) node.remove();
+  }
 
   const t = key => Schema.t(cfg, key);
   const local = (zh, en) => cfg.language === 'zh-CN' ? zh : en;
@@ -136,6 +210,7 @@
     }, 1200);
   }
   function mutationsChanged(records) {
+    if (yieldIfNotOwner() || !enabled || stopped) return;
     // A host rerender can remove our complete controls. Reattach them without
     // subscribing to ordinary text changes inside controls we still own.
     let changed = [rail,dock,ambient].some(root=>root&&!root.isConnected)
@@ -167,8 +242,8 @@
     if (changed) schedule();
   }
   function schedule() {
-    if (!enabled || stopped || pending || document.hidden) return;
-    pending = setTimeout(() => { pending = null; scan(); }, 160);
+    if (yieldIfNotOwner() || !enabled || stopped || pending || document.hidden) return;
+    pending = setTimeout(() => { pending = null; if (yieldIfNotOwner()) return; scan(); }, 160);
   }
 
   function syncCodes() {
@@ -244,6 +319,8 @@
     updateRailActive();
   }
   function syncRail() {
+    if (yieldIfNotOwner()) return;
+    pruneOrphanRoots();
     const turns = adapter.userTurns();
     if (!cfg.railOutline || !turns.length) {
       rail?.remove(); rail = null; railSignature = ''; return;
@@ -341,11 +418,46 @@
 
   const WIDTH_LABELS = {standard:'widthStandard', wide:'widthWide', full:'widthFull'};
   const CAPACITY_SOURCE_KEYS = {manual:'vialSourceManual', matched:'vialSourceAutoMatched', fallback:'vialSourceAutoFallback', unrecognized:'vialSourceUnrecognized'};
+  function syncDockPopoverPosition() {
+    if (!dock) return;
+    const popover = dock.querySelector('.op-vial-popover');
+    if (!popover || popover.hidden) return;
+    const vw = document.documentElement?.clientWidth || global.innerWidth || 0;
+    const vh = document.documentElement?.clientHeight || global.innerHeight || 0;
+    if (!(vw > 0) || !(vh > 0)) return;
+    const margin = 8;
+    dock.removeAttribute('data-op-popover-side');
+    dock.style.removeProperty('--op-vial-popover-shift-x');
+    let rect = popover.getBoundingClientRect();
+    if (!(rect.width > 0) || !(rect.height > 0)) return;
+    const overflowY = r => Math.max(0, margin - r.top) + Math.max(0, r.bottom - (vh - margin));
+    if (rect.top < margin || rect.bottom > vh - margin) {
+      const aboveOverflow = overflowY(rect);
+      dock.setAttribute('data-op-popover-side', 'below');
+      const belowRect = popover.getBoundingClientRect();
+      if (overflowY(belowRect) < aboveOverflow) {
+        rect = belowRect;
+      } else {
+        dock.removeAttribute('data-op-popover-side');
+        rect = popover.getBoundingClientRect();
+      }
+    }
+    let shiftX = 0;
+    if (rect.left < margin) shiftX = Math.ceil(margin - rect.left);
+    else if (rect.right > vw - margin) shiftX = Math.floor((vw - margin) - rect.right);
+    if (shiftX !== 0) dock.style.setProperty('--op-vial-popover-shift-x', shiftX + 'px');
+  }
   function setDockOpen(open) {
     if (!dock) return;
     const popover = dock.querySelector('.op-vial-popover');
     if (popover) popover.hidden = !open;
     dock.querySelector('.op-vial-pill')?.setAttribute('aria-expanded',String(open));
+    if (open) {
+      syncDockPopoverPosition();
+    } else {
+      dock.removeAttribute('data-op-popover-side');
+      dock.style.removeProperty('--op-vial-popover-shift-x');
+    }
   }
   function syncWidthToggle() {
     let widthBtn = dock.querySelector('.op-width-toggle');
@@ -371,7 +483,13 @@
   }
   function syncContextVial() {
     let vial = dock.querySelector('.op-vial-pill');
-    if (!cfg.contextVial) { vial?.remove(); dock.querySelector('.op-vial-popover')?.remove(); return; }
+    if (!cfg.contextVial) {
+      vial?.remove();
+      dock.querySelector('.op-vial-popover')?.remove();
+      dock.removeAttribute('data-op-popover-side');
+      dock.style.removeProperty('--op-vial-popover-shift-x');
+      return;
+    }
     if (!vial) {
       vial=make('button','op-vial-pill');
       vial.setAttribute('aria-expanded','false'); vial.setAttribute('aria-controls','op-vial-popover');
@@ -430,6 +548,8 @@
     }
   }
   function syncDock() {
+    if (yieldIfNotOwner()) return;
+    pruneOrphanRoots();
     if (!dock) { dock=own(make('aside','op-dock')); dock.id='op-bottom-dock'; document.body.append(dock); }
     if (!dock.isConnected) document.body.append(dock);
     syncWidthToggle();
@@ -616,19 +736,22 @@
   }
   function updateAmbientGeometry() {
     geometryFrame=null;
-    if (!ambient || !primarySurface?.isConnected || !enabled || document.hidden) return;
-    const rect=primarySurface.getBoundingClientRect();
-    const left=Math.max(0,Math.min(innerWidth,rect.left));
-    const top=Math.max(0,Math.min(innerHeight,rect.top));
-    const width=Math.max(0,Math.min(innerWidth,rect.right)-left);
-    const height=Math.max(0,Math.min(innerHeight,rect.bottom)-top);
-    for (const [key,value] of Object.entries({left,top,width,height})) {
-      const pixels=Math.round(value)+'px';
-      if (ambient.style[key]!==pixels) ambient.style[key]=pixels;
+    if (yieldIfNotOwner() || !enabled || stopped || document.hidden) return;
+    if (ambient && primarySurface?.isConnected) {
+      const rect=primarySurface.getBoundingClientRect();
+      const left=Math.max(0,Math.min(innerWidth,rect.left));
+      const top=Math.max(0,Math.min(innerHeight,rect.top));
+      const width=Math.max(0,Math.min(innerWidth,rect.right)-left);
+      const height=Math.max(0,Math.min(innerHeight,rect.bottom)-top);
+      for (const [key,value] of Object.entries({left,top,width,height})) {
+        const pixels=Math.round(value)+'px';
+        if (ambient.style[key]!==pixels) ambient.style[key]=pixels;
+      }
     }
+    syncDockAvoidance();
   }
   function scheduleGeometry() {
-    if (!enabled || document.hidden || !ambient || geometryFrame) return;
+    if (yieldIfNotOwner() || !enabled || stopped || document.hidden || (!ambient && !dock) || geometryFrame) return;
     geometryFrame=requestAnimationFrame(updateAmbientGeometry);
   }
   /* Root custom properties owned by the runtime (review fix S2), following the --op-ambient-alpha pattern in
@@ -697,8 +820,49 @@
     }
     if (clearance) setRootVar('--op-dock-clearance',clearance+'px'); else clearRootVar('--op-dock-clearance');
   }
-  function primaryResized() { syncReadingWidth(); scheduleGeometry(); }
+  function syncDockAvoidance() {
+    if (yieldIfNotOwner()) return;
+    if (!enabled || stopped || !dock || !dock.isConnected) {
+      clearRootVar('--op-dock-offset-x');
+      clearRootVar('--op-dock-offset-y');
+      return;
+    }
+    const vw = document.documentElement?.clientWidth || global.innerWidth || 0;
+    const vh = document.documentElement?.clientHeight || global.innerHeight || 0;
+    if (!(vw > 0) || !(vh > 0)) return;
+    const dockBox = dock.getBoundingClientRect();
+    if (!(dockBox.width > 0) || !(dockBox.height > 0)) return;
+    const narrow = vw <= 700;
+    const baseRight = narrow ? 10 : 20;
+    const baseBottom = narrow ? 10 : 18;
+    const composer = adapter.composerSurface?.() || null;
+    const composerCard = composer?.closest?.('input-area-v2') || composer;
+    const composerVisible = composerCard && (typeof Adapters.isVisible !== 'function' || Adapters.isVisible(composerCard));
+    const composerRect = composerVisible ? composerCard.getBoundingClientRect() : null;
+    const railRect = rail && rail.isConnected ? rail.getBoundingClientRect() : null;
+    const cornerObstacles = adapter.cornerFloatingObstacles?.(composer) || [];
+    const { offsetX, offsetY } = Adapters.computeDockAvoidance({
+      viewport: { width: vw, height: vh },
+      dockSize: { width: dockBox.width, height: dockBox.height },
+      baseRight,
+      baseBottom,
+      composerRect,
+      railRect,
+      cornerObstacles,
+      gap: 10
+    });
+    if (offsetX > 0) setRootVar('--op-dock-offset-x', offsetX + 'px'); else clearRootVar('--op-dock-offset-x');
+    if (offsetY > 0) setRootVar('--op-dock-offset-y', offsetY + 'px'); else clearRootVar('--op-dock-offset-y');
+    const popover = dock.querySelector('.op-vial-popover');
+    if (popover && !popover.hidden) syncDockPopoverPosition();
+  }
+  function primaryResized() {
+    if (yieldIfNotOwner() || !enabled || stopped) return;
+    syncReadingWidth(); syncDockClearance(); syncDockAvoidance(); scheduleGeometry();
+  }
   function syncAmbient() {
+    if (yieldIfNotOwner()) return;
+    pruneOrphanRoots();
     const needed=(cfg.ambientIntensity>0 && (cfg.ambientStyle!=='none' || cfg.ambientTexture!=='off')) || cfg.semanticAura;
     if (!needed || !primarySurface) {ambient?.remove();ambient=null;return;}
     if (!ambient) {
@@ -720,14 +884,16 @@
     for(const [pre,entry] of codes) cleanupCode(pre,entry);
     clearActivity();
     closeRail(); setDockOpen(false);
+    if (isOwner()) { clearRootVar('--op-dock-offset-x'); clearRootVar('--op-dock-offset-y'); }
   }
   function scan() {
-    if(!enabled || stopped || document.hidden || !document.body) return;
+    if(yieldIfNotOwner() || !enabled || stopped || document.hidden || !document.body) return;
     passes++;
     if(route!==location.href) {route=location.href;revision++;resetConversation();}
-    syncSurfaces(); syncReadingWidth(); syncDockClearance(); syncAmbient(); syncCodes(); syncRail(); syncDock(); syncThoughts();
+    syncSurfaces(); syncReadingWidth(); syncDockClearance(); syncAmbient(); syncCodes(); syncRail(); syncDock(); syncThoughts(); syncDockAvoidance();
   }
   function suspend() {
+    if (yieldIfNotOwner()) return;
     enabled=false;
     observer?.disconnect();observer=null;
     documentObserver?.disconnect();documentObserver=null;observedBody=null;
@@ -738,6 +904,8 @@
     clearSurfaceMarks();
     dockScrim=dockScroller=null;
     syncReadingWidth(); syncDockClearance();
+    clearRootVar('--op-dock-offset-x'); clearRootVar('--op-dock-offset-y');
+    if (ownsRootAttr()) document.documentElement?.removeAttribute('data-op-instance');
     document.documentElement.removeAttribute('data-op-home');
     document.documentElement.removeAttribute('data-op-visibility');
     clearActivity();
@@ -747,13 +915,23 @@
     railSignature='';lastEstimate=0;lastModelLabel='';lastAttachments=0;activeTurn=-1;
   }
   function activate() {
-    if(enabled || !document.body || stopped) return;
+    if(yieldIfNotOwner() || enabled || !document.body || stopped) return;
+    const hadPreviousOwner = Boolean(currentOwner() && currentOwner() !== instanceId);
     enabled=true;events=new AbortController();
+    claimedOwnership=true;
+    document.documentElement.setAttribute('data-op-instance',instanceId);
+    pruneOrphanRoots();
+    if (hadPreviousOwner) {
+      for (const name of ['--op-reading-width','--op-reading-shift','--op-dock-clearance','--op-dock-offset-x','--op-dock-offset-y']) {
+        document.documentElement.style.removeProperty(name);
+      }
+      if (document.documentElement.getAttribute('style')?.trim() === '') document.documentElement.removeAttribute('style');
+    }
     observer=new MutationObserver(mutationsChanged);
     function observeBody() {
       observer.disconnect();
       documentObserver.disconnect();
-      documentObserver.observe(document.documentElement,{childList:true,attributes:true,attributeFilter:['class','data-theme']});
+      documentObserver.observe(document.documentElement,{childList:true,attributes:true,attributeFilter:['class','data-theme','data-op-instance']});
       observedBody=document.body;
       if(observedBody) {
         observer.observe(observedBody,{childList:true,subtree:true,characterData:true,characterDataOldValue:true,attributes:true,attributeFilter:['hidden','open','class','aria-hidden','aria-expanded','aria-current','aria-selected','data-active','data-is-streaming']});
@@ -761,25 +939,29 @@
       }
     }
     documentObserver=new MutationObserver(records=>{
+      if(yieldIfNotOwner()) return;
       if(document.body!==observedBody) {observeBody();lastEstimate=0;railSignature='';schedule();}
-      if(records.some(record=>record.type==='attributes') && Schema.resolvePalette(cfg)==='host') {
+      if(records.some(record=>record.type==='attributes' && record.attributeName!=='data-op-instance') && Schema.resolvePalette(cfg)==='host') {
         Schema.applyConfigToRoot(cfg);schedule();
       }
     });
     observeBody();
-    listen(document,'keydown',onKey);
+    listen(document,'keydown',event=>{ if (!yieldIfNotOwner() && enabled) onKey(event); });
     listen(document,'click',event=>{
+      if(yieldIfNotOwner() || !enabled) return;
       if(rail&&!rail.contains(event.target)) closeRail();
       if(dock&&!dock.contains(event.target)) setDockOpen(false);
     });
     listen(document,'scroll',()=>{
+      if(yieldIfNotOwner()) return;
       scheduleGeometry();
       if(scrollFrame||document.hidden) return;
-      scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;activeTurn=nearestTurn();updateRailActive();});
+      scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;if(yieldIfNotOwner()) return;activeTurn=nearestTurn();updateRailActive();});
     },{capture:true,passive:true});
-    listen(window,'resize',()=>{scheduleGeometry();schedule();});
+    listen(window,'resize',()=>{if(yieldIfNotOwner()) return;scheduleGeometry();schedule();});
     listen(window,'popstate',schedule);listen(window,'hashchange',schedule);
     listen(document,'visibilitychange',()=>{
+      if(yieldIfNotOwner()) return;
       document.documentElement.setAttribute('data-op-visibility',document.hidden?'hidden':'visible');
       if(document.hidden) {clearActivity();clearTimeout(pending);pending=null;if(geometryFrame)cancelAnimationFrame(geometryFrame);geometryFrame=null;}
       else {lastEstimate=0;schedule();}
@@ -787,7 +969,7 @@
     scan();
   }
   function configure(next) {
-    if(stopped) return;
+    if(yieldIfNotOwner() || stopped) return;
     revision++;
     const previous=cfg;cfg=Schema.sanitizeConfig(next);
     if(previous.thoughtView!==cfg.thoughtView) for(const [element,entry] of thoughts){entry.view=cfg.thoughtView;applyThoughtView(element,entry);}
@@ -799,25 +981,28 @@
     railSignature='';lastEstimate=0;
     if(!enabled) activate();else scan();
   }
-  const mediaChanged=()=>{if(hasConfig)configure(cfg);};
+  mediaChanged=()=>{if(!yieldIfNotOwner()&&hasConfig)configure(cfg);};
   systemTheme.addEventListener('change',mediaChanged);
   reducedMotion.addEventListener('change',mediaChanged);
-  const onHide=()=>suspend();
-  const onShow=()=>{if(!stopped&&hasConfig)configure(cfg);};
+  onHide=()=>{if(!yieldIfNotOwner())suspend();};
+  onShow=()=>{if(!yieldIfNotOwner()&&!stopped&&hasConfig)configure(cfg);};
   window.addEventListener('pagehide',onHide);window.addEventListener('pageshow',onShow);
   let changes=0;
-  const unsubscribe=Schema.subscribe(next=>{changes++;hasConfig=true;configure(next);});
+  unsubscribe=Schema.subscribe(next=>{if(yieldIfNotOwner())return;changes++;hasConfig=true;configure(next);});
   const initialChanges=changes;
-  Schema.loadConfig().then(loaded=>{if(changes===initialChanges){hasConfig=true;configure(loaded);}}).catch(()=>{
+  Schema.loadConfig().then(loaded=>{if(yieldIfNotOwner()||stopped)return;if(changes===initialChanges){hasConfig=true;configure(loaded);}}).catch(()=>{
+    if(yieldIfNotOwner()||stopped)return;
     suspend();Schema.applyConfigToRoot({...cfg,enabled:false});
   });
   global.ObsidianPrismRuntime=Object.freeze({
     refresh:schedule,
     diagnostics:()=>({passes,enabled,observing:Boolean(observer),pending:Boolean(pending),codeBlocks:codes.size,thoughtBlocks:thoughts.size,surfaces:surfaceMarks.size}),
     stop(){
+      if(yieldIfNotOwner()) return;
       stopped=true;revision++;suspend();unsubscribe();
       systemTheme.removeEventListener('change',mediaChanged);reducedMotion.removeEventListener('change',mediaChanged);
       window.removeEventListener('pagehide',onHide);window.removeEventListener('pageshow',onShow);
+      if (ownsRootAttr()) document.documentElement?.removeAttribute('data-op-instance');
       Schema.applyConfigToRoot({...cfg,enabled:false});
     }
   });

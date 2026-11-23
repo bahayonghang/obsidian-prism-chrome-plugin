@@ -745,6 +745,189 @@
     const shift = Math.min(0, Math.max(L.leftEdge - gap, gap - L.railReserve));
     return { width: round(width), shift: round(shift) || 0 };
   }
+  function normalizeBox(rect) {
+    if (!rect) return null;
+    const left = Number(rect.left);
+    const top = Number(rect.top);
+    const width = Number.isFinite(Number(rect.width)) ? Number(rect.width) : Number(rect.right) - left;
+    const height = Number.isFinite(Number(rect.height)) ? Number(rect.height) : Number(rect.bottom) - top;
+    if (!Number.isFinite(left) || !Number.isFinite(top) || !(width > 0) || !(height > 0)) return null;
+    const right = Number.isFinite(Number(rect.right)) ? Number(rect.right) : left + width;
+    const bottom = Number.isFinite(Number(rect.bottom)) ? Number(rect.bottom) : top + height;
+    return { left, top, right, bottom, width, height };
+  }
+  function boxOverlapArea(a, b, pad = 0) {
+    if (!a || !b) return 0;
+    const ox = Math.max(0, Math.min(a.right, b.right + pad) - Math.max(a.left, b.left - pad));
+    const oy = Math.max(0, Math.min(a.bottom, b.bottom + pad) - Math.max(a.top, b.top - pad));
+    return ox * oy;
+  }
+  function findCornerFloatingObstacles(root, composer) {
+    const scope = root || document;
+    const doc = scope?.ownerDocument || scope;
+    const view = doc?.defaultView || global;
+    const vw = view?.innerWidth || doc?.documentElement?.clientWidth || 0;
+    const vh = view?.innerHeight || doc?.documentElement?.clientHeight || 0;
+    if (!scope?.querySelectorAll || !view?.getComputedStyle || !(vw > 0) || !(vh > 0)) return [];
+    const composerCard = composer?.closest?.('input-area-v2') || composer;
+    const excludeZone = 'dialog,[role="dialog"],[aria-modal="true"],nav,[role="navigation"],[data-op-owned],[data-op-composer-backdrop="true"]';
+    const mainSelector = 'main,[role="main"],chat-window';
+    const raw = [...scope.querySelectorAll('button,[role="button"],a[href]')].filter(node => {
+      if (!isVisible(node)) return false;
+      if (node.closest?.(excludeZone) || node.closest?.(MESSAGE_AREAS)) return false;
+      if (composer && (composer.contains?.(node) || node.contains?.(composer))) return false;
+      if (composerCard && composerCard !== composer && (composerCard.contains?.(node) || node.contains?.(composerCard))) return false;
+      if (node.matches?.(mainSelector) || node.querySelector?.(mainSelector)) return false;
+      return true;
+    });
+    const candidates = raw.length > 240 ? [...raw.slice(0, 120), ...raw.slice(-120)] : raw;
+    const found = [];
+    for (const node of candidates) {
+      for (let cur = node, depth = 0; cur && depth <= 2; cur = cur.parentElement, depth++) {
+        if (cur.matches?.(`body,html,${mainSelector}`) || cur.matches?.(excludeZone)) break;
+        if (cur === composer || cur === composerCard) break;
+        if ((composer && cur.contains?.(composer)) || (composerCard && cur.contains?.(composerCard)) || cur.querySelector?.(mainSelector)) break;
+        const pos = view.getComputedStyle(cur).position;
+        if (!['fixed', 'absolute', 'sticky'].includes(pos)) continue;
+        const rect = normalizeBox(cur.getBoundingClientRect?.());
+        if (!rect || rect.width > 260 || rect.height > 160) continue;
+        if (rect.right >= vw - 360 && rect.bottom >= vh - 260 && rect.left >= vw * 0.45 && rect.top >= vh * 0.45) {
+          found.push({ node: cur, rect });
+          break;
+        }
+      }
+    }
+    const deduped = [];
+    for (const item of found) {
+      const idx = deduped.findIndex(other =>
+        other.node === item.node ||
+        other.node.contains?.(item.node) ||
+        item.node.contains?.(other.node) ||
+        boxOverlapArea(other.rect, item.rect, 0) > 0
+      );
+      if (idx < 0) {
+        deduped.push(item);
+      } else {
+        const existing = deduped[idx];
+        if (item.node.contains?.(existing.node) && item.node !== existing.node) {
+          deduped[idx] = item;
+        } else if (!existing.node.contains?.(item.node)) {
+          const left = Math.min(existing.rect.left, item.rect.left);
+          const top = Math.min(existing.rect.top, item.rect.top);
+          const right = Math.max(existing.rect.right, item.rect.right);
+          const bottom = Math.max(existing.rect.bottom, item.rect.bottom);
+          deduped[idx] = { node: existing.node, rect: { left, top, right, bottom, width: right - left, height: bottom - top } };
+        }
+      }
+    }
+    return deduped.map(item => item.rect);
+  }
+  function computeDockAvoidance({ viewport, dockSize, baseRight, baseBottom, composerRect, railRect, cornerObstacles = [], gap = 10 } = {}) {
+    const vw = Number(viewport?.width) || 0;
+    const vh = Number(viewport?.height) || 0;
+    const dockW = Number(dockSize?.width) || 0;
+    const dockH = Number(dockSize?.height) || 0;
+    if (!(vw > 0) || !(vh > 0) || !(dockW > 0) || !(dockH > 0)) return { offsetX: 0, offsetY: 0 };
+    const margin = 8;
+    const bRight = Number.isFinite(Number(baseRight)) ? Number(baseRight) : (vw <= 700 ? 10 : 20);
+    const bBottom = Number.isFinite(Number(baseBottom)) ? Number(baseBottom) : (vw <= 700 ? 10 : 18);
+    const pad = Math.max(0, Number.isFinite(Number(gap)) ? Number(gap) : 10);
+    const baseBox = { left: vw - bRight - dockW, top: vh - bBottom - dockH, right: vw - bRight, bottom: vh - bBottom, width: dockW, height: dockH };
+    const boxFor = (x, y) => ({ left: baseBox.left - x, top: baseBox.top - y, right: baseBox.right - x, bottom: baseBox.bottom - y, width: dockW, height: dockH });
+    const comp = normalizeBox(composerRect);
+    const rail = normalizeBox(railRect);
+    const corners = (Array.isArray(cornerObstacles) ? cornerObstacles : []).map(normalizeBox).filter(Boolean);
+    const shiftLeftOf = (obs, g = pad) => obs ? Math.max(0, Math.ceil(baseBox.right - (obs.left - g))) : 0;
+    const shiftAboveOf = (obs, g = pad) => obs ? Math.max(0, Math.ceil(baseBox.bottom - (obs.top - g))) : 0;
+    let neededCornerLeftX = 0;
+    for (let i = 0; i < corners.length; i++) {
+      for (const c of corners) if (boxOverlapArea(boxFor(neededCornerLeftX, 0), c, pad) > 0) neededCornerLeftX = Math.max(neededCornerLeftX, shiftLeftOf(c));
+    }
+    let neededCornerUpY = 0;
+    for (let i = 0; i < corners.length; i++) {
+      for (const c of corners) if (boxOverlapArea(boxFor(0, neededCornerUpY), c, pad) > 0) neededCornerUpY = Math.max(neededCornerUpY, shiftAboveOf(c));
+    }
+    const aboveComposerY = shiftAboveOf(comp);
+    let maxAboveY = Math.max(aboveComposerY, neededCornerUpY);
+    for (let i = 0; i < corners.length; i++) {
+      for (const c of corners) if (boxOverlapArea(boxFor(0, maxAboveY), c, pad) > 0) maxAboveY = Math.max(maxAboveY, shiftAboveOf(c));
+    }
+    const railClearX = shiftLeftOf(rail);
+    const aboveRailY = shiftAboveOf(rail);
+    const composerLeftX = shiftLeftOf(comp);
+    const bothClearX = Math.max(railClearX, neededCornerLeftX);
+    const aboveAllY = Math.max(maxAboveY, aboveRailY);
+    const rawCandidates = [
+      [0, 0],
+      [neededCornerLeftX, 0],
+      [0, neededCornerUpY],
+      [0, aboveComposerY],
+      [railClearX, aboveComposerY],
+      [0, maxAboveY],
+      [railClearX, maxAboveY],
+      [railClearX, 0],
+      [railClearX, neededCornerUpY],
+      [bothClearX, 0],
+      [bothClearX, aboveComposerY],
+      [bothClearX, maxAboveY],
+      [neededCornerLeftX, aboveComposerY],
+      [0, Math.max(aboveComposerY, aboveRailY)],
+      [0, aboveAllY],
+      [composerLeftX, 0],
+      [composerLeftX, neededCornerUpY]
+    ];
+    const inside = box => box.left >= margin - 0.5 && box.right <= vw - margin + 0.5 && box.top >= margin - 0.5 && box.bottom <= vh - margin + 0.5;
+    const isClear = box => inside(box) && boxOverlapArea(box, comp, pad) === 0 && boxOverlapArea(box, rail, pad) === 0 && corners.every(c => boxOverlapArea(box, c, pad) === 0);
+    const seen = new Set();
+    for (const [rx, ry] of rawCandidates) {
+      const x = Math.max(0, Math.round(rx));
+      const y = Math.max(0, Math.round(ry));
+      const key = `${x},${y}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      if (isClear(boxFor(x, y))) return { offsetX: x, offsetY: y };
+    }
+    const minX = Math.max(0, Math.ceil(baseBox.right - (vw - margin)));
+    const maxX = Math.max(0, Math.floor(baseBox.left - margin));
+    const minY = Math.max(0, Math.ceil(baseBox.bottom - (vh - margin)));
+    const maxY = Math.max(0, Math.floor(baseBox.top - margin));
+    const clampX = x => Math.max(0, Math.min(maxX, Math.max(minX, Math.round(x))));
+    const clampY = y => Math.max(0, Math.min(maxY, Math.max(minY, Math.round(y))));
+    const cornerLeftTight = corners.reduce((m, c) => Math.max(m, shiftLeftOf(c, 0)), 0);
+    const cornerUpTight = corners.reduce((m, c) => Math.max(m, shiftAboveOf(c, 0)), 0);
+    const fallbackPool = [
+      ...rawCandidates,
+      [shiftLeftOf(rail, 0), shiftAboveOf(comp, 0)],
+      [0, shiftAboveOf(comp, 0)],
+      [cornerLeftTight, 0],
+      [0, cornerUpTight],
+      [railClearX, maxY],
+      [0, maxY],
+      [maxX, 0],
+      [maxX, maxY]
+    ];
+    const weightedOverlap = (box, p) =>
+      10 * boxOverlapArea(box, comp, p) +
+      10 * corners.reduce((sum, c) => sum + boxOverlapArea(box, c, p), 0) +
+      4 * boxOverlapArea(box, rail, p);
+    let best = { offsetX: clampX(0), offsetY: clampY(0) };
+    let bestScore = [Infinity, Infinity, Infinity];
+    const evalSeen = new Set();
+    for (const [rx, ry] of fallbackPool) {
+      const x = clampX(rx);
+      const y = clampY(ry);
+      const key = `${x},${y}`;
+      if (evalSeen.has(key)) continue;
+      evalSeen.add(key);
+      const box = boxFor(x, y);
+      const score = [weightedOverlap(box, 0), weightedOverlap(box, pad), x + y];
+      if (score[0] < bestScore[0] || (score[0] === bestScore[0] && (score[1] < bestScore[1] || (score[1] === bestScore[1] && score[2] < bestScore[2])))) {
+        bestScore = score;
+        best = { offsetX: x, offsetY: y };
+      }
+    }
+    return best;
+  }
   function forHost(host, root = document) {
     const spec = HOSTS[host];
     if (!spec) return null;
@@ -793,6 +976,7 @@
       composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, findPrimary(spec, root), composer === undefined ? findComposer(spec, root) : composer),
       sidebarSurfaces: () => findSidebars(spec, root),
       sidebarActiveRows: (sidebars) => findSidebarActiveRows(sidebars === undefined ? findSidebars(spec, root) : sidebars),
+      cornerFloatingObstacles: (composer) => findCornerFloatingObstacles(root, composer === undefined ? findComposer(spec, root) : composer),
       codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))],
       thoughtBlocks: () => collect(spec.thoughts),
       isAssistantNode(node) {
@@ -804,6 +988,6 @@
     });
   }
   global.ObsidianPrismAdapters = Object.freeze({
-    forHost, contentWidthTarget, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, isComposerDockOverlaid, scrollContainer
+    forHost, contentWidthTarget, computeDockAvoidance, topLevelMatches, estimateTokens, estimateTurnTokens, cleanTurnText, resolveReferenceCapacity, textOf, visibleText, isOwned, isVisible, isComposerDockOverlaid, scrollContainer
   });
 })(globalThis);
