@@ -910,3 +910,193 @@ test('composerBelowSiblings separates empty spacers from visible disclaimers bel
   assert.deepEqual([...res.empty], [emptySpacer, nestedEmpty]);
   assert.deepEqual([...res.disclaimers], [disclaimer, dockLevelDisclaimer]);
 });
+
+test('v0.4.0 #27: computeDockAvoidance computes idempotent zero-overlap shifts across corner floats, composer, tall rail, and tiny viewports', () => {
+  const A = adapters();
+  const plain = value => JSON.parse(JSON.stringify(value));
+  const avoid = args => plain(A.computeDockAvoidance(args));
+  const dockSize = { width: 220, height: 38 };
+  const viewport = { width: 1707, height: 900 };
+
+  // 1. Default clear: zero offset.
+  const clear = avoid({
+    viewport,
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 400, right: 1300, top: 730, bottom: 870, width: 900, height: 140 },
+    railRect: { left: 1659, right: 1695, top: 288, bottom: 420, width: 36, height: 132 },
+    cornerObstacles: []
+  });
+  assert.deepEqual(clear, { offsetX: 0, offsetY: 0 });
+
+  // 2. Corner floating button at right:16 bottom:16 (32x32) shifts dock left when space permits.
+  const cornerBtn = { left: 1659, right: 1691, top: 852, bottom: 884, width: 32, height: 32 };
+  const cornerLeft = avoid({
+    viewport,
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 500, right: 1300, top: 730, bottom: 870, width: 800, height: 140 },
+    railRect: null,
+    cornerObstacles: [cornerBtn]
+  });
+  // baseBox.right = 1687; cornerBtn.left - 10 = 1649 -> offsetX = 38, offsetY = 0
+  assert.deepEqual(cornerLeft, { offsetX: 38, offsetY: 0 });
+
+  // 3. If left-shift collides with composer, dock moves above composer/corner safely.
+  const blockedLeft = avoid({
+    viewport,
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 1200, right: 1460, top: 840, bottom: 890, width: 260, height: 50 },
+    railRect: null,
+    cornerObstacles: [cornerBtn]
+  });
+  assert.equal(blockedLeft.offsetX, 0);
+  assert.ok(882 - blockedLeft.offsetY <= 840 - 10, 'dock sits at least 10px above composer');
+
+  // When only corner blocks left-shift (wide corner bar) while above-corner is clear of composer:
+  const cornerUp = avoid({
+    viewport,
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 400, right: 1300, top: 730, bottom: 870, width: 900, height: 140 },
+    railRect: null,
+    cornerObstacles: [{ left: 1450, right: 1691, top: 852, bottom: 884, width: 241, height: 32 }]
+  });
+  assert.deepEqual(cornerUp, { offsetX: 0, offsetY: 40 });
+
+  // 4. Wide/full composer collision at bottom-right moves dock cleanly above composerRect.
+  const aboveComposer = avoid({
+    viewport,
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 280, right: 1651, top: 740, bottom: 874, width: 1371, height: 134 },
+    railRect: { left: 1659, right: 1695, top: 288, bottom: 420, width: 36, height: 132 },
+    cornerObstacles: [cornerBtn]
+  });
+  assert.equal(aboveComposer.offsetX, 0);
+  // baseBox.bottom = 882; composer.top - 10 = 730 -> offsetY = 152
+  assert.equal(aboveComposer.offsetY, 152);
+
+  // 5. Composer + tall rail simultaneous avoidance: shifts up above composer AND left of rail.
+  const tallRail = { left: 1659, right: 1695, top: 288, bottom: 720, width: 36, height: 432 };
+  const clearBoth = avoid({
+    viewport,
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 280, right: 1651, top: 730, bottom: 874, width: 1371, height: 144 },
+    railRect: tallRail,
+    cornerObstacles: [cornerBtn]
+  });
+  // baseBox.right = 1687; rail.left - 10 = 1649 -> offsetX = 38; baseBox.bottom = 882; composer.top - 10 = 720 -> offsetY = 162
+  assert.deepEqual(clearBoth, { offsetX: 38, offsetY: 162 });
+
+  // 6. Narrow 820px viewport clamping: dock stays inside [8..812, 8..892] and clears composer + tall rail.
+  const narrow = avoid({
+    viewport: { width: 820, height: 900 },
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 280, right: 800, top: 725, bottom: 874, width: 520, height: 149 },
+    railRect: { left: 772, right: 808, top: 288, bottom: 720, width: 36, height: 432 },
+    cornerObstacles: [{ left: 772, right: 804, top: 852, bottom: 884, width: 32, height: 32 }]
+  });
+  const narrowBox = {
+    left: 820 - 20 - dockSize.width - narrow.offsetX,
+    right: 820 - 20 - narrow.offsetX,
+    top: 900 - 18 - dockSize.height - narrow.offsetY,
+    bottom: 900 - 18 - narrow.offsetY
+  };
+  assert.ok(narrowBox.left >= 8 && narrowBox.right <= 812 && narrowBox.top >= 8 && narrowBox.bottom <= 892, 'stays within 8px viewport margin');
+  assert.ok(narrowBox.bottom <= 725 - 10, 'clears composer top by 10px');
+  assert.ok(narrowBox.right <= 772 - 10, 'clears rail left by 10px');
+
+  // 7. Tiny viewport fallback minimizes weighted overlap area (composer & corner 10x, rail 4x) within [0..maxX, 0..maxY].
+  const tiny = avoid({
+    viewport: { width: 320, height: 220 },
+    dockSize: { width: 220, height: 38 },
+    baseRight: 10,
+    baseBottom: 10,
+    composerRect: { left: 20, right: 300, top: 90, bottom: 205, width: 280, height: 115 },
+    railRect: { left: 278, right: 314, top: 60, bottom: 160, width: 36, height: 100 },
+    cornerObstacles: [{ left: 272, right: 304, top: 172, bottom: 204, width: 32, height: 32 }]
+  });
+  const tinyBox = {
+    left: 320 - 10 - 220 - tiny.offsetX,
+    right: 320 - 10 - tiny.offsetX,
+    top: 220 - 10 - 38 - tiny.offsetY,
+    bottom: 220 - 10 - tiny.offsetY
+  };
+  assert.ok(tinyBox.left >= 8 && tinyBox.top >= 8 && tinyBox.bottom <= 90, 'tiny fallback picks unobstructed region above composer');
+  assert.ok(tinyBox.right <= 278, 'tiny fallback clears rail rather than overlapping composer');
+
+  // 8. Idempotency: repeated evaluations with fixed inputs always yield identical offsets.
+  const first = avoid({
+    viewport: { width: 1280, height: 900 },
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 320, right: 1150, top: 735, bottom: 874, width: 830, height: 139 },
+    railRect: { left: 1232, right: 1268, top: 288, bottom: 710, width: 36, height: 422 },
+    cornerObstacles: [{ left: 1232, right: 1264, top: 852, bottom: 884, width: 32, height: 32 }]
+  });
+  const second = avoid({
+    viewport: { width: 1280, height: 900 },
+    dockSize,
+    baseRight: 20,
+    baseBottom: 18,
+    composerRect: { left: 320, right: 1150, top: 735, bottom: 874, width: 830, height: 139 },
+    railRect: { left: 1232, right: 1268, top: 288, bottom: 710, width: 36, height: 422 },
+    cornerObstacles: [{ left: 1232, right: 1264, top: 852, bottom: 884, width: 32, height: 32 }]
+  });
+  assert.deepEqual(second, first);
+});
+
+test('v0.4.0 #27: cornerFloatingObstacles finds small corner buttons/wrappers and excludes main, composer, dialogs, nav, and owned nodes', () => {
+  const A = adapters();
+  const plain = value => JSON.parse(JSON.stringify(value));
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main', {}, { rect: { left: 260, right: 1280, top: 0, bottom: 900, width: 1020, height: 900 } });
+  const backdrop = el('div', { 'data-op-composer-backdrop': 'true' }, { rect: { left: 260, right: 1280, top: 720, bottom: 900, width: 1020, height: 180 } });
+  const composer = el('div', { 'data-composer-layout': 'single-line' }, { rect: { left: 320, right: 1220, top: 740, bottom: 860, width: 900, height: 120 } });
+  const sendBtn = el('button', { type: 'button', 'aria-label': 'Send' }, { rect: { left: 1170, right: 1206, top: 810, bottom: 846, width: 36, height: 36 }, style: { display: 'inline-flex', visibility: 'visible', opacity: '1', position: 'fixed' } });
+  const backdropBtn = el('button', { type: 'button', 'aria-label': 'Scroll down' }, { rect: { left: 1180, right: 1212, top: 850, bottom: 882, width: 32, height: 32 }, style: { display: 'inline-flex', visibility: 'visible', opacity: '1', position: 'fixed' } });
+  composer.append(sendBtn);
+  backdrop.append(composer, backdropBtn);
+  main.append(backdrop);
+
+  const nav = el('nav', {}, { rect: { left: 0, right: 260, top: 0, bottom: 900, width: 260, height: 900 } });
+  const navFixed = el('a', { href: '#help' }, { rect: { left: 1100, right: 1140, top: 850, bottom: 882, width: 40, height: 32 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'fixed' } });
+  nav.append(navFixed);
+
+  const dialog = el('div', { role: 'dialog' }, { rect: { left: 950, right: 1260, top: 700, bottom: 880, width: 310, height: 180 } });
+  const dialogBtn = el('button', { type: 'button' }, { rect: { left: 1200, right: 1240, top: 840, bottom: 872, width: 40, height: 32 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'fixed' } });
+  dialog.append(dialogBtn);
+
+  const owned = el('aside', { id: 'op-bottom-dock', 'data-op-owned': '' }, { rect: { left: 1000, right: 1260, top: 844, bottom: 882, width: 260, height: 38 }, style: { display: 'flex', visibility: 'visible', opacity: '1', position: 'fixed' } });
+  owned.append(el('button', { type: 'button' }, { rect: { left: 1150, right: 1260, top: 844, bottom: 882, width: 110, height: 38 }, style: { display: 'flex', visibility: 'visible', opacity: '1', position: 'fixed' } }));
+
+  // Valid fixed corner help button + a nested button inside an absolute wrapper (deduped) + an oversized container containing main.
+  const helpBtn = el('button', { type: 'button', class: 'host-corner-help' }, { rect: { left: 1232, right: 1264, top: 852, bottom: 884, width: 32, height: 32 }, style: { display: 'inline-flex', visibility: 'visible', opacity: '1', position: 'fixed' } });
+  const feedbackWrap = el('div', { class: 'corner-wrap' }, { rect: { left: 1180, right: 1220, top: 852, bottom: 884, width: 40, height: 32 }, style: { display: 'flex', visibility: 'visible', opacity: '1', position: 'absolute' } });
+  feedbackWrap.append(
+    el('button', { type: 'button' }, { rect: { left: 1182, right: 1200, top: 854, bottom: 882, width: 18, height: 28 }, style: { display: 'inline-flex', visibility: 'visible', opacity: '1', position: 'static' } }),
+    el('a', { href: '#info' }, { rect: { left: 1202, right: 1218, top: 854, bottom: 882, width: 16, height: 28 }, style: { display: 'inline-flex', visibility: 'visible', opacity: '1', position: 'static' } })
+  );
+  // Outside bottom-right zone (top-left) should be ignored.
+  const topLeftBtn = el('button', { type: 'button' }, { rect: { left: 20, right: 52, top: 20, bottom: 52, width: 32, height: 32 }, style: { display: 'inline-flex', visibility: 'visible', opacity: '1', position: 'fixed' } });
+
+  body.append(nav, main, dialog, owned, helpBtn, feedbackWrap, topLeftBtn);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const found = plain(adapter.cornerFloatingObstacles(composer));
+  assert.equal(found.length, 2, 'detects the fixed help button and deduplicated absolute feedback wrapper');
+  assert.deepEqual(found[0], { left: 1232, right: 1264, top: 852, bottom: 884, width: 32, height: 32 });
+  assert.deepEqual(found[1], { left: 1180, right: 1220, top: 852, bottom: 884, width: 40, height: 32 });
+});

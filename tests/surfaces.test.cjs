@@ -777,3 +777,223 @@ test('runtime distinguishes in-flow composer dock from overlaid composer scrim, 
   assert.equal(overlaidScroller.getAttribute('data-op-thread-scroller'), null);
   assert.equal(oe.docEl.style.getPropertyValue('--op-dock-clearance'), '');
 });
+
+test('v0.4.0 #27: runtime prunes orphan roots, hands over singleton ownership without clobbering new owner, and removes data-op-instance on stop', async () => {
+  const ctx = createRuntimeDom({ contentWidth: 'full' });
+  const docEl = ctx.elements.get('docEl');
+  const body = ctx.elements.get('body');
+  const primary = ctx.elements.get('primary');
+  reflectInlineStyle(docEl);
+
+  // Track MutationObservers on docEl and window listeners for real handover verification.
+  const moInstances = [];
+  const docElObservers = new Set();
+  const winListeners = new Map();
+  ctx.h.context.addEventListener = (type, fn) => {
+    if (!winListeners.has(type)) winListeners.set(type, new Set());
+    winListeners.get(type).add(fn);
+  };
+  ctx.h.context.removeEventListener = (type, fn) => { winListeners.get(type)?.delete(fn); };
+  ctx.h.context.MutationObserver = class {
+    constructor(cb) {
+      this.cb = cb;
+      this.targets = [];
+      this.disconnected = false;
+      moInstances.push(this);
+    }
+    observe(target, opts) {
+      this.disconnected = false;
+      this.targets.push({ target, opts });
+      if (target === docEl) docElObservers.add(this);
+    }
+    disconnect() {
+      this.disconnected = true;
+      docElObservers.delete(this);
+    }
+  };
+  const origSetAttr = docEl.setAttribute.bind(docEl);
+  docEl.setAttribute = (k, v) => {
+    const prev = docEl.getAttribute(k);
+    origSetAttr(k, v);
+    if (prev !== String(v)) {
+      for (const mo of [...docElObservers]) {
+        mo.cb([{ type: 'attributes', target: docEl, attributeName: k }]);
+      }
+    }
+  };
+
+  // Pre-seed orphan nodes before a new runtime boots (reset state by loading a fresh runtime below).
+  ctx.runtime.stop();
+  delete ctx.h.context.ObsidianPrismRuntime;
+
+  const makeOrphan = (tag, id, cls) => {
+    const n = ctx.h.context.document.createElement(tag);
+    n.id = id;
+    n.className = cls;
+    n.setAttribute('data-op-owned', '');
+    return n;
+  };
+  const orphanDock1 = makeOrphan('aside', 'op-bottom-dock', 'op-dock');
+  const orphanDock2 = makeOrphan('aside', 'op-stale-dock', 'op-dock');
+  const orphanRail = makeOrphan('aside', 'op-rail-root', 'op-rail');
+  const orphanAmbient = makeOrphan('div', 'op-ambient-stage', 'op-ambient');
+  body.append(orphanDock1, orphanDock2, orphanRail);
+  primary.append(orphanAmbient);
+
+  // Add document.querySelectorAll so pruneOrphanRoots exercises full selector query path too.
+  ctx.h.context.document.querySelectorAll = sel => {
+    const out = [];
+    for (const part of sel.split(',').map(s => s.trim()).filter(Boolean)) {
+      const simple = part.replace(/\[[^\]]+\]/g, '');
+      for (const root of [body, primary]) {
+        for (const node of root.querySelectorAll(simple)) {
+          if (!out.includes(node) && (!part.includes('[data-op-owned]') || node.hasAttribute('data-op-owned'))) out.push(node);
+        }
+      }
+    }
+    return out;
+  };
+
+  ctx.h.load('src/content.js');
+  await new Promise(resolve => setTimeout(resolve, 25));
+
+  const runtime1 = ctx.h.context.ObsidianPrismRuntime;
+  const runtime1PageHide = [...(winListeners.get('pagehide') || [])];
+  assert.equal(runtime1PageHide.length, 1, 'runtime1 registered one pagehide listener');
+  const instance1 = docEl.getAttribute('data-op-instance');
+  assert.ok(instance1 && instance1.startsWith('op-'), `activation sets unique data-op-instance, got "${instance1}"`);
+  assert.equal(orphanDock1.isConnected, false, 'pre-seeded orphan #op-bottom-dock is pruned');
+  assert.equal(orphanDock2.isConnected, false, 'pre-seeded orphan .op-dock[data-op-owned] is pruned');
+  assert.equal(orphanRail.isConnected, false, 'pre-seeded orphan #op-rail-root is pruned');
+  assert.equal(orphanAmbient.isConnected, false, 'pre-seeded orphan #op-ambient-stage is pruned');
+  assert.equal(body.querySelectorAll('#op-bottom-dock').length, 1);
+  assert.equal(body.querySelectorAll('#op-rail-root').length, 1);
+  assert.equal(primary.querySelectorAll('#op-ambient-stage').length, 1);
+
+  const dock1 = body.querySelector('#op-bottom-dock');
+  const rail1 = body.querySelector('#op-rail-root');
+  const ambient1 = primary.querySelector('#op-ambient-stage');
+
+  // Inject second runtime instance (simulating extension reload / re-injection).
+  delete ctx.h.context.ObsidianPrismRuntime;
+  ctx.h.load('src/content.js');
+  await new Promise(resolve => setTimeout(resolve, 25));
+
+  const runtime2 = ctx.h.context.ObsidianPrismRuntime;
+  const instance2 = docEl.getAttribute('data-op-instance');
+  assert.ok(instance2 && instance2 !== instance1, 'second runtime claims a distinct data-op-instance');
+  assert.equal(dock1.isConnected, false, 'old dock1 is pruned');
+  assert.equal(rail1.isConnected, false, 'old rail1 is pruned');
+  assert.equal(ambient1.isConnected, false, 'old ambient1 is pruned');
+  assert.equal(body.querySelectorAll('#op-bottom-dock').length, 1, 'strictly 1 dock remains');
+  assert.equal(body.querySelectorAll('#op-rail-root').length, 1, 'strictly 1 rail remains');
+  assert.equal(primary.querySelectorAll('#op-ambient-stage').length, 1, 'strictly 1 ambient remains');
+
+  // Old runtime yielded cleanly without removing new owner's DOM, root attrs, or CSS vars.
+  assert.equal(runtime1.diagnostics().enabled, false);
+  assert.equal(runtime1.diagnostics().observing, false);
+  assert.equal(runtime1.diagnostics().pending, false);
+  assert.equal(winListeners.get('pagehide')?.size, 1, 'yielded runtime1 removed its window pagehide listener');
+  assert.equal(winListeners.get('pagehide')?.has(runtime1PageHide[0]), false, 'only runtime2 pagehide listener stays active');
+  assert.equal(runtime2.diagnostics().enabled, true);
+  assert.equal(runtime2.diagnostics().observing, true);
+  assert.equal(docEl.getAttribute('data-op-enabled'), 'true');
+  assert.equal(docEl.style.getPropertyValue('--op-reading-width'), '1124px');
+
+  // Zero observer ping-pong after handover.
+  const passesBefore = runtime2.diagnostics().passes;
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(runtime2.diagnostics().passes, passesBefore, 'no observer loop after ownership handover');
+
+  // Calling stop() or invoking old runtime1's pagehide handler must NEVER disturb the new owner!
+  runtime1.stop();
+  runtime1PageHide[0]();
+  assert.equal(docEl.getAttribute('data-op-instance'), instance2);
+  assert.equal(body.querySelectorAll('#op-bottom-dock').length, 1);
+  assert.equal(docEl.getAttribute('data-op-enabled'), 'true');
+  assert.equal(docEl.style.getPropertyValue('--op-reading-width'), '1124px');
+
+  // Stopping the active owner removes data-op-instance and root variables without style="" residue.
+  runtime2.stop();
+  assert.equal(docEl.getAttribute('data-op-instance'), null);
+  assert.equal(docEl.style.getPropertyValue('--op-dock-offset-x'), '');
+  assert.equal(docEl.style.getPropertyValue('--op-dock-offset-y'), '');
+  assert.equal(docEl.getAttribute('style'), null);
+});
+
+test('v0.4.0 #27: runtime wires syncDockAvoidance and syncDockPopoverPosition without timers and clears offsets cleanly', async () => {
+  const ctx = createRuntimeDom({ contentWidth: 'full' });
+  const docEl = ctx.elements.get('docEl');
+  const body = ctx.elements.get('body');
+  const composer = ctx.elements.get('composer');
+  reflectInlineStyle(docEl);
+
+  const realAdapters = ctx.h.context.ObsidianPrismAdapters;
+  let fakeCorners = [{ left: 1232, right: 1264, top: 852, bottom: 884, width: 32, height: 32 }];
+  const fakeComposerRect = { left: 280, right: 1200, top: 730, bottom: 874, width: 920, height: 144 };
+  const fakeRailRect = { left: 1232, right: 1268, top: 288, bottom: 720, width: 36, height: 432 };
+
+  // Customize createElement so newly created dock/rail/popover report realistic sizes.
+  const origCreate = ctx.h.context.document.createElement;
+  ctx.h.context.document.createElement = tag => {
+    const el = origCreate(tag);
+    el.getBoundingClientRect = () => {
+      if (el.id === 'op-bottom-dock') return { left: 1040, top: 844, right: 1260, bottom: 882, width: 220, height: 38 };
+      if (el.id === 'op-rail-root') return fakeRailRect;
+      if (el.className === 'op-vial-popover') {
+        const dock = body.querySelector('#op-bottom-dock');
+        const below = dock?.getAttribute('data-op-popover-side') === 'below';
+        const shifted = Boolean(dock?.style?.getPropertyValue('--op-vial-popover-shift-x'));
+        if (!below) return { left: shifted ? 8 : -12, right: shifted ? 298 : 278, top: -40, bottom: 200, width: 290, height: 240 };
+        return { left: shifted ? 8 : -12, right: shifted ? 298 : 278, top: 60, bottom: 300, width: 290, height: 240 };
+      }
+      return { left: 0, top: 0, right: 100, bottom: 38, width: 100, height: 38 };
+    };
+    return el;
+  };
+  composer.getBoundingClientRect = () => fakeComposerRect;
+
+  // Replace runtime with a fresh one using our cornerFloatingObstacles hook.
+  ctx.runtime.stop();
+  delete ctx.h.context.ObsidianPrismRuntime;
+  const baseAdapter = realAdapters.forHost('chatgpt');
+  ctx.h.context.ObsidianPrismAdapters = {
+    ...realAdapters,
+    forHost: () => ({
+      ...baseAdapter,
+      cornerFloatingObstacles: () => fakeCorners
+    })
+  };
+  ctx.h.load('src/content.js');
+  await new Promise(resolve => setTimeout(resolve, 25));
+
+  // Should lift above composer (882 - (730 - 10) = 162) AND shift left of tall rail (1260 - (1232 - 10) = 38).
+  assert.equal(docEl.style.getPropertyValue('--op-dock-offset-x'), '38px');
+  assert.equal(docEl.style.getPropertyValue('--op-dock-offset-y'), '162px');
+
+  // Open Context Vial popover: clips at top (-40) and left (-12), so flips below and shifts right (+20px).
+  const dock = body.querySelector('#op-bottom-dock');
+  const pill = dock.querySelector('.op-vial-pill');
+  const popover = dock.querySelector('.op-vial-popover');
+  pill.dispatchEvent({ type: 'click', isTrusted: true });
+  assert.equal(popover.hidden, false);
+  assert.equal(dock.getAttribute('data-op-popover-side'), 'below');
+  assert.equal(dock.style.getPropertyValue('--op-vial-popover-shift-x'), '20px');
+
+  // Closing popover clears placement attribute and shift var.
+  pill.dispatchEvent({ type: 'click', isTrusted: true });
+  assert.equal(popover.hidden, true);
+  assert.equal(dock.getAttribute('data-op-popover-side'), null);
+  assert.equal(dock.style.getPropertyValue('--op-vial-popover-shift-x'), '');
+
+  // Clearing obstacles removes root offset vars cleanly.
+  fakeCorners = [];
+  composer.getBoundingClientRect = () => ({ left: 200, right: 900, top: 730, bottom: 874, width: 700, height: 144 });
+  ctx.h.context.ObsidianPrismRuntime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 180));
+  assert.equal(docEl.style.getPropertyValue('--op-dock-offset-x'), '');
+  assert.equal(docEl.style.getPropertyValue('--op-dock-offset-y'), '');
+
+  ctx.h.context.ObsidianPrismRuntime.stop();
+  assert.equal(docEl.getAttribute('style'), null);
+});

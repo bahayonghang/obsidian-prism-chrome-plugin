@@ -19,6 +19,8 @@ import { checkHeadingTypography } from './heading-typography.mjs';
 import { checkLiveWidthPresets } from './live-width.mjs';
 // v0.3.1 #22 blur Composer Scrim
 import { checkLiveComposerScrim } from './live-scrim.mjs';
+// v0.4.0 #27 Bottom Dock singleton handover & dynamic collision avoidance
+import { checkBottomDock } from './bottom-dock.mjs';
 import { paragraphWidth } from './measure.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -1186,6 +1188,9 @@ async function exerciseFixture(browser, host) {
     await page.evaluate(() => __prismFixture.patch({ enabled: false }));
     await page.waitForFunction(() => !document.documentElement.hasAttribute('data-op-enabled'));
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-content-width')), false);
+    assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-instance')), false);
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-x')), '');
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-y')), '');
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), originalBackground);
@@ -1252,6 +1257,9 @@ async function exerciseFixture(browser, host) {
     assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-composer-dock="true"],[data-op-composer-scrim="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"],[data-op-composer-grid="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-enabled')), false);
+    assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-instance')), false);
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-x')), '');
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-y')), '');
     await page.evaluate(() => { __prismFixture.patch({ enabled: true }); window.dispatchEvent(new Event('pageshow')); document.body.append(document.createElement('div')); });
     await page.waitForTimeout(250);
     assert.equal(await page.evaluate(() => ObsidianPrismRuntime.diagnostics().passes), stopped.passes, 'stop removes observers and event hooks permanently');
@@ -1290,6 +1298,8 @@ try {
     await checkLiveWidthPresets(liveSuite);
     // v0.3.1 #22 blur Composer Scrim
     await checkLiveComposerScrim(liveSuite);
+    // v0.4.0 #27 Bottom Dock singleton handover & dynamic collision avoidance
+    await checkBottomDock(liveSuite);
   }
   if (!liveOnly && !baselinesOnly) {
     await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
