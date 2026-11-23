@@ -543,11 +543,21 @@
       for (const element of adapter.codeSurfaces?.() || []) add(element,'data-op-code-surface');
       for (const element of adapter.codeHeaders?.() || []) add(element,'data-op-code-header');
       if (!isHome) {
-        nextScrim = adapter.composerScrimSurface?.(composer) || null;
-        add(nextScrim,'data-op-composer-scrim');
-        for (const element of adapter.threadTailSpacers?.() || []) add(element,'data-op-thread-spacer');
-        nextScroller = overlaidScroller(nextScrim);
-        add(nextScroller,'data-op-thread-scroller');
+        const dockHost = adapter.composerScrimSurface?.(composer) || null;
+        add(dockHost, 'data-op-composer-dock');
+        const turn = adapter.assistantTurns()[0] || adapter.userTurns()[0];
+        const scroller = turn ? adapter.scrollContainer(turn) : null;
+        const isOverlaid = dockHost ? Adapters.isComposerDockOverlaid(dockHost, scroller, global) : false;
+        if (isOverlaid) {
+          nextScrim = dockHost;
+          add(nextScrim, 'data-op-composer-scrim');
+          nextScroller = overlaidScroller(nextScrim, scroller);
+          add(nextScroller, 'data-op-thread-scroller');
+        }
+        const below = adapter.composerBelowSiblings?.(composer, dockHost);
+        for (const element of below?.empty || []) add(element, 'data-op-composer-empty-sibling');
+        for (const element of below?.disclaimers || []) add(element, 'data-op-composer-disclaimer');
+        for (const element of adapter.threadTailSpacers?.() || []) add(element, 'data-op-thread-spacer');
       }
       if (cfg.composerRestyle) {
         add(composer,'data-op-composer-surface');
@@ -667,10 +677,13 @@
    * the dock, so the measurement never feeds back on itself. */
   const DOCK_GAP=8;
   let dockScrim=null, dockScroller=null;
-  function overlaidScroller(scrim) {
-    const turn=adapter.assistantTurns()[0]||adapter.userTurns()[0];
-    if (!scrim || !turn) return null;
-    const scroller=adapter.scrollContainer(turn);
+  function overlaidScroller(scrim, precomputedScroller) {
+    if (!scrim) return null;
+    let scroller = precomputedScroller;
+    if (scroller === undefined) {
+      const turn=adapter.assistantTurns()[0]||adapter.userTurns()[0];
+      scroller=turn?adapter.scrollContainer(turn):null;
+    }
     if (!scroller || [document.scrollingElement,document.documentElement,document.body].includes(scroller) || scroller.contains(scrim) || scrim.contains(scroller)) return null;
     return scroller;
   }
