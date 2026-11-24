@@ -64,3 +64,26 @@ Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
 ### Git Commits
 
 (No associated commits)
+
+
+## Session 4: v0.4.3 实施完成：spec #40 / #41–#43 合并到 dev 并关单
+<!-- trellis-session: v=3 fp=87a6208b1349d711 -->
+
+**Date**: 2026-11-24
+**Task**: v0.4.3 实施完成：spec #40 / #41–#43 合并到 dev 并关单
+**Branch**: `dev`
+
+### Summary
+
+按任务图实施 v0.4.3：#41 ChatGPT 底栏黑带（宿主标记为主、display: contents 不计层数、只清绘制）、#42 侧栏激活高亮（图标瓷片与整行单层）、#43 0.4.3 基线与文档；/code-review 双轴返修后全量验证通过（单测 146、有头 Chromium 59、Firefox 57、两次打包校验和一致），所有者线上复看：黑带消失、高亮符合设计、正文从输入框两侧经过可接受。dev 合并提交 fa33aa2，#40–#43 已关闭。复用：just ci 的私钥须作位置参数（just ci <key>），写 key=… 会被当成路径并生成新私钥。
+Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fa33aa2` | merge(v043): 🔀 合并 feat/v043-spec-40（Spec #40 / #41–#43）至 dev |
+
+### Next Steps
+
+- 如需发布，按所有者授权推送 dev
