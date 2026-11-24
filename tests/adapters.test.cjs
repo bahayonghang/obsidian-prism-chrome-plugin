@@ -568,6 +568,93 @@ test('resolveReferenceCapacity maps ChatGPT and Gemini models, falls back cleanl
   assert.deepEqual({ ...A.resolveReferenceCapacity('other', 'x', 'auto') }, { tokens: 128000, source: 'fallback', modelLabel: 'x' });
 });
 
+// v0.4.3 #42 Sidebar active highlight: the adapter returns each active target with its shape.
+// Geometry mirrors the 2026-11-24 live measurements (.trellis/research/live-host-dom.md).
+const box = (left, top, width, height) => ({ left, top, width, height, right: left + width, bottom: top + height });
+function chatgptSidebar() {
+  const fake = makeDoc('chatgpt');
+  const sidebar = fake.el('div', { id: 'stage-slideover-sidebar' }, { rect: box(0, 0, 278, 900) });
+  const nav = fake.el('nav', { 'aria-label': 'Chat history' }, { rect: box(8, 0, 262, 900) });
+  sidebar.append(nav);
+  fake.body.append(sidebar);
+  return { ...fake, sidebar, nav };
+}
+const activeTargets = adapter => [...adapter.sidebarActiveRows()].map(target => ({ element: target.element, shape: target.shape }));
+
+test('sidebar active state duplicated on the whole row and its inner link highlights the whole row', () => {
+  const A = adapters();
+  const { doc, el, nav } = chatgptSidebar();
+  const row = el('div', { role: 'group', 'aria-current': 'page' }, { rect: box(8, 120, 262, 36) });
+  const link = el('a', { href: '/c/synthetic-current', 'aria-current': 'page' }, { rect: box(16, 128, 243, 20), innerText: 'Synthetic current chat', textContent: 'Synthetic current chat' });
+  const options = el('button', { 'aria-label': 'Open conversation options' }, { rect: box(242, 126, 24, 24) });
+  row.append(link, options);
+  const other = el('a', { href: '/c/synthetic-other' }, { rect: box(8, 160, 262, 36), innerText: 'Another chat', textContent: 'Another chat' });
+  nav.append(row, other);
+  const targets = activeTargets(A.forHost('chatgpt', doc));
+  assert.equal(targets.length, 1, 'one highlight per active item');
+  assert.equal(targets[0].element, row, 'the outermost active row owns the highlight, not the smaller inner link');
+  assert.equal(targets[0].shape, 'row');
+});
+
+test('an active project group does not pass its active state to all of its child rows', () => {
+  const A = adapters();
+  const { doc, el, nav } = chatgptSidebar();
+  const chat = (href, top, attrs = {}) => el('a', { href, ...attrs }, { rect: box(24, top, 238, 36), innerText: 'Synthetic project chat', textContent: 'Synthetic project chat' });
+  // Group with a header and three conversations; only the current conversation is active.
+  const group = el('div', { role: 'group', 'aria-current': 'true' }, { rect: box(8, 200, 262, 144) });
+  const header = el('button', { type: 'button' }, { rect: box(8, 200, 262, 36), innerText: 'Synthetic project', textContent: 'Synthetic project' });
+  const current = chat('/g/p/c/one', 236, { 'aria-current': 'page' });
+  group.append(header, current, chat('/g/p/c/two', 272), chat('/g/p/c/three', 308));
+  // Group with a header above a single conversation: still a group, not a single-line row.
+  const small = el('div', { role: 'group', 'data-active': 'true' }, { rect: box(8, 360, 262, 72) });
+  const smallHeader = el('button', { type: 'button' }, { rect: box(8, 360, 262, 36), innerText: 'Other project', textContent: 'Other project' });
+  const only = chat('/g/q/c/only', 396);
+  small.append(smallHeader, only);
+  nav.append(group, small);
+  const targets = activeTargets(A.forHost('chatgpt', doc));
+  assert.deepEqual(targets.map(target => target.element), [current, only], 'only the active conversation, never the group or its siblings');
+  assert.deepEqual(targets.map(target => target.shape), ['row', 'row']);
+  current.removeAttribute('aria-current');
+  assert.deepEqual(activeTargets(A.forHost('chatgpt', doc)).map(target => target.element), [only], 'a multi-chat group alone highlights nothing');
+});
+
+test('a near-square icon-only sidebar button is an icon tile; geometry decides over host hints', () => {
+  const A = adapters();
+  const { doc, el, nav } = chatgptSidebar();
+  const rail = el('div', {}, { rect: box(8, 8, 262, 36) });
+  const icon = () => el('svg', { 'aria-hidden': 'true' }, { rect: box(0, 0, 20, 20) });
+  const home = el('button', { type: 'button', 'aria-label': 'Home', 'data-uniform': '', 'data-selected': '', 'aria-current': 'page' }, { rect: box(8, 8, 36, 36) });
+  // Screen-reader text clipped to a 1px box is not visible text.
+  const srOnly = el('span', { class: 'sr-only' }, { rect: box(20, 20, 1, 1), textContent: 'Home', innerText: 'Home' });
+  home.append(icon(), srOnly);
+  const library = el('button', { type: 'button', 'aria-label': 'Library', 'data-uniform': '' }, { rect: box(48, 8, 36, 36) });
+  library.append(icon());
+  rail.append(home, library);
+  nav.append(rail);
+  let targets = activeTargets(A.forHost('chatgpt', doc));
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0].element, home);
+  assert.equal(targets[0].shape, 'tile', 'a 36×36 icon-only button is an icon tile');
+
+  // Without the host hint, the same geometry is still a tile.
+  home.removeAttribute('aria-current');
+  const plain = el('button', { type: 'button', 'aria-label': 'Explore', 'aria-selected': 'true' }, { rect: box(88, 8, 34, 36) });
+  plain.append(icon());
+  rail.append(plain);
+  targets = activeTargets(A.forHost('chatgpt', doc));
+  assert.deepEqual(targets.map(target => [target.element, target.shape]), [[plain, 'tile']]);
+
+  // A hinted button with a visible label, or a wide one, stays a row.
+  plain.removeAttribute('aria-selected');
+  const labelled = el('button', { type: 'button', 'data-uniform': '', 'aria-current': 'page' }, { rect: box(8, 60, 36, 36) });
+  labelled.append(el('span', {}, { rect: box(12, 70, 26, 16), textContent: 'OP', innerText: 'OP' }));
+  const wide = el('button', { type: 'button', 'data-uniform': '', 'aria-current': 'page' }, { rect: box(8, 100, 262, 36) });
+  wide.append(icon());
+  nav.append(labelled, wide);
+  targets = activeTargets(A.forHost('chatgpt', doc));
+  assert.deepEqual(targets.map(target => [target.element, target.shape]), [[labelled, 'row'], [wide, 'row']]);
+});
+
 function withDocumentOrder(body) {
   const preorder = [];
   const walk = node => { preorder.push(node); for (const child of node.children || []) walk(child); };

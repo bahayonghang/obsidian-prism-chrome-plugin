@@ -38,6 +38,10 @@ _Avoid_: Raw mode, unstyled mode, default theme
 The independent `auto` / `light` / `dark` color-scheme control governing the extension popup and options page, decoupled from Host Surface `themeMode`, optical palettes, and the extension enable switch.
 _Avoid_: Popup dark mode, host theme override, global color lock
 
+**Active Highlight**:
+The single highlight the extension draws on the sidebar item for the current location, shaped like its control. An **icon tile** (an equal-width, near-square, icon-only sidebar button) gets an even accent-tinted fill, an even 1px inset ring and an accent icon, with no side bar and no host overlay; a **row** (a conversation, project or other text row) gets one layer over the whole row with a 2px accent left edge, replacing the host's own active paint instead of stacking on it. Sidebar style `native` and Native Palette leave the host's active state untouched.
+_Avoid_: Selected pill, current-row bracket, active badge
+
 ### Reading & Estimation
 
 **Conversation Rail**:
