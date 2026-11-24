@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { LIVE_FIXTURE_URLS, MAIN_SELECTORS, setMainWidth, paragraphWidth, sampleBelow, headingStyles, controlGeometry } from './measure.mjs';
+import { LIVE_FIXTURE_URLS, MAIN_SELECTORS, setMainWidth, paragraphWidth, sampleBelow, headingStyles, controlGeometry, regionStats } from './measure.mjs';
 
 /** Real host selectors in the live fixtures (no fixture-only markers). */
 export const LIVE_SELECTORS = {
@@ -28,6 +28,8 @@ export const LIVE_SELECTORS = {
     voice: 'button[aria-label="Start Voice"]',
     attachment: '[class*="composerGrid"] [class*="file-tile"]',
     belowSpacer: '.composer-below-spacer',
+    // v0.4.3 #41 thread-footer variant: the scroll container's child that holds the host marker (structural, no host class).
+    threadFooter: '[data-prism-test-scroller] > :has([data-thread-scroll-footer="true"])',
     disclaimer: '#thread-bottom [class*="disclaimer"]',
     cornerFloat: '.host-corner-help'
   },
@@ -149,6 +151,59 @@ export async function applyChatGPTBottomVariants(page, variants = {}) {
       outerDisclaimer?.remove();
     }
   }, opts);
+  await settle(page);
+}
+
+/** v0.4.3 #41 live thread footer (2026-11-24 facts): ancestors between the composer form and the painted footer. */
+export const THREAD_FOOTER_DEPTH = 21;
+
+/**
+ * Rebuilds the 2026-11-24 live ChatGPT footer on chatgpt-live.html (`enabled: false` restores the default DOM):
+ * #thread-bottom-container is detached and form[data-chatgpt-composer] moves into an absolutely positioned child of
+ * the scroll container that paints the band with anchor-positioned ::before/::after. The form sits
+ * THREAD_FOOTER_DEPTH ancestors below it; 18 of them are `display: contents`. Real host markers only:
+ * [data-thread-scroll-footer], [data-thread-composer-backdrop] + [data-pip-obstacle] and [data-composer-body].
+ */
+export async function applyChatGPTThreadFooter(page, { enabled = true } = {}) {
+  await page.evaluate(({ enabled, threadFooter }) => {
+    const scroller = document.querySelector('[data-prism-test-scroller]');
+    const form = document.querySelector('form[data-chatgpt-composer]');
+    const layout = form.querySelector('[data-composer-layout]');
+    const store = window.__prismThreadFooterFixture || (window.__prismThreadFooterFixture = {});
+    document.querySelector(threadFooter)?.remove();
+    if (store.dock && !store.dock.isConnected) {
+      store.dock.querySelector('.composer-column').prepend(form);
+      scroller.after(store.dock);
+    }
+    layout.removeAttribute('data-composer-body');
+    if (!enabled) return;
+    store.dock = document.querySelector('#thread-bottom-container');
+    const wrap = (parent, count) => {
+      for (let i = 0; i < count; i++) {
+        const next = document.createElement('div');
+        next.className = 'thread-footer-contents_k2';
+        parent.append(next);
+        parent = next;
+      }
+      return parent;
+    };
+    const footer = document.createElement('div');
+    footer.className = 'thread-footer_A8ZvKV';
+    const scrollFooter = document.createElement('div');
+    scrollFooter.setAttribute('data-thread-scroll-footer', 'true');
+    wrap(footer, 5).append(scrollFooter);
+    const backdrop = document.createElement('div');
+    backdrop.setAttribute('data-thread-composer-backdrop', 'true');
+    backdrop.setAttribute('data-pip-obstacle', 'thread-footer');
+    wrap(scrollFooter, 4).append(backdrop);
+    const column = document.createElement('div');
+    column.className = 'composer-column';
+    wrap(backdrop, 4).append(column);
+    wrap(column, 5).append(form);
+    layout.setAttribute('data-composer-body', '');
+    store.dock.remove();
+    scroller.append(footer);
+  }, { enabled, threadFooter: LIVE_SELECTORS.chatgpt.threadFooter });
   await settle(page);
 }
 
@@ -327,12 +382,9 @@ async function assertNativeHeadings(page, host) {
   }
 }
 
-async function assertProbePrivacy(page, host, probeSource) {
-  const s = LIVE_SELECTORS[host];
-  const canary = 'PRISM-CANARY-DRAFT-7351';
-  await page.locator(s.editor).click();
-  await page.keyboard.type(canary);
-  const secrets = await page.evaluate(() => {
+/** Text (>= 6 chars, typed draft included) and session/message ids on the page that the probe must never emit. */
+function probeSecrets(page) {
+  return page.evaluate(() => {
     const texts = new Set();
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
@@ -350,6 +402,14 @@ async function assertProbePrivacy(page, host, probeSource) {
     }
     return { texts: [...texts], ids: [...ids] };
   });
+}
+
+async function assertProbePrivacy(page, host, probeSource) {
+  const s = LIVE_SELECTORS[host];
+  const canary = 'PRISM-CANARY-DRAFT-7351';
+  await page.locator(s.editor).click();
+  await page.keyboard.type(canary);
+  const secrets = await probeSecrets(page);
   assert.ok(secrets.texts.some(text => text.includes(canary)), 'canary draft was typed into the native editor');
   assert.ok(secrets.texts.includes('Help and shortcuts'), `${host}: corner float aria-label is included in privacy checks`);
   assert.ok(secrets.ids.length >= 3, `${host}: fixture carries session/message ids to redact`);
@@ -514,6 +574,100 @@ async function checkChatGPTBottomVariantBaselines(suite) {
   });
 }
 
+/**
+ * v0.4.3 #41 sample areas around the Composer Surface on the live thread-footer variant (CSS px, viewport space):
+ * `left` is a strip 16–40px left of the composer just above its bottom edge (the ::before gradient is nearly opaque
+ * there), `below` the same columns under the composer's bottom edge inside the ::after slab, and `above` the same columns
+ * above the footer, which show the page background behind the conversation. The columns stay clear of the Composer
+ * Surface's own shadow.
+ */
+export async function threadFooterRegions(page) {
+  return page.evaluate(threadFooter => {
+    const box = node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
+    const composer = box(document.querySelector('[data-composer-layout]'));
+    const footer = box(document.querySelector(threadFooter));
+    const main = box(document.querySelector('main'));
+    const x = Math.max(main.left + 20, composer.left - 40);
+    const width = Math.min(24, composer.left - 4 - x);
+    return {
+      composer, footer,
+      left: { x, y: composer.bottom - 5, width, height: 4 },
+      below: { x, y: composer.bottom + 4, width, height: Math.max(1, footer.bottom - composer.bottom - 8) },
+      above: { x, y: Math.min(composer.top, footer.top) - 32, width, height: 8 }
+    };
+  }, LIVE_SELECTORS.chatgpt.threadFooter);
+}
+
+/** The 2026-11-24 ChatGPT thread footer reproduces the opaque band natively; the probe reports its depth privately. */
+async function checkChatGPTThreadFooterBaseline(suite) {
+  const { engine, probeSource } = suite;
+  await onLiveFixture({ ...suite, fixtureBridge: undefined }, 'chatgpt', { failure: 'chatgpt-thread-footer-baseline-failure' }, async ({ page, errors }) => {
+    const original = await page.locator(LIVE_SELECTORS.chatgpt.composer).evaluate(node => node.getBoundingClientRect().toJSON());
+    await applyChatGPTThreadFooter(page);
+    await page.locator(LIVE_SELECTORS.chatgpt.scroller).evaluate(node => { node.scrollTop = node.scrollHeight; });
+    await settle(page);
+    const shape = await page.evaluate(threadFooter => {
+      const footer = document.querySelector(threadFooter);
+      const form = document.querySelector('form[data-chatgpt-composer]');
+      let depth = 0, noBox = 0;
+      for (let node = form.parentElement; node !== footer; node = node.parentElement) {
+        depth++;
+        if (getComputedStyle(node).display === 'contents') noBox++;
+      }
+      const style = getComputedStyle(footer);
+      return {
+        depth, noBox, position: style.position, zIndex: style.zIndex,
+        inScroller: footer.parentElement.matches('[data-prism-test-scroller]'),
+        legacyDock: document.querySelectorAll('#thread-bottom-container,#thread-bottom').length
+      };
+    }, LIVE_SELECTORS.chatgpt.threadFooter);
+    assert.deepEqual(shape, { depth: THREAD_FOOTER_DEPTH, noBox: 18, position: 'absolute', zIndex: '20', inScroller: true, legacyDock: 0 },
+      'chatgpt thread footer: absolutely positioned child of the scroll container, 21 ancestors above the form, 18 without a box');
+    const regions = await threadFooterRegions(page);
+    assert.ok(regions.left.width >= 8 && regions.below.height >= 4, `chatgpt thread footer: sample areas exist (${JSON.stringify(regions)})`);
+    for (const name of ['left', 'below']) {
+      const { mean } = await regionStats(page, regions[name]);
+      for (const channel of ['r', 'g', 'b']) near(mean[channel], 14, 3, `${engine} chatgpt thread footer native ${name} of composer is the opaque footer surface #0e0e0e (${channel})`);
+    }
+    const above = (await regionStats(page, regions.above)).mean;
+    for (const channel of ['r', 'g', 'b']) near(above[channel], 33, 3, `${engine} chatgpt thread footer native background above the composer is #212121 (${channel})`);
+
+    await page.locator(LIVE_SELECTORS.chatgpt.editor).click();
+    await page.keyboard.type('PRISM-CANARY-DRAFT-7351');
+    const secrets = await probeSecrets(page);
+    assert.ok(secrets.ids.length >= 3, 'chatgpt thread footer: fixture carries session/message ids to redact');
+    const result = await page.evaluate(source => (0, eval)(source), probeSource);
+    const json = JSON.stringify(result);
+    for (const text of secrets.texts) assert.equal(json.includes(text), false, `chatgpt thread footer: probe output leaked text "${text.slice(0, 40)}"`);
+    for (const id of secrets.ids) assert.equal(json.includes(id), false, `chatgpt thread footer: probe output leaked id "${id}"`);
+    assert.equal(json.includes('prism-live-fixture'), false, 'chatgpt thread footer: probe output omits the page path');
+    const footer = result.targets.composerFooter;
+    assert.equal(footer.count, 1, 'chatgpt thread footer: probe finds the painted footer');
+    assert.deepEqual(footer.chains.form, { ancestors: THREAD_FOOTER_DEPTH + 1, noBox: 18 }, 'chatgpt thread footer: probe counts the form chain and its boxless wrappers');
+    assert.ok(footer.chains.editor.ancestors > footer.chains.composerLayout.ancestors && footer.chains.composerLayout.ancestors > footer.chains.form.ancestors, 'chatgpt thread footer: editor > Composer Surface > form depth');
+    assert.ok(footer.markers.scrollFooter > footer.markers.composerBackdrop, 'chatgpt thread footer: probe locates both host markers');
+    const [sample] = footer.samples;
+    assert.equal(sample.anchor.anchorScope, '--thread-composer');
+    assert.equal(footer.formAnchor.anchorName, '--thread-composer');
+    assert.match(sample.pseudos.before.backgroundImage, /linear-gradient/);
+    assert.equal(sample.pseudos.after.backgroundColor, 'rgb(14, 14, 14)');
+    assert.equal(sample.pseudos.before.insetInlineStart, '16px');
+    await page.keyboard.press(process.platform === 'darwin' ? 'Meta+A' : 'Control+A');
+    await page.keyboard.press('Backspace');
+
+    await applyChatGPTThreadFooter(page, { enabled: false });
+    const restored = await page.evaluate(threadFooter => ({
+      footers: document.querySelectorAll(`${threadFooter},[data-composer-body]`).length,
+      dockHasForm: Boolean(document.querySelector('#thread-bottom-container .composer-column > form[data-chatgpt-composer]'))
+    }), LIVE_SELECTORS.chatgpt.threadFooter);
+    assert.deepEqual(restored, { footers: 0, dockHasForm: true }, 'chatgpt thread footer: { enabled: false } restores the default fixture');
+    const back = await page.locator(LIVE_SELECTORS.chatgpt.composer).evaluate(node => node.getBoundingClientRect().toJSON());
+    assert.deepEqual(back, original, 'chatgpt thread footer: the default composer geometry returns');
+    assert.deepEqual(errors, []);
+    console.log(`PASS ${engine} chatgpt thread-footer variant baseline: opaque band left of and below the composer, ${THREAD_FOOTER_DEPTH}-ancestor chain, private probe depth report`);
+  });
+}
+
 /** Native baselines on the probe-derived fixtures, measured without the extension, plus probe privacy. */
 export async function checkLiveFixtureBaselines(suite) {
   const { engine, probeSource, artifacts } = suite;
@@ -537,4 +691,5 @@ export async function checkLiveFixtureBaselines(suite) {
     });
   }
   await checkChatGPTBottomVariantBaselines(suite);
+  await checkChatGPTThreadFooterBaseline(suite);
 }

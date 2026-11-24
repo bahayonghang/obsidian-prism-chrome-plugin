@@ -100,7 +100,7 @@ function matchSelector(node, selector) {
   return false;
 }
 
-function makeMockDom(hostname) {
+function makeMockDom(hostname, variant = 'default') {
   const all = [];
   function create(localName, opts = {}) {
     const attrs = new Map(Object.entries(opts.attrs || {}));
@@ -150,7 +150,55 @@ function makeMockDom(hostname) {
   const html = create('html');
   const body = create('body');
   html.append(body);
-  if (hostname === 'chatgpt.com') {
+  if (hostname === 'chatgpt.com' && variant === 'deep-footer') {
+    // v0.4.3 #41: the 2026-11-24 live footer. An absolutely positioned layer inside the scroll container paints
+    // the band with ::before/::after (anchor positioned); most of the 22 steps from the form are display: contents.
+    const contents = { display: 'contents' };
+    const zero = { x: 0, y: 0, width: 0, height: 0 };
+    const main = create('main', { rect: { x: 260, y: 0, width: 1280, height: 900 }, style: { position: 'relative' } });
+    const scroller = create('div', { classes: ['thread-scroll-container'], style: { overflowY: 'auto' } });
+    const turn = create('div', { attrs: { 'data-turn-key': '68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13' } });
+    const footer = create('div', {
+      classes: ['footer-A8ZvKV'],
+      rect: { x: 260, y: 740, width: 1280, height: 160 },
+      style: { position: 'absolute', zIndex: '20', anchorScope: '--thread-composer' },
+      pseudos: {
+        '::before': {
+          content: '""', display: 'block', position: 'absolute', zIndex: '-1', top: '50px', bottom: '16px', left: '16px', right: '16px',
+          insetInlineStart: '16px', insetInlineEnd: '16px', width: '1248px',
+          backgroundImage: 'linear-gradient(rgba(0, 0, 0, 0), rgb(14, 14, 14))', backgroundColor: 'rgba(0, 0, 0, 0)'
+        },
+        '::after': {
+          content: '""', display: 'block', position: 'absolute', zIndex: '-1', top: '144px', bottom: '0px', left: '16px', right: '16px',
+          insetInlineStart: '16px', insetInlineEnd: '16px', width: '1248px',
+          backgroundImage: 'none', backgroundColor: 'rgb(14, 14, 14)'
+        }
+      }
+    });
+    const chain = (top, count) => {
+      let cur = top;
+      for (let i = 0; i < count; i++) { const next = create('div', { rect: zero, style: contents }); cur.append(next); cur = next; }
+      return cur;
+    };
+    const scrollFooter = create('div', { attrs: { 'data-thread-scroll-footer': 'true' }, rect: { x: 260, y: 740, width: 1280, height: 160 } });
+    chain(footer, 5).append(scrollFooter);
+    const backdrop = create('div', { attrs: { 'data-thread-composer-backdrop': 'true', 'data-pip-obstacle': 'thread-footer' }, rect: { x: 260, y: 744, width: 1280, height: 156 } });
+    const secretButton = create('button', { attrs: { 'aria-label': 'Secret footer label', 'data-message-id': '5f2c9a81-0d3e-4b7a-9c61-2e8f0a6d13b4' } });
+    chain(scrollFooter, 4).append(backdrop, secretButton);
+    const column = create('div', { classes: ['composer-column'], rect: { x: 496, y: 744, width: 808, height: 140 } });
+    chain(backdrop, 4).append(column);
+    const form = create('form', { attrs: { 'data-chatgpt-composer': '', 'data-secret': 'Private user text' }, style: { anchorName: '--thread-composer' } });
+    chain(column, 5).append(form);
+    const layout = create('div', { attrs: { 'data-composer-layout': 'single-line', 'data-composer-body': '' }, rect: { x: 516, y: 744, width: 768, height: 100 } });
+    const grid = create('div', { classes: ['composerGrid_h2vs'], style: { display: 'grid' } });
+    const editor = create('div', { attrs: { contenteditable: 'true', role: 'textbox', id: 'prompt-textarea' }, contentEditable: true });
+    grid.append(editor);
+    layout.append(grid);
+    form.append(layout);
+    scroller.append(turn, footer);
+    main.append(scroller);
+    body.append(main);
+  } else if (hostname === 'chatgpt.com') {
     const page = create('div', { classes: ['page'] });
     const mainCol = create('div', { classes: ['main-column'] });
     const main = create('main', {
@@ -513,6 +561,44 @@ test('structure probe collects pseudo paint/mask, full ancestor depth, siblingsA
 
   const unknown = runProbe('unknown.example');
   assert.deepEqual(unknown.bottomOffsets, { dockBottomOffset: null, composerBottomOffset: null });
+});
+
+test('structure probe reports the painted composer footer: ancestor depth, boxless wrappers, pseudo paint and anchor positioning', () => {
+  const vm = require('node:vm');
+  const probeSource = fs.readFileSync(path.join(ROOT, PROBE), 'utf8');
+  const result = JSON.parse(JSON.stringify(vm.runInNewContext(probeSource, makeMockDom('chatgpt.com', 'deep-footer'))));
+  const json = JSON.stringify(result);
+  for (const secret of ['Private user text', 'Secret footer label', '5f2c9a81-0d3e-4b7a-9c61-2e8f0a6d13b4', '68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13', 'prompt-textarea', 'secret-conversation-id']) {
+    assert.equal(json.includes(secret), false, `probe output omits ${secret}`);
+  }
+  const footer = result.targets.composerFooter;
+  assert.equal(footer.count, 1, 'finds the painted footer above the composer');
+  assert.deepEqual(footer.chains, {
+    form: { ancestors: 22, noBox: 18 },
+    composerLayout: { ancestors: 23, noBox: 18 },
+    editor: { ancestors: 25, noBox: 18 }
+  }, 'counts ancestors from form, Composer Surface and editor to the painted footer, and those that generate no box');
+  assert.deepEqual(footer.markers, { scrollFooter: 16, composerBackdrop: 11 }, 'reports where the host footer markers sit on the form chain');
+  const [sample] = footer.samples;
+  assert.deepEqual(sample.classes, ['footer-A8ZvKV']);
+  assert.equal(sample.style.position, 'absolute');
+  assert.equal(sample.style.zIndex, '20');
+  assert.equal(sample.anchor.anchorScope, '--thread-composer', 'reports the footer anchor scope');
+  assert.equal(footer.formAnchor.anchorName, '--thread-composer', 'reports the composer anchor name');
+  assert.match(sample.pseudos.before.backgroundImage, /linear-gradient\(rgba\(0, 0, 0, 0\), rgb\(14, 14, 14\)\)/);
+  assert.equal(sample.pseudos.after.backgroundColor, 'rgb(14, 14, 14)');
+  for (const pseudo of ['before', 'after']) {
+    assert.equal(sample.pseudos[pseudo].insetInlineStart, '16px', `${pseudo} inset-inline-start`);
+    assert.equal(sample.pseudos[pseudo].insetInlineEnd, '16px', `${pseudo} inset-inline-end`);
+  }
+  assert.equal(sample.pseudos.before.top, '50px');
+  assert.equal(sample.pseudos.after.bottom, '0px');
+
+  const plain = JSON.parse(JSON.stringify(vm.runInNewContext(probeSource, makeMockDom('chatgpt.com'))));
+  assert.equal(plain.targets.composerFooter.count, 1, 'the v0.4.2 in-flow dock also paints a ::before');
+  assert.deepEqual(plain.targets.composerFooter.samples[0].classes, ['content-fade_b9xk']);
+  assert.deepEqual(plain.targets.composerFooter.chains.form, { ancestors: 3, noBox: 0 }, 'the in-flow dock sits three boxed layers above the form');
+  assert.deepEqual(plain.targets.composerFooter.markers, { scrollFooter: null, composerBackdrop: null }, 'no host footer markers on the v0.4.2 shape');
 });
 
 function makePNG(width, height, colorType, pixels) {

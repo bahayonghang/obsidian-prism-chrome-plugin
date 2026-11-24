@@ -25,6 +25,7 @@ import { checkBottomDock } from './bottom-dock.mjs';
 import { checkCodeAndNativeMathSurfaces } from './code-math-surface.mjs';
 // v0.4.1 #34 Dual-host offline Temml MathML Formula Preview, toggle, copy preservation, fold coordination & zero-residue restore
 import { checkFormulaPreview } from './formula-preview.mjs';
+import { checkSidebarActiveHighlight } from './sidebar-highlight.mjs';
 import { paragraphWidth, waitUntil } from './measure.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -1288,7 +1289,7 @@ async function exerciseFixture(browser, host) {
     assert.equal(await page.locator('[data-fixture-composer]').getAttribute('data-op-composer-surface'), 'fixture-original');
     await settleComposerControls(page);
     assert.deepEqual(await composerControlsSnapshot(page), originalComposerControls, `${host}: disable restores native composer, add button, model capsule, and chips`);
-    assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-sidebar-active="true"],[data-op-composer-backdrop="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-code-icon-fill="true"],[data-op-code-icon-stroke="true"],[data-op-formula-source-hidden="true"],[data-op-composer-dock="true"],[data-op-composer-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-sidebar-active="true"],[data-op-sidebar-active-tile="true"],[data-op-composer-backdrop="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-code-icon-fill="true"],[data-op-code-icon-stroke="true"],[data-op-formula-source-hidden="true"],[data-op-composer-dock="true"],[data-op-composer-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"]').count(), 0);
     assert.equal(await page.locator('pre code').textContent(), originalText);
     assert.equal(await page.evaluate(() => ObsidianPrismRuntime.diagnostics().observing), false);
     await page.evaluate(() => __prismFixture.patch({ enabled: true, contentWidth: 'standard' }));
@@ -1339,7 +1340,7 @@ async function exerciseFixture(browser, host) {
     assert.equal(stopped.formulaBlocks, 0);
     assert.equal(stopped.thoughtBlocks, 0);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
-    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-code-icon-fill="true"],[data-op-code-icon-stroke="true"],[data-op-formula-source-hidden="true"],[data-op-composer-dock="true"],[data-op-composer-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"],[data-op-composer-grid="true"],[data-op-composer-header-empty="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-sidebar-active-tile="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-code-icon-fill="true"],[data-op-code-icon-stroke="true"],[data-op-formula-source-hidden="true"],[data-op-composer-dock="true"],[data-op-composer-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"],[data-op-composer-grid="true"],[data-op-composer-header-empty="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-enabled')), false);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-instance')), false);
@@ -1391,6 +1392,8 @@ try {
     await checkCodeAndNativeMathSurfaces(liveSuite);
     // v0.4.1 #34 Dual-host offline Temml MathML Formula Preview
     await checkFormulaPreview(liveSuite);
+    // v0.4.3 #42 Sidebar active highlight shaped as icon tile or single whole-row layer
+    await checkSidebarActiveHighlight(liveSuite);
   }
   if (!liveOnly && !baselinesOnly) {
     await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });

@@ -246,7 +246,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     visibleAttachments: () => currentAttachments,
     activeModelLabel: () => currentModel,
     sidebarSurfaces: () => [],
-    sidebarActiveRows: () => [],
+    sidebarActiveTargets: () => [],
     codeBlocks: () => [...currentCodeBlocks],
     thoughtBlocks: () => [],
     isAssistantNode: () => false,
@@ -1197,7 +1197,7 @@ test('v0.4.0 handover: same-realm double-injection keeps active marks flicker-fr
     'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-header-empty', 'data-op-composer-leading', 'data-op-composer-primary',
     'data-op-composer-trailing', 'data-op-composer-toolbar', 'data-op-composer-add', 'data-op-model-capsule',
     'data-op-model-capsule-item', 'data-op-composer-primary-action', 'data-op-composer-attachment',
-    'data-op-composer-chip', 'data-op-composer-backdrop', 'data-op-sidebar-surface', 'data-op-sidebar-active'
+    'data-op-composer-chip', 'data-op-composer-backdrop', 'data-op-sidebar-surface', 'data-op-sidebar-active', 'data-op-sidebar-active-tile'
   ];
   for (const attr of SURFACE_ATTRS) {
     assert.equal(ctx.h.context.document.querySelectorAll(`[${attr}="true"]`).length, 0, `disable after handover leaves zero [${attr}="true"]`);
@@ -1288,7 +1288,7 @@ test('v0.4.0 handover: isolated-world reload adopts DOM marks & root vars withou
       visibleAttachments: () => [],
       activeModelLabel: () => 'ChatGPT 5.2',
       sidebarSurfaces: () => [],
-      sidebarActiveRows: () => [],
+      sidebarActiveTargets: () => [],
       codeBlocks: () => [],
       thoughtBlocks: () => [],
       isAssistantNode: () => false,

@@ -17,6 +17,9 @@
       editors: ['#prompt-textarea', '[data-testid="prompt-textarea"]', 'textarea[name="prompt-textarea"]', 'main [contenteditable="true"][role="textbox"]', 'main textarea'],
       composers: ['[data-composer-layout]', '#composer-background', '[data-testid="chat-composer"]', '[data-testid="composer"]', '[data-composer-surface]', '.composer-parent'],
       composerBackdrops: '#thread-bottom-container,#thread-bottom,[class*="content-fade"],.content-fade,[class*="fade-mask"],[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
+      /* v0.4.3 #41 live footer (2026-11-24): host markers on the conversation footer. The layer inside the scroll
+       * container that wraps [data-thread-scroll-footer] paints the band with ::before/::after; only paint is cleared. */
+      threadFooters: '[data-thread-scroll-footer="true"],[data-thread-composer-backdrop="true"]',
       codeSurfaces: '[data-testid="code-block"], .code-block-wrapper, .code-shell',
       codeHeaders: '.code-header, .code-shell-header, [data-testid="code-block-header"]',
       codeWells: '',
@@ -296,10 +299,13 @@
     }
     return result(128000, 'fallback');
   }
+  // A node whose computed overflow-y lets it scroll (it need not overflow right now).
+  function isScrollContainer(node, view) {
+    return Boolean(node && /(auto|scroll)/.test(view?.getComputedStyle?.(node)?.overflowY || ''));
+  }
   function scrollContainer(element) {
     for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
-      const style = parent.ownerDocument?.defaultView?.getComputedStyle?.(parent);
-      if (style && /(auto|scroll)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight + 1) return parent;
+      if (isScrollContainer(parent, parent.ownerDocument?.defaultView) && parent.scrollHeight > parent.clientHeight + 1) return parent;
     }
     return element?.ownerDocument?.scrollingElement || global.document?.scrollingElement || null;
   }
@@ -385,6 +391,42 @@
     // A genuine form with controls is safer than styling an arbitrary ancestor.
     return fallback;
   }
+  /* v0.4.3 #41: the live ChatGPT footer (2026-11-24) is an absolutely positioned layer directly inside the
+   * conversation scroll container; its ::before/::after paint the band. The host markers identify it without an
+   * ancestor budget (findThreadFooter); without markers the bounded ancestor walk in findComposerBackdrops is the
+   * fallback. This structural test (marker, or absolute/fixed child of a scroll container) only keeps a Home State
+   * footer native and stops the footer from becoming the dock host. */
+  function isThreadFooterLayer(spec, node, view) {
+    if (!spec.threadFooters || !node?.parentElement) return false;
+    if (node.matches?.(spec.threadFooters)) return true;
+    return ['absolute','fixed'].includes(view.getComputedStyle(node)?.position) && isScrollContainer(node.parentElement, view);
+  }
+  // Conversation-only: a footer whose scroll container holds no messages (Home State) is left native.
+  function inConversationScroller(node, view) {
+    let scope = node?.parentElement;
+    while (scope && !isScrollContainer(scope, view)) scope = scope.parentElement;
+    return Boolean((scope || node?.ownerDocument)?.querySelector?.(MESSAGE_AREAS));
+  }
+  // A thread footer layer in a scroll container without messages (Home State) stays native.
+  const isHomeThreadFooter = (spec, node, view) => isThreadFooterLayer(spec, node, view) && !inConversationScroller(node, view);
+  function findThreadFooter(spec, composer, view) {
+    if (!spec.threadFooters) return [];
+    const markers = [];
+    let layer = null;
+    for (let node = composer.parentElement; node; node = node.parentElement) {
+      if (node.matches('main,[role="main"],body,html')) break;
+      // Record a marker before the scroller check: a flattened host may put the marker itself directly inside
+      // the scroll container, and then the marker is the painted layer.
+      if (node.matches(spec.threadFooters)) markers.push(node);
+      if (node.parentElement && isScrollContainer(node.parentElement, view)) {
+        if (markers.length) layer = node;
+        break;
+      }
+    }
+    if (!markers.length || !inConversationScroller(markers[0], view)) return [];
+    return [...new Set([...markers, layer])].filter(node => node && !isOwned(node) &&
+      !node.matches(OVERLAY_EXCLUDED) && !node.querySelector(MESSAGE_AREAS));
+  }
   function findComposerBackdrops(spec, composer) {
     if (!composer || isOwned(composer)) return [];
     const view = composer.ownerDocument?.defaultView;
@@ -397,13 +439,16 @@
     let boundary = -1;
     // Recognize only the small docking region around a known native editor.
     // Structure and positioning remain stable after its paint is overridden.
-    for (let node = composer.parentElement, depth = 0; node && depth < 14; node = node.parentElement, depth++) {
+    // v0.4.3 #41: zero-size `display: contents` wrappers generate no box and do not use up the 14-layer budget.
+    for (let node = composer.parentElement, depth = 0; node && depth < 14; node = node.parentElement) {
       if (node.matches('main,[role="main"],body,html,chat-window,dialog,[role="dialog"],[aria-modal="true"],aside,nav,[role="navigation"]') ||
           node.matches(OVERLAY_EXCLUDED) || node.querySelector(MESSAGE_AREAS)) break;
       if (isOwned(node)) break;
       path.push(node);
-      const rect = node.getBoundingClientRect();
       const style = view.getComputedStyle(node);
+      if (style?.display === 'contents') continue;
+      depth++;
+      const rect = node.getBoundingClientRect();
       const smallRegion = rect.height > 0 && rect.height <= Math.max(composerRect.height + 220, viewportHeight * 0.48) &&
         rect.width >= composerRect.width - 24 && rect.right > composerRect.left && rect.left < composerRect.right &&
         rect.bottom >= composerRect.top - 80 && rect.top <= composerRect.bottom + 140;
@@ -411,11 +456,11 @@
         rect.bottom >= Math.min(viewportHeight - 96, composerRect.bottom - 4);
       const nearBottomInFlowDock = rect.bottom >= Math.min(viewportHeight - 120, composerRect.bottom - 4) &&
         Boolean(node.parentElement && (node.parentElement.querySelector(MESSAGE_AREAS) || node.parentElement.matches('.composer-parent,main,[role="main"]')));
-      if (smallRegion && (node.matches(spec.composerBackdrops) || bottomDock || nearBottomInFlowDock)) boundary = path.length - 1;
+      if (smallRegion && !isHomeThreadFooter(spec, node, view) && (node.matches(spec.composerBackdrops) || bottomDock || nearBottomInFlowDock)) boundary = path.length - 1;
     }
-    if (boundary < 0) return [];
-    const surfaces = path.slice(0, boundary + 1);
-    const outerDock = path[boundary];
+    const threadFooter = findThreadFooter(spec, composer, view);
+    const surfaces = boundary < 0 ? [] : path.slice(0, boundary + 1);
+    const outerDock = boundary < 0 ? null : path[boundary];
     const isProtectedBackdrop = node => {
       if (!node || isOwned(node)) return true;
       if (node === composer || composer.contains?.(node)) return true;
@@ -446,8 +491,7 @@
     };
     const isAdjacentDisclaimerShell = (node, maxHeight) => {
       if (isProtectedBackdrop(node) || isExcludedTrailingNode(node, composer) || hasExcludedInnerControl(node) || node.matches?.(INTERACTIVE_CONTROL_SELF)) return false;
-      const sStyle = view.getComputedStyle(node);
-      if (sStyle && (sStyle.display === 'none' || /(auto|scroll)/.test(sStyle.overflowY || ''))) return false;
+      if (view.getComputedStyle(node)?.display === 'none' || isScrollContainer(node, view)) return false;
       const sRect = node.getBoundingClientRect();
       if (sRect.height > maxHeight) return false;
       const txt = textOf(node).trim();
@@ -480,8 +524,7 @@
       const outerMaxHeight = Math.max(outerBounds.height + 160, viewportHeight * 0.48);
       for (const sib of [...(outerDock.parentElement.children || [])]) {
         if (sib === outerDock || isProtectedBackdrop(sib) || sib.contains?.(composer)) continue;
-        const sibStyle = view.getComputedStyle(sib);
-        if (sibStyle && /(auto|scroll)/.test(sibStyle.overflowY || '')) continue;
+        if (isScrollContainer(sib, view)) continue;
         if (sib.querySelector?.(MESSAGE_AREAS) || sib.querySelector?.(OVERLAY_EXCLUDED)) continue;
         if (isContainerFadeLayer(sib, outerMaxHeight) || isAdjacentDisclaimerShell(sib, outerMaxHeight)) {
           surfaces.push(sib);
@@ -492,7 +535,7 @@
         }
       }
     }
-    return [...new Set(surfaces)].filter(node => !isProtectedBackdrop(node));
+    return [...new Set([...surfaces, ...threadFooter])].filter(node => !isProtectedBackdrop(node) && !isHomeThreadFooter(spec, node, view));
   }
   function findSidebars(spec, root) {
     const result = [];
@@ -542,31 +585,57 @@
   }
   const ACTIVE_NAV_STATE = '[aria-current="page"],[aria-current="true"],[data-active="true"],[aria-selected="true"]';
   const NAV_ROW = 'a[href],button,[role="link"],[role="button"],[role="option"]';
-  function findSidebarActiveRows(sidebars) {
+  const NAV_LINK = 'a[href],[role="link"]';
+  const SIDEBAR_ROW_MAX_HEIGHT = 96;
+  // An icon tile is at most this many px on its longer side, with a longer/shorter side ratio within the tolerance;
+  // host `data-uniform` buttons get the wider tolerance. The label scan visits at most ICON_TILE_SCAN_NODES nodes.
+  const ICON_TILE_MAX_SIDE = 64;
+  const ICON_TILE_RATIO = 1.25;
+  const ICON_TILE_UNIFORM_RATIO = 1.5;
+  const ICON_TILE_SCAN_NODES = 40;
+  /**
+   * v0.4.3 #42: active sidebar targets and their shape. Returns `{ element, shape }` per active item,
+   * where `shape` is `'tile'` for an equal-width icon-only button (decided by geometry: near-square and
+   * no visible text; `data-uniform` only widens the tolerance) and `'row'` otherwise. When the host
+   * repeats the active state on a whole row and its inner link, the outermost single-line row owns it.
+   */
+  function findSidebarActiveTargets(sidebars) {
     const rows = new Set();
     for (const sidebar of sidebars) {
       const isRow = node => {
         if (!node || node === sidebar || !sidebar.contains(node) || isOwned(node) || !isVisible(node)) return false;
         const rect = node.getBoundingClientRect();
         // A project/tree group can contain active rows without being one itself.
-        return rect.height > 0 && rect.height <= 96 &&
-          node.querySelectorAll('a[href],[role="link"]').length <= 1;
+        return rect.height > 0 && rect.height <= SIDEBAR_ROW_MAX_HEIGHT &&
+          node.querySelectorAll(NAV_LINK).length <= 1;
+      };
+      // A noninteractive wrapper is a row only when it holds exactly one link on its single line;
+      // a project group with a header above its one conversation is not.
+      const isWrapperRow = node => {
+        if (!isRow(node)) return false;
+        const links = node.querySelectorAll(NAV_LINK);
+        if (links.length !== 1) return false;
+        const rect = node.getBoundingClientRect(), link = links[0].getBoundingClientRect();
+        const offset = Math.abs((link.top + link.bottom) / 2 - (rect.top + rect.bottom) / 2);
+        return offset <= Math.max(4, rect.height * .15);
       };
       for (const state of sidebar.querySelectorAll(ACTIVE_NAV_STATE)) {
         if (isOwned(state) || !isVisible(state)) continue;
         let row = state.closest(NAV_ROW);
         if (!isRow(row)) {
-          const links = [...state.querySelectorAll('a[href],[role="link"]')].filter(isRow);
+          const links = [...state.querySelectorAll(NAV_LINK)].filter(isRow);
           // A noninteractive wrapper may carry the state for its single link.
           // Never transfer a group's state to all of its conversations.
-          row = links.length === 1 && state.getBoundingClientRect().height <= 96 ? links[0] : null;
+          row = links.length === 1 && state.getBoundingClientRect().height <= SIDEBAR_ROW_MAX_HEIGHT ? links[0] : null;
         }
         if (row) {
-          // A nested title/action can carry the only active flag. Its enclosing
-          // navigation row still owns the highlight, even without its own flag.
+          // A nested title/action can carry the only active flag. Its enclosing navigation row
+          // still owns the highlight, even without its own flag; a wrapper that repeats the active
+          // state around its single link owns the whole-row highlight.
           for (let parent = row.parentElement; parent && parent !== sidebar; parent = parent.parentElement) {
-            if (!parent.matches(NAV_ROW)) continue;
-            if (!isRow(parent)) break;
+            const interactive = parent.matches(NAV_ROW);
+            if (!interactive && !parent.matches(ACTIVE_NAV_STATE)) continue;
+            if (!(interactive ? isRow(parent) : isWrapperRow(parent))) break;
             row = parent;
           }
           rows.add(row);
@@ -574,7 +643,30 @@
       }
     }
     const result = [...rows];
-    return result.filter(node => !result.some(parent => parent !== node && parent.contains(node)));
+    return result
+      .filter(node => !result.some(parent => parent !== node && parent.contains(node)))
+      .map(element => ({ element, shape: isIconTile(element) ? 'tile' : 'row' }));
+  }
+  function isIconTile(node) {
+    const rect = node.getBoundingClientRect();
+    const longer = Math.max(rect.width, rect.height), shorter = Math.min(rect.width, rect.height);
+    if (!(shorter > 0) || longer > ICON_TILE_MAX_SIDE) return false;
+    const tolerance = node.hasAttribute?.('data-uniform') ? ICON_TILE_UNIFORM_RATIO : ICON_TILE_RATIO;
+    return longer / shorter <= tolerance && !hasRenderedLabel(node);
+  }
+  // Text clipped to a 1px screen-reader box is not visible text.
+  function hasRenderedLabel(node) {
+    const nodes = [node];
+    for (let index = 0; index < nodes.length && nodes.length < ICON_TILE_SCAN_NODES; index++) nodes.push(...(nodes[index].children || []));
+    return nodes.slice(0, ICON_TILE_SCAN_NODES).some(element => {
+      // The textContent fallback serves DOM stand-ins without childNodes (the unit-test mock DOM).
+      const own = element.childNodes
+        ? [...element.childNodes].filter(child => child.nodeType === 3).map(child => child.data).join('')
+        : (element.children?.length ? '' : element.textContent || '');
+      if (!own.trim() || !isVisible(element)) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 2 && rect.height > 2;
+    });
   }
   function sortByDocumentOrder(nodes) {
     if (nodes.length <= 1 || typeof nodes[0]?.compareDocumentPosition !== 'function') return nodes;
@@ -921,9 +1013,12 @@
     if (!backdrops.length) return null;
     // Outermost structural ancestor in the bounded dock chain (ignore empty fade siblings).
     const ancestors = [];
+    const view = composer.ownerDocument?.defaultView || global;
     for (let node = composer.parentElement; node; node = node.parentElement) {
       if (backdrops.includes(node)) ancestors.push(node);
     }
+    // v0.4.3 #41: a host thread footer is paint-only; dock spacing and z-index rules never target it or its contents.
+    if (ancestors.some(node => isThreadFooterLayer(spec, node, view))) return null;
     return ancestors.length ? ancestors[ancestors.length - 1] : null;
   }
   function isComposerDockOverlaid(dock, scroller, view = dock?.ownerDocument?.defaultView || global) {
@@ -1471,7 +1566,7 @@
       threadColumns: () => findColumnSurfaces(spec.threadColumns, findPrimary(spec, root), messages()[0]),
       composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, findPrimary(spec, root), composer === undefined ? findComposer(spec, root) : composer),
       sidebarSurfaces: () => findSidebars(spec, root),
-      sidebarActiveRows: (sidebars) => findSidebarActiveRows(sidebars === undefined ? findSidebars(spec, root) : sidebars),
+      sidebarActiveTargets: (sidebars) => findSidebarActiveTargets(sidebars === undefined ? findSidebars(spec, root) : sidebars),
       cornerFloatingObstacles: (composer) => findCornerFloatingObstacles(root, composer === undefined ? findComposer(spec, root) : composer, spec),
       codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))].filter(pre => !isOwned(pre) && !pre.parentElement?.closest?.('pre')),
       thoughtBlocks: () => collect(spec.thoughts),

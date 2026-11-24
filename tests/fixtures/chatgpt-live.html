@@ -17,6 +17,17 @@ a{color:inherit;text-decoration:none}
 #stage-slideover-sidebar nav{display:flex;flex-direction:column;gap:2px;font-size:14px;line-height:20px}
 #stage-slideover-sidebar a{display:block;padding:8px 10px;border-radius:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 #stage-slideover-sidebar a[aria-current]{background:#2a2a2a}
+/* 2026-11-24 probe (#40/#42): icon rail of 36x36 equal-width icon buttons; the selected one carries data-selected and
+ * aria-current="page" and the host paints a 10% white ::before overlay. The active conversation repeats aria-current="page"
+ * on the whole row (role="group", 36px tall, host grey) and on its inner 20px-tall link. Inferred: icon colours, and the
+ * inner link keeping the generic a[aria-current] grey (a stress case for a second highlight layer). */
+.sidebar-rail{display:flex;gap:4px;padding:2px 0 10px}
+.sidebar-rail button{position:relative;width:36px;height:36px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--text-secondary);display:grid;place-items:center;cursor:pointer}
+.sidebar-rail button svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:2}
+.sidebar-rail button[data-selected]{color:var(--text-primary)}
+.sidebar-rail button[data-selected]::before{content:"";position:absolute;inset:0;border-radius:inherit;background:rgba(255,255,255,.1);pointer-events:none}
+#stage-slideover-sidebar [role="group"][aria-current]{display:flex;align-items:center;height:36px;padding:0 10px;border-radius:10px;background:rgba(255,255,255,.1)}
+#stage-slideover-sidebar [role="group"] > a{flex:1 1 auto;min-width:0;padding:0;line-height:20px;border-radius:0}
 .sidebar-heading{font-size:12px;color:var(--text-secondary);padding:14px 10px 6px}
 .main-column{position:relative;display:flex;flex:1 1 0;min-width:0;flex-direction:column;height:100vh}
 main{position:relative;flex:1 1 0;min-height:0;width:100%;display:flex;flex-direction:column;--thread-content-max-width:48rem}
@@ -77,12 +88,21 @@ form[data-chatgpt-composer]{width:100%;background:transparent}
 #thread-bottom-container.has-sharp-edge-shadow{--sharp-edge-bottom-shadow:0 -24px 0 0 #2b2738, 0 18px 0 0 #2b2738;--sharp-edge-bottom-shadow-placeholder-content:"";--sharp-edge-top-shadow:0 2px 0 0 #2b2738;--composer-surface-primary:rgba(48,48,48,.95);box-shadow:var(--sharp-edge-bottom-shadow)}
 #thread-bottom-container.has-sharp-edge-shadow::after{content:var(--sharp-edge-bottom-shadow-placeholder-content);position:absolute;left:0;right:0;bottom:0;height:48px;pointer-events:none;z-index:-1;box-shadow:var(--sharp-edge-bottom-shadow)}
 #thread-bottom-container.has-host-after::after{content:"";position:absolute;left:0;right:0;bottom:0;height:96px;pointer-events:none;z-index:-1;background:linear-gradient(transparent,#2d2a3a 18%,#2d2a3a);-webkit-mask-image:linear-gradient(to bottom,transparent,#000 18%,#000);mask-image:linear-gradient(to bottom,transparent,#000 18%,#000)}
+/* v0.4.3 #41 live thread footer (2026-11-24 facts; inactive until applyChatGPTThreadFooter builds it): an absolutely
+ * positioned child of the scroll container (z-index 20, anchor-scope) whose ::before (gradient from the composer mid-line
+ * to its bottom edge) and ::after (solid from the composer bottom down) paint an opaque --color-surface, inset 16px.
+ * Inferred: the 16px bottom padding and which node carries [data-composer-body]. anchor() fallbacks only guard old engines. */
+.thread-footer_A8ZvKV{position:absolute;left:0;right:0;bottom:0;z-index:20;anchor-scope:--thread-composer;padding-bottom:16px;--color-surface:#0e0e0e;--padding-toolbar:16px}
+.thread-footer_A8ZvKV form[data-chatgpt-composer]{anchor-name:--thread-composer}
+.thread-footer_A8ZvKV:has([data-thread-composer-backdrop] [data-composer-body])::before{content:"";position:absolute;z-index:-1;pointer-events:none;inset-inline:var(--padding-toolbar);top:anchor(--thread-composer center,50%);bottom:anchor(--thread-composer bottom,16px);background:linear-gradient(transparent,var(--color-surface))}
+.thread-footer_A8ZvKV:has([data-thread-composer-backdrop] [data-composer-body])::after{content:"";position:absolute;z-index:-1;pointer-events:none;inset-inline:var(--padding-toolbar);top:anchor(--thread-composer bottom,calc(100% - 16px));bottom:0;background:var(--color-surface)}
+.thread-footer-contents_k2{display:contents}
 .dock-outer-spacer{flex:none;height:28px}
 .disclaimer-outer-wrap{flex:none;text-align:center;font-size:12px;line-height:16px;color:var(--text-secondary);margin-top:-8px;min-height:36px;padding:0 0 12px;view-transition-name:disclaimer-shell}
 .host-corner-help{position:fixed;right:16px;bottom:16px;z-index:20;width:32px;height:32px;border-radius:999px;background:#2f2f2f;color:var(--text-secondary);border:1px solid rgba(255,255,255,.12);display:inline-flex;align-items:center;justify-content:center}
 .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
 </style></head><body><div class="page">
-<div id="stage-slideover-sidebar"><nav aria-label="Chat history"><a href="#new">New chat</a><a href="#search">Search chats</a><div class="sidebar-heading">Chats</div><a href="/c/68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13" aria-current="page">Synthetic layout review</a><a href="/c/1b7e9d40-8a2c-4f61-b3e5-7c0d2a9f8e64">Another placeholder thread</a><a href="/c/9a3c5e71-0f2d-4b8e-a6c4-3d1e7b9f2a05">Offline sample notes</a></nav></div>
+<div id="stage-slideover-sidebar"><div class="sidebar-rail"><button type="button" aria-label="Home" data-uniform="" data-selected="" aria-current="page"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11 12 4l8 7v9H4z"/></svg></button><button type="button" aria-label="Library" data-uniform=""><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4h5v16H5zM14 4h5v16h-5z"/></svg></button><button type="button" aria-label="Explore" data-uniform=""><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zm3 6-2 4-4 2 2-4z"/></svg></button></div><nav aria-label="Chat history"><a href="#new">New chat</a><a href="#search">Search chats</a><div class="sidebar-heading">Chats</div><div role="group" aria-current="page"><a href="/c/68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13" aria-current="page">Synthetic layout review</a></div><a href="/c/1b7e9d40-8a2c-4f61-b3e5-7c0d2a9f8e64">Another placeholder thread</a><a href="/c/9a3c5e71-0f2d-4b8e-a6c4-3d1e7b9f2a05">Offline sample notes</a></nav></div>
 <div class="main-column"><main id="main"><div class="page-header">ChatGPT</div><div class="composer-parent" role="presentation"><div data-prism-test-scroller>
 <div class="flex flex-col text-sm transcriptContent_q8xz pb-25">
 <div data-turn-key="3f9b2c71-6e4a-4d08-b5c2-81a0f7d3e9b6" class="turn-container"><div data-virtualized-turn><div class="turn-placeholder"></div></div></div>

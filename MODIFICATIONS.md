@@ -3,7 +3,7 @@
 **Project:** Obsidian Prism Web — Community Edition  
 **Maintainer:** bahayonghang  
 **Date:** 2026-11-24\
-**Version:** 0.4.2
+**Version:** 0.4.3
 
 **License:** GPL-3.0-only
 
@@ -50,6 +50,10 @@ Spec #32 (#33–#35, 2026-11-23) de-nests Gemini's double-nested `<code-block>` 
 ## v0.4.2 decoupled settings UI theme & proportional user turn width
 
 Spec #36 (#37–#39, 2026-11-24) introduces an independent `uiThemeMode` (`auto` / `light` / `dark`, default `auto`) with `resolveUiScheme`, `resolveUiPalette` (falling back safely from `host` Native Palette to `obsidian` / `crystal`), and `applyUiThemeToRoot` in `src/config-schema.js`, wires synchronized header toggle (`#btn-ui-theme`) and Appearance Details dropdown (`#cfg-uiThemeMode`) controls plus document-level `color-scheme`, `@media (prefers-color-scheme: light)` pre-load fallback, and Native Palette `color-scheme` declarations across `popup/*` and `styles/prism-tokens.css` while keeping Host Surface resolution and `#chat-preview` decoupled, and fixes palette-card clicks (`handlePaletteCard` / `previewSchemeOverride`) so clicking any card previews and updates only its group preset without mutating `themeMode` or dead-clicking already-checked defaults; extends `tools/structure-probe.js` (`userBubbleAncestors`, Gemini `userQueryText`, `inputAreaChildren`, and `--bard-chat-window-content-width`), adds adapter-owned `contentWidth.userTurnTargets` and expanded `targets` / `composerTargets` in `src/adapters.js` mirrored in `styles/hosts.css` to uncap nested ChatGPT/Gemini User Turn and composer wrappers, bridge `--user-chat-width` and `--bard-chat-window-content-width*`, remove the legacy `820px` ceiling, scale long User Turns proportionally (~80% of `--op-reading-width` across `wide` / `full`) while preserving compact `fit-content` right-aligned short prompts, and keep Composer Surface width synchronized; and aligns manifests, package metadata, documentation, and verification records to `0.4.2`. No new permissions, host access, or remote network dependencies are added.
+
+## v0.4.3 ChatGPT thread footer band & sidebar Active Highlight
+
+Spec #40 (#41–#43, 2026-11-24) removes the opaque band that the live ChatGPT conversation footer paints beside and below the Composer Surface: the ChatGPT adapter now recognizes the footer by the host markers `[data-thread-scroll-footer="true"]` / `[data-thread-composer-backdrop="true"]` and the scroll-container layer that wraps them (the marker itself when it is the scroller's direct child), keeps the bounded ancestor walk as the marker-less fallback that no longer counts zero-size `display: contents` wrappers, and clears only paint on the footer and its `::before`/`::after` (no positioning, size or `z-index` change, no new scrim or body fade, Home State left native). `tools/structure-probe.js` adds a `composerFooter` report (ancestor depth, boxless wrappers, marker positions, pseudo paint and anchor positioning) with the existing redaction. The sidebar Active Highlight is redesigned by control shape: `Adapters.sidebarActiveTargets` returns `{ element, shape }`, icon-only near-square buttons become an **icon tile** (even accent fill and 1px ring, accent icon, host overlay cleared, no side bar) and text rows get exactly one layer over the whole row; `data-op-sidebar-active-tile` joins the reversible runtime marks. Manifests and package metadata are aligned to `0.4.3`. No new permissions, host access, or remote network dependencies are added.
 
 ## File attribution
 

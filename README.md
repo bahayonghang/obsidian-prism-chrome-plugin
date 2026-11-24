@@ -46,8 +46,8 @@ Windows若只有 `py` 命令，可将最后一步改为 `py -3 scripts/build.py`
 |---|---|
 | `dist/chrome/` | Chrome解压扩展目录 |
 | `dist/firefox/` | Firefox临时加载目录，使用独立Firefox清单 |
-| `dist/obsidian-prism-web-0.4.2-chrome.zip` | Chrome开发/提交包 |
-| `dist/obsidian-prism-web-0.4.2-firefox.zip` | Firefox开发/提交包，未签名 |
+| `dist/obsidian-prism-web-0.4.3-chrome.zip` | Chrome开发/提交包 |
+| `dist/obsidian-prism-web-0.4.3-firefox.zip` | Firefox开发/提交包，未签名 |
 | `dist/SHA256SUMS` | 两个ZIP的SHA-256校验值 |
 
 构建采用明确文件白名单，不包含Git目录、测试数据、开发依赖或本地密钥。相同源码与Python/zlib环境可生成相同ZIP字节。
@@ -80,6 +80,8 @@ v0.4.0 在 v0.3.0 与 2026 探针适配基础上新增双态 `Composer Scrim` �
 v0.4.1 在此基础上进一步修复 Gemini 双层嵌套 `<code-block>` 样式错位与顶栏 Material/SVG 图标对比度，为 ChatGPT 与 Gemini 的 Native Math Surface 增加非原生配色下的前景色兜底与超宽公式内部横向滚动，并引入基于锁定版本 Temml v0.14.0 的本地离线 **Formula Preview**（默认在「阅读」页签开启 `formulaPreview` /「自动渲染公式代码块」，将合格 LaTeX 代码块与 `%` 注释分段渲染为原生 MathML Core，支持「源码 / 公式」无损来回切换、48 行折叠协调、280ms 流式防抖与 Native Palette 颜色继承，不改写宿主 `<pre><code>` 与原生复制行为，详见 [ADR-0003](docs/adr/0003-local-mathml-formula-preview.md)）。
 
 v0.4.2 新增与 Host Surface 解耦的设置界面独立明暗控制 `uiThemeMode`（支持顶栏快捷按钮与外观「细节」下拉框双向同步、原生 `color-scheme` 声明、浅色系统预加载防闪黑及原生配色下回退到清晰标准色板，并修复外观页点击色卡破坏「跟随系统」及已选默认色卡无响应的问题），同时解开 Gemini 与 ChatGPT 双端 User Turn 多层中间包裹限宽及输入区包装壳限宽、移除旧 820px 硬上限，让长提问在「加宽 / 全栏」下按阅读列 ~80% 正向等比拓宽而短提问保持紧凑贴右、输入区与阅读列保持同步对齐。
+
+v0.4.3 根治 ChatGPT 对话页输入框两侧与下方的不透明底栏黑带：底栏识别改以宿主稳定标记 `data-thread-scroll-footer` / `data-thread-composer-backdrop` 为主，祖先遍历兜底且不把零尺寸的 `display: contents` 包装计入层数，只清除底栏及其伪元素的绘制、不改定位，也不新增遮罩或正文淡出；同时按控件形状重新设计侧栏激活高亮——图标栏里的方形图标按钮显示为「图标瓷片」（均匀强调色填充与 1px 内描边、强调色图标、无左边条），会话等文字行只保留覆盖整行的一层高亮。侧栏样式选「原生」或使用原生配色时保持宿主原样。
 
 旧配色与浓度会保留，宠物设置自动失效。想直接查看新版完整环境效果，可先选择“流光”场景，再在“光影”中微调。正文中的光场会主动减弱，首页的光场更明显。完整设置页可通过弹窗右上角按钮打开。
 
