@@ -160,7 +160,25 @@ function makeMockDom(hostname) {
     });
     const parent = create('div', { classes: ['composer-parent'] });
     const scroller = create('div', { attrs: { 'data-prism-test-scroller': '' } });
-    const transcript = create('div', { classes: ['transcriptContent_q8xz'], style: { '--thread-content-max-width': '48rem' } });
+    const transcript = create('div', { classes: ['transcriptContent_q8xz'], style: { '--thread-content-max-width': '48rem', '--user-chat-width': '70%' } });
+    const turn = create('div', { attrs: { 'data-turn-key': '68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13' }, classes: ['turn-container'], style: { '--user-chat-width': '70%' } });
+    const virtualTurn = create('div', { attrs: { 'data-virtualized-turn': '' }, style: { '--user-chat-width': '70%' } });
+    const userTurn = create('div', {
+      attrs: { 'data-content-search-unit-key': '68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13:0:user' },
+      classes: ['user-turn'],
+      style: { '--user-chat-width': '70%' }
+    });
+    const userBubbleWrap = create('div', { classes: ['user-bubble-wrap'], style: { maxWidth: 'var(--user-chat-width, 70%)', '--user-chat-width': '70%' } });
+    const userBubble = create('div', {
+      attrs: { 'data-user-message-bubble': 'true' },
+      classes: ['user-message-bubble-color'],
+      style: { maxWidth: '70%', '--user-chat-width': '70%' }
+    });
+    userBubbleWrap.append(userBubble);
+    userTurn.append(userBubbleWrap);
+    virtualTurn.append(userTurn);
+    turn.append(virtualTurn);
+    transcript.append(turn);
     scroller.append(transcript);
     const dock = create('div', {
       attrs: { id: 'thread-bottom-container' },
@@ -299,7 +317,28 @@ function makeMockDom(hostname) {
     body.append(page, cornerBtn, dialog, owned);
   } else if (hostname === 'gemini.google.com') {
     const app = create('chat-app');
-    const chatWindow = create('chat-window');
+    const chatWindow = create('chat-window', {
+      style: { '--bard-chat-window-content-width-default': '744px', '--bard-chat-window-content-width': '708px' }
+    });
+    const geminiScroller = create('div', { classes: ['chat-history-scroll-container'] });
+    const conversation = create('div', { classes: ['conversation-container', 'enable-extended-and-xl-grid'] });
+    const userQuery = create('user-query', { style: { maxWidth: '708px' } });
+    const userQueryContent = create('user-query-content');
+    const userQueryContainer = create('div', { classes: ['user-query-container'] });
+    const queryContent = create('div', { classes: ['query-content'], style: { maxWidth: '588px' } });
+    const bubbleContainer = create('div', { classes: ['user-query-bubble-container'], style: { maxWidth: '520px' } });
+    const geminiBubble = create('div', { classes: ['user-query-bubble-with-background'], style: { maxWidth: '458px' } });
+    const queryText = create('div', { classes: ['query-text'], style: { maxWidth: '458px' } });
+    const queryLine = create('p', { classes: ['query-text-line'], style: { maxWidth: '458px' } });
+    queryText.append(queryLine);
+    geminiBubble.append(queryText);
+    bubbleContainer.append(geminiBubble);
+    queryContent.append(bubbleContainer);
+    userQueryContainer.append(queryContent);
+    userQueryContent.append(userQueryContainer);
+    userQuery.append(userQueryContent);
+    conversation.append(userQuery);
+    geminiScroller.append(conversation);
     const inputContainer = create('input-container', {
       classes: ['input-gradient'],
       rect: { x: 312, y: 767, width: 1228, height: 133 },
@@ -307,8 +346,12 @@ function makeMockDom(hostname) {
     });
     const inputAreaContainer = create('div', { classes: ['input-area-container'] });
     const inputArea = create('input-area-v2', { rect: { x: 540, y: 790, width: 660, height: 72 } });
+    const textInputField = create('div', {
+      classes: ['text-input-field'],
+      style: { display: 'grid', gridTemplateAreas: '"file-preview file-preview file-preview" "leading-actions text-input trailing-actions"' }
+    });
     const innerFloat = create('button', { rect: { x: 1400, y: 800, width: 32, height: 32 }, style: { position: 'fixed' } });
-    inputArea.append(innerFloat);
+    inputArea.append(textInputField, innerFloat);
     inputAreaContainer.append(inputArea);
     const disclaimer = create('hallucination-disclaimer', { rect: { x: 500, y: 860, width: 500, height: 36 } });
     inputContainer.append(inputAreaContainer, disclaimer);
@@ -318,7 +361,7 @@ function makeMockDom(hostname) {
       rect: { x: 1492, y: 852, width: 32, height: 32 },
       style: { position: 'fixed' }
     });
-    chatWindow.append(inputContainer);
+    chatWindow.append(geminiScroller, inputContainer);
     app.append(chatWindow);
     body.append(app, cornerBtn);
   }
@@ -433,12 +476,37 @@ test('structure probe collects pseudo paint/mask, full ancestor depth, siblingsA
   assert.equal(chatgpt.targets.cornerFloats.count, 1, 'captures corner button while excluding dialog, op-owned, form child and nested span');
   assert.deepEqual(chatgpt.targets.cornerFloats.samples[0].classes, ['host-corner-help']);
 
+  assert.equal(chatgpt.targets.userBubbleAncestors.count, 8, 'collects ChatGPT userBubbleAncestors up to depth 8');
+  assert.equal(chatgpt.targets.userBubbleAncestors.samples.length, 8);
+  assert.ok(chatgpt.targets.userBubbleAncestors.samples.some(s => s.classes.includes('user-bubble-wrap')), 'captures bubble wrapper');
+  assert.ok(chatgpt.targets.userBubbleAncestors.samples.some(s => s.classes.includes('user-turn') && s.data['data-content-search-unit-key'] === '[id]:0:user'), 'captures .user-turn with redacted unit key');
+  assert.ok(chatgpt.targets.userBubbleAncestors.samples.some(s => s.data['data-turn-key'] === '[id]'), 'captures [data-turn-key] with redacted key');
+  const chatgptTranscriptAnc = chatgpt.targets.userBubbleAncestors.samples.find(s => s.classes.includes('transcriptContent_q8xz'));
+  assert.ok(chatgptTranscriptAnc, 'captures transcriptContent in userBubbleAncestors');
+  assert.equal(chatgptTranscriptAnc.style['--thread-content-max-width'], '48rem');
+  assert.equal(chatgptTranscriptAnc.style['--user-chat-width'], '70%');
+
   const gemini = runProbe('gemini.google.com');
   assert.equal(gemini.targets.inputSiblings.count, 1, 'collects siblings after Gemini .input-area-container');
   assert.equal(gemini.targets.inputSiblings.samples[0].tag, 'hallucination-disclaimer');
   assert.equal(gemini.targets.inputSiblings.samples[0].hasInteractive, false);
   assert.equal(gemini.targets.inputAncestors.count, 6, 'collects Gemini inputAncestors chain');
   assert.equal(gemini.targets.inputAncestors.samples.length, 6);
+  assert.equal(gemini.targets.userBubbleAncestors.count, 8, 'collects Gemini userBubbleAncestors up to depth 8');
+  assert.equal(gemini.targets.userBubbleAncestors.samples.length, 8);
+  assert.ok(gemini.targets.userBubbleAncestors.samples.some(s => s.classes.includes('user-query-bubble-container') && s.style.maxWidth === '520px'));
+  assert.ok(gemini.targets.userBubbleAncestors.samples.some(s => s.classes.includes('query-content') && s.style.maxWidth === '588px'));
+  assert.ok(gemini.targets.userBubbleAncestors.samples.some(s => s.tag === 'user-query' && s.style.maxWidth === '708px'));
+  const geminiChatWindow = gemini.targets.userBubbleAncestors.samples.find(s => s.tag === 'chat-window');
+  assert.ok(geminiChatWindow, 'captures chat-window in userBubbleAncestors');
+  assert.equal(geminiChatWindow.style['--bard-chat-window-content-width-default'], '744px');
+  assert.equal(geminiChatWindow.style['--bard-chat-window-content-width'], '708px');
+  assert.equal(gemini.targets.userQueryText.count, 2, 'collects Gemini userQueryText nodes');
+  assert.ok(gemini.targets.userQueryText.samples.some(s => s.classes.includes('query-text') && s.style.maxWidth === '458px'));
+  assert.ok(gemini.targets.userQueryText.samples.some(s => s.classes.includes('query-text-line') && s.style.maxWidth === '458px'));
+  assert.ok(gemini.targets.inputAreaChildren.count >= 2, 'collects Gemini inputAreaChildren');
+  assert.ok(gemini.targets.inputAreaChildren.samples.some(s => s.tag === 'input-area-v2'));
+  assert.ok(gemini.targets.inputAreaChildren.samples.some(s => s.classes.includes('text-input-field')));
   assert.deepEqual(gemini.bottomOffsets, { dockBottomOffset: 0, composerBottomOffset: 38 });
   assert.equal(gemini.targets.cornerFloats.count, 1, 'captures Gemini corner button while excluding input-area-v2 inner float');
   assert.deepEqual(gemini.targets.cornerFloats.samples[0].classes, ['host-corner-help']);

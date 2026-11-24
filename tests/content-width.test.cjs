@@ -12,25 +12,65 @@ const plain = value => JSON.parse(JSON.stringify(value));
 
 test('each site declares its native reading width and the elements that actually limit it', () => {
   const A = adapters();
-  const chatgpt = plain(A.forHost('chatgpt', {}).contentWidth);
-  const gemini = plain(A.forHost('gemini', {}).contentWidth);
+  const rawChatgpt = A.forHost('chatgpt', {}).contentWidth;
+  const rawGemini = A.forHost('gemini', {}).contentWidth;
+  for (const [host, cw] of [['chatgpt', rawChatgpt], ['gemini', rawGemini]]) {
+    assert.equal(Object.isFrozen(cw), true, `${host}: contentWidth object is frozen`);
+    for (const key of ['targets', 'userTurnTargets', 'composerTargets']) {
+      assert.ok(Array.isArray(cw[key]), `${host}: contentWidth.${key} is an array`);
+      assert.equal(Object.isFrozen(cw[key]), true, `${host}: contentWidth.${key} is frozen`);
+    }
+  }
+  const chatgpt = plain(rawChatgpt);
+  const gemini = plain(rawGemini);
   // Probe 2026-11-22: ChatGPT text column 48rem (808px transcript = 48rem + 2 × 20px); Gemini blocks 708px.
   assert.equal(chatgpt.native, 768);
   assert.equal(gemini.native, 708);
   assert.deepEqual(chatgpt.targets, ['main', '[class*="transcriptContent"]'], 'ChatGPT: bridges --thread-content-max-width on main and sizes transcriptContent');
+  assert.deepEqual(chatgpt.userTurnTargets, [
+    '[data-content-search-unit-key$=":user"] :has([data-user-message-bubble="true"])',
+    '[data-message-author-role="user"] > div:has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"])',
+    '[data-user-message-bubble="true"]',
+    '[data-message-author-role="user"] :where(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"])',
+    '[data-message-author-role="user"] > div:not(:has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"]))',
+    '[data-testid="user-message"]',
+    '[data-turn="user"] .user-message-bubble-color',
+    '[data-turn="user"] > div > div'
+  ], 'ChatGPT: uncapped user turn wrappers and proportional bubble targets');
   assert.deepEqual(chatgpt.composerTargets, [
     '#thread-bottom-container',
     '#thread-bottom',
     '#thread-bottom [class*="--thread-content-max-width"]',
+    '#thread-bottom :has(form[data-chatgpt-composer]):not(:has(> form[data-chatgpt-composer]))',
     '#thread-bottom :has(> form[data-chatgpt-composer])',
     '#thread-bottom > form[data-chatgpt-composer]'
-  ], 'ChatGPT: dock containers bridge --thread-content-max-width and composer wrapper/form follow the reading width');
-  for (const selector of ['.md-content > *', 'user-query', '.response-footer', 'hallucination-disclaimer']) {
-    assert.ok(gemini.targets.includes(selector), `Gemini declares ${selector}`);
-  }
-  assert.deepEqual(gemini.composerTargets, ['.input-area-container']);
+  ], 'ChatGPT: dock containers bridge --thread-content-max-width and nested/direct composer wrappers follow the reading width');
+  assert.deepEqual(gemini.targets, [
+    'chat-window',
+    '.md-content > *',
+    'user-query',
+    '.response-footer',
+    'hallucination-disclaimer'
+  ], 'Gemini: bridges chat-window vars and sizes blocks, user-query, footer, and disclaimer');
+  assert.deepEqual(gemini.userTurnTargets, [
+    'user-query > user-query-content',
+    'user-query .user-query-container',
+    'user-query :has(.user-query-bubble-with-background)',
+    'user-query .user-query-bubble-with-background',
+    'user-query-content.user-query-bubble-with-background',
+    'user-query .user-query-bubble-with-background :is(.query-text, .query-text-line)',
+    'user-query .user-query-bubble-with-background > *'
+  ], 'Gemini: uncapped user-query hierarchy, text wrappers, and proportional bubble targets');
+  assert.deepEqual(gemini.composerTargets, [
+    'input-container :has(> .input-area-container)',
+    '.input-area-container',
+    '.input-area-container :has(input-area-v2)',
+    '.input-area-container input-area-v2'
+  ], 'Gemini: uncapped input wrappers and synchronized input area');
   for (const spec of [chatgpt, gemini]) {
-    for (const selector of [...spec.targets, ...spec.composerTargets]) assert.doesNotMatch(selector, /data-op-/, 'declared limiters are host selectors, never extension markers');
+    for (const selector of [...spec.targets, ...spec.userTurnTargets, ...spec.composerTargets]) {
+      assert.doesNotMatch(selector, /data-op-/, 'declared limiters are host selectors, never extension markers');
+    }
   }
 });
 
@@ -66,26 +106,36 @@ const hostsCss = fs.readFileSync(path.join(ROOT, 'styles/hosts.css'), 'utf8');
 const MARKER = '/* === Content Width Presets (v0.3.1 #21) === */';
 function splitTopLevel(text) {
   const parts = [];
-  let depth = 0, start = 0;
+  let depth = 0, start = 0, quote = '';
   for (let i = 0; i < text.length; i++) {
-    if ('(['.includes(text[i])) depth++;
-    else if (')]'.includes(text[i])) depth--;
-    else if (text[i] === ',' && depth === 0) { parts.push(text.slice(start, i).trim()); start = i + 1; }
+    const ch = text[i];
+    if (quote) {
+      if (ch === quote && text[i - 1] !== '\\') quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'") quote = ch;
+    else if ('(['.includes(ch)) depth++;
+    else if (')]'.includes(ch)) depth--;
+    else if (ch === ',' && depth === 0) { parts.push(text.slice(start, i).trim()); start = i + 1; }
   }
   parts.push(text.slice(start).trim());
   return parts.filter(Boolean);
 }
-/** Element selectors of the hosts.css rules that size something from --op-reading-width for one host. */
-function cssWidthLimiters(host) {
+function contentWidthBlockCss() {
   const start = hostsCss.indexOf(MARKER);
   assert.notEqual(start, -1, `hosts.css has the ${MARKER} block`);
   const end = hostsCss.indexOf('/* === ', start + MARKER.length);
-  const css = (end === -1 ? hostsCss.slice(start) : hostsCss.slice(start, end)).replace(/\/\*[\s\S]*?\*\//g, '');
+  return (end === -1 ? hostsCss.slice(start) : hostsCss.slice(start, end)).replace(/\/\*[\s\S]*?\*\//g, '');
+}
+/** Element selectors of all host-scoped width rules in the Content Width Presets block (including uncap rules). */
+function cssWidthLimiters(host) {
+  const css = contentWidthBlockCss();
   const out = [];
-  for (const [, selectorText, body] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
-    if (!/--op-reading-width/.test(body)) continue;
+  for (const [, selectorText] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     for (const selector of splitTopLevel(selectorText.replace(/\s+/g, ' ').trim())) {
-      if (!selector.startsWith(`html[data-op-enabled="true"][data-op-host="${host}"]`)) continue;
+      const hostMatch = selector.match(/^html\[data-op-enabled="true"\]\[data-op-host="(chatgpt|gemini)"\]/);
+      assert.ok(hostMatch, `Content Width Presets rule must be host-scoped (no unguarded host-agnostic rule): "${selector}"`);
+      if (hostMatch[1] !== host) continue;
       // Drop the root gate (the first compound); what remains is the limiter, or an :is() list of limiters.
       const limiter = selector.slice(selector.indexOf(' ') + 1);
       const list = limiter.match(/^:is\((.*)\)$/);
@@ -95,10 +145,16 @@ function cssWidthLimiters(host) {
   return out;
 }
 
-test('static guard: hosts.css width rules size exactly the limiters each adapter declares', () => {
+test('static guard: hosts.css width rules size exactly the limiters each adapter declares without 820px ceiling or host-agnostic rules', () => {
+  const block = contentWidthBlockCss();
+  assert.equal(/820px/.test(block), false, 'hosts.css Content Width Presets must not hardcode an 820px ceiling');
   const A = adapters();
   for (const host of ['chatgpt', 'gemini']) {
     const spec = plain(A.forHost(host, {}).contentWidth);
-    assert.deepEqual(cssWidthLimiters(host).sort(), [...spec.targets, ...spec.composerTargets].sort(), `${host}: hosts.css and src/adapters.js list the same width limiters`);
+    assert.deepEqual(
+      cssWidthLimiters(host).sort(),
+      [...spec.targets, ...spec.userTurnTargets, ...spec.composerTargets].sort(),
+      `${host}: hosts.css and src/adapters.js list the same width limiters`
+    );
   }
 });
