@@ -25,6 +25,7 @@ import { checkBottomDock } from './bottom-dock.mjs';
 import { checkCodeAndNativeMathSurfaces } from './code-math-surface.mjs';
 // v0.4.1 #34 Dual-host offline Temml MathML Formula Preview, toggle, copy preservation, fold coordination & zero-residue restore
 import { checkFormulaPreview } from './formula-preview.mjs';
+import { checkSidebarActiveHighlight } from './sidebar-highlight.mjs';
 import { paragraphWidth, waitUntil } from './measure.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -1391,6 +1392,8 @@ try {
     await checkCodeAndNativeMathSurfaces(liveSuite);
     // v0.4.1 #34 Dual-host offline Temml MathML Formula Preview
     await checkFormulaPreview(liveSuite);
+    // v0.4.3 #42 Sidebar active highlight shaped as icon tile or single whole-row layer
+    await checkSidebarActiveHighlight(liveSuite);
   }
   if (!liveOnly && !baselinesOnly) {
     await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
