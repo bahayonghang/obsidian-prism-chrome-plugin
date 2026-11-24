@@ -207,7 +207,7 @@ const RUNTIME_SURFACE_ATTRS = [
   'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-header-empty', 'data-op-composer-leading', 'data-op-composer-primary',
   'data-op-composer-trailing', 'data-op-composer-toolbar', 'data-op-composer-add', 'data-op-model-capsule',
   'data-op-model-capsule-item', 'data-op-composer-primary-action', 'data-op-composer-attachment',
-  'data-op-composer-chip', 'data-op-composer-backdrop', 'data-op-sidebar-surface', 'data-op-sidebar-active'
+  'data-op-composer-chip', 'data-op-composer-backdrop', 'data-op-sidebar-surface', 'data-op-sidebar-active', 'data-op-sidebar-active-tile'
 ];
 const RUNTIME_ROOT_VARS = [
   '--op-reading-width', '--op-reading-shift', '--op-dock-clearance', '--op-scroller-fade-start', '--op-scroller-fade-end', '--op-dock-offset-x', '--op-dock-offset-y'

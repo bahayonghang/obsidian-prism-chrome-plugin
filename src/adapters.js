@@ -581,6 +581,14 @@
   }
   const ACTIVE_NAV_STATE = '[aria-current="page"],[aria-current="true"],[data-active="true"],[aria-selected="true"]';
   const NAV_ROW = 'a[href],button,[role="link"],[role="button"],[role="option"]';
+  const NAV_LINK = 'a[href],[role="link"]';
+  const SIDEBAR_ROW_MAX_HEIGHT = 96;
+  /**
+   * v0.4.3 #42: active sidebar targets and their shape. Returns `{ element, shape }` per active item,
+   * where `shape` is `'tile'` for an equal-width icon-only button (decided by geometry: near-square and
+   * no visible text; `data-uniform` only widens the tolerance) and `'row'` otherwise. When the host
+   * repeats the active state on a whole row and its inner link, the outermost single-line row owns it.
+   */
   function findSidebarActiveRows(sidebars) {
     const rows = new Set();
     for (const sidebar of sidebars) {
@@ -588,24 +596,36 @@
         if (!node || node === sidebar || !sidebar.contains(node) || isOwned(node) || !isVisible(node)) return false;
         const rect = node.getBoundingClientRect();
         // A project/tree group can contain active rows without being one itself.
-        return rect.height > 0 && rect.height <= 96 &&
-          node.querySelectorAll('a[href],[role="link"]').length <= 1;
+        return rect.height > 0 && rect.height <= SIDEBAR_ROW_MAX_HEIGHT &&
+          node.querySelectorAll(NAV_LINK).length <= 1;
+      };
+      // A noninteractive wrapper is a row only when it holds exactly one link on its single line;
+      // a project group with a header above its one conversation is not.
+      const isWrapperRow = node => {
+        if (!isRow(node)) return false;
+        const links = node.querySelectorAll(NAV_LINK);
+        if (links.length !== 1) return false;
+        const rect = node.getBoundingClientRect(), link = links[0].getBoundingClientRect();
+        const offset = Math.abs((link.top + link.bottom) / 2 - (rect.top + rect.bottom) / 2);
+        return offset <= Math.max(4, rect.height * .15);
       };
       for (const state of sidebar.querySelectorAll(ACTIVE_NAV_STATE)) {
         if (isOwned(state) || !isVisible(state)) continue;
         let row = state.closest(NAV_ROW);
         if (!isRow(row)) {
-          const links = [...state.querySelectorAll('a[href],[role="link"]')].filter(isRow);
+          const links = [...state.querySelectorAll(NAV_LINK)].filter(isRow);
           // A noninteractive wrapper may carry the state for its single link.
           // Never transfer a group's state to all of its conversations.
-          row = links.length === 1 && state.getBoundingClientRect().height <= 96 ? links[0] : null;
+          row = links.length === 1 && state.getBoundingClientRect().height <= SIDEBAR_ROW_MAX_HEIGHT ? links[0] : null;
         }
         if (row) {
-          // A nested title/action can carry the only active flag. Its enclosing
-          // navigation row still owns the highlight, even without its own flag.
+          // A nested title/action can carry the only active flag. Its enclosing navigation row
+          // still owns the highlight, even without its own flag; a wrapper that repeats the active
+          // state around its single link owns the whole-row highlight.
           for (let parent = row.parentElement; parent && parent !== sidebar; parent = parent.parentElement) {
-            if (!parent.matches(NAV_ROW)) continue;
-            if (!isRow(parent)) break;
+            const interactive = parent.matches(NAV_ROW);
+            if (!interactive && !parent.matches(ACTIVE_NAV_STATE)) continue;
+            if (!(interactive ? isRow(parent) : isWrapperRow(parent))) break;
             row = parent;
           }
           rows.add(row);
@@ -613,7 +633,29 @@
       }
     }
     const result = [...rows];
-    return result.filter(node => !result.some(parent => parent !== node && parent.contains(node)));
+    return result
+      .filter(node => !result.some(parent => parent !== node && parent.contains(node)))
+      .map(element => ({ element, shape: isIconTile(element) ? 'tile' : 'row' }));
+  }
+  function isIconTile(node) {
+    const rect = node.getBoundingClientRect();
+    const longer = Math.max(rect.width, rect.height), shorter = Math.min(rect.width, rect.height);
+    if (!(shorter > 0) || longer > 64) return false;
+    const tolerance = node.hasAttribute?.('data-uniform') ? 1.5 : 1.25;
+    return longer / shorter <= tolerance && !hasRenderedLabel(node);
+  }
+  // Text clipped to a 1px screen-reader box is not visible text.
+  function hasRenderedLabel(node) {
+    const nodes = [node];
+    for (let index = 0; index < nodes.length && nodes.length < 40; index++) nodes.push(...(nodes[index].children || []));
+    return nodes.slice(0, 40).some(element => {
+      const own = element.childNodes
+        ? [...element.childNodes].filter(child => child.nodeType === 3).map(child => child.data).join('')
+        : (element.children?.length ? '' : element.textContent || '');
+      if (!own.trim() || !isVisible(element)) return false;
+      const rect = element.getBoundingClientRect();
+      return rect.width > 2 && rect.height > 2;
+    });
   }
   function sortByDocumentOrder(nodes) {
     if (nodes.length <= 1 || typeof nodes[0]?.compareDocumentPosition !== 'function') return nodes;

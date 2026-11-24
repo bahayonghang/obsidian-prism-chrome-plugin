@@ -88,7 +88,8 @@
     'data-op-composer-chip',
     'data-op-composer-backdrop',
     'data-op-sidebar-surface',
-    'data-op-sidebar-active'
+    'data-op-sidebar-active',
+    'data-op-sidebar-active-tile'
   ]);
   const RUNTIME_SURFACE_SELECTOR = RUNTIME_SURFACE_ATTRS.map(attr => `[${attr}="true"]`).join(',');
   const RUNTIME_ROOT_VARS = Object.freeze([
@@ -1075,7 +1076,11 @@
     if (cfg.sidebarStyle !== 'native') {
       const sidebars = adapter.sidebarSurfaces?.() || [];
       for (const element of sidebars) add(element,'data-op-sidebar-surface');
-      for (const element of adapter.sidebarActiveRows?.(sidebars) || []) add(element,'data-op-sidebar-active');
+      // v0.4.3 #42: one highlight per active item; its shape (row / icon tile) selects the style.
+      for (const { element, shape } of adapter.sidebarActiveRows?.(sidebars) || []) {
+        add(element,'data-op-sidebar-active');
+        if (shape === 'tile') add(element,'data-op-sidebar-active-tile');
+      }
     }
     const adoptingHandover = adoptHandoverSurfaceMarks();
     for (const [element, attributes] of surfaceMarks) {
