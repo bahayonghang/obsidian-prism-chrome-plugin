@@ -141,7 +141,15 @@ async function actualChromiumExtension() {
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker', { timeout: 20000 });
     const workerURL = new URL(worker.url());
     const extensionOrigin = workerURL.protocol + '//' + workerURL.host;
-    options = await context.newPage();
+    const options = await context.newPage();
+    const waitUntil = async (fn, label, timeout = 5000) => {
+      const deadline = Date.now() + timeout;
+      while (Date.now() < deadline) {
+        if (await fn()) return;
+        await new Promise(resolve => setTimeout(resolve, 25));
+      }
+      throw new Error(`Timed out waiting for ${label}`);
+    };
     const errors = [];
     options.on('pageerror', error => errors.push(error.message));
     await options.goto(extensionOrigin + '/' + manifest.options_ui.page);
@@ -175,7 +183,8 @@ async function actualChromiumExtension() {
     assert.equal(await chat.locator('.op-code-fold-bar').count(), 1);
     // Changing uiThemeMode must lock Options theme without touching open ChatGPT Host Surface or #chat-preview.
     await options.locator('#cfg-uiThemeMode').selectOption('light');
-    await options.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).uiThemeMode === 'light' && document.documentElement.getAttribute('data-op-scheme') === 'light' && getComputedStyle(document.documentElement).colorScheme === 'light');
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light' && getComputedStyle(document.documentElement).colorScheme === 'light');
+    await waitUntil(async () => (await options.evaluate(() => ObsidianPrismSchema.loadConfig())).uiThemeMode === 'light', 'options uiThemeMode=light');
     await chat.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
     assert.equal(await options.evaluate(() => document.documentElement.getAttribute('data-op-effective-palette')), 'crystal');
     assert.equal(await options.locator('#btn-ui-theme').getAttribute('data-ui-theme'), 'light');
@@ -227,9 +236,9 @@ async function actualChromiumExtension() {
     assert.equal(await popup.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 2), true, 'popup scroll stays inside its workspace');
     await popup.screenshot({ path: path.join(ARTIFACTS, 'chromium-popup-motion.png') });
     await popup.locator('[data-choice="ambientStyle"][data-value="spotlight"]').click();
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientStyle === 'spotlight');
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).ambientStyle === 'spotlight', 'ambientStyle=spotlight');
     await popup.locator('#cfg-ambientTexture').selectOption('grid');
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientTexture === 'grid');
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).ambientTexture === 'grid', 'ambientTexture=grid');
     await popup.locator('#tab-reading').click();
     await popup.waitForFunction(() => document.body.dataset.activeTab === 'reading');
     assert.equal(await popup.locator('#panel-reading').isVisible(), true);
@@ -239,27 +248,30 @@ async function actualChromiumExtension() {
     assert.ok(formulaLabel && formulaLabel.includes('Formula preview'), `expected Formula preview label, got "${formulaLabel}"`);
     assert.equal(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'popup reading tab has no horizontal overflow');
     await popup.locator('#cfg-formulaPreview').click();
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).formulaPreview === false);
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).formulaPreview === false, 'formulaPreview=false');
     await options.waitForFunction(() => document.getElementById('cfg-formulaPreview')?.checked === false);
     await popup.locator('#cfg-formulaPreview').click();
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).formulaPreview === true);
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).formulaPreview === true, 'formulaPreview=true');
     await options.waitForFunction(() => document.getElementById('cfg-formulaPreview')?.checked === true);
     assert.equal(await popup.locator('#cfg-contentWidth').inputValue(), 'standard');
     await popup.locator('#cfg-contentWidth').selectOption('wide');
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contentWidth === 'wide');
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).contentWidth === 'wide', 'contentWidth=wide');
     await popup.locator('#cfg-contentWidth').selectOption('standard');
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contentWidth === 'standard');
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).contentWidth === 'standard', 'contentWidth=standard');
     assert.equal(await popup.locator('#cfg-contextWindowTokens').inputValue(), 'auto');
     await popup.locator('#cfg-contextWindowTokens').selectOption('400000');
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contextWindowTokens === 400000);
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).contextWindowTokens === 400000, 'contextWindowTokens=400000');
     await popup.locator('#cfg-contextWindowTokens').selectOption('auto');
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contextWindowTokens === 'auto');
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).contextWindowTokens === 'auto', 'contextWindowTokens=auto');
     await options.setViewportSize({ width: 420, height: 600 });
     assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options remain responsive at 420 pixels');
     await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-420.png') });
+    await options.locator('#tab-appearance').click();
+    await options.waitForFunction(() => document.body.dataset.activeTab === 'appearance');
+    assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options appearance tab remains responsive at 420 pixels in en-US');
     await options.locator('#cfg-language').selectOption('zh-CN');
     await options.waitForFunction(() => document.documentElement.lang === 'zh-CN');
-    assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options remain responsive at 420 pixels in zh-CN');
+    assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options appearance tab remains responsive at 420 pixels in zh-CN');
     await options.locator('#cfg-language').selectOption('en-US');
     await options.waitForFunction(() => document.documentElement.lang === 'en-US');
     await options.locator('#tab-reading').click();
@@ -268,12 +280,12 @@ async function actualChromiumExtension() {
     assert.equal(await options.locator('#cfg-formulaPreview').isChecked(), true);
     assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options reading tab remains responsive at 420 pixels');
     await popup.locator('#file-import').setInputFiles({ name: 'legacy-prism-settings.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'obsidian-prism-web', settings: { mascot: 'cat', palette: 'warm', ambientIntensity: 35, thoughtTranslate: true } })) });
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientIntensity === 35);
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).ambientIntensity === 35, 'legacy import ambientIntensity=35');
     const imported = await popup.evaluate(() => ObsidianPrismSchema.loadConfig());
     assert.equal(Object.hasOwn(imported, 'mascot'), false, 'legacy backups cannot reintroduce pets');
     assert.equal(imported.thoughtTranslate, false, 'import does not silently enable external translation');
     await popup.locator('#file-import').setInputFiles({ name: 'ui-theme-settings.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'obsidian-prism-web', settings: { uiThemeMode: 'light', palette: 'obsidian' } })) });
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).uiThemeMode === 'light');
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).uiThemeMode === 'light', 'imported uiThemeMode=light');
     assert.equal((await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).uiThemeMode, 'light');
     assert.deepEqual(errors, []);
     console.log('PASS Chromium unpacked extension: service worker, options, uiThemeMode decoupling, serialized settings, live content updates and keyboard tabs');
