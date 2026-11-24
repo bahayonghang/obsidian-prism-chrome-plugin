@@ -574,9 +574,10 @@ async function checkChatGPTBottomVariantBaselines(suite) {
 
 /**
  * v0.4.3 #41 sample areas around the Composer Surface on the live thread-footer variant (CSS px, viewport space):
- * `left` is a strip left of the composer just above its bottom edge (the ::before gradient is nearly opaque there),
- * `below` a strip under the composer inside the ::after slab, and `above` the same columns above the footer, which
- * shows the page background behind the conversation.
+ * `left` is a strip 16–40px left of the composer just above its bottom edge (the ::before gradient is nearly opaque
+ * there), `below` the same columns under the composer's bottom edge inside the ::after slab, and `above` the same columns
+ * above the footer, which show the page background behind the conversation. The columns stay clear of the Composer
+ * Surface's own shadow.
  */
 export async function threadFooterRegions(page) {
   return page.evaluate(() => {
@@ -589,7 +590,7 @@ export async function threadFooterRegions(page) {
     return {
       composer, footer,
       left: { x, y: composer.bottom - 5, width, height: 4 },
-      below: { x: composer.left + 8, y: composer.bottom + 4, width: 40, height: Math.max(1, footer.bottom - composer.bottom - 8) },
+      below: { x, y: composer.bottom + 4, width, height: Math.max(1, footer.bottom - composer.bottom - 8) },
       above: { x, y: Math.min(composer.top, footer.top) - 32, width, height: 8 }
     };
   });
