@@ -39,10 +39,21 @@
       contentWidth: {
         native: 768,
         targets: ['main', '[class*="transcriptContent"]'],
+        userTurnTargets: [
+          '[data-content-search-unit-key$=":user"] :has([data-user-message-bubble="true"])',
+          '[data-message-author-role="user"] > div:has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"])',
+          '[data-user-message-bubble="true"]',
+          '[data-message-author-role="user"] :where(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"])',
+          '[data-message-author-role="user"] > div:not(:has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"]))',
+          '[data-testid="user-message"]',
+          '[data-turn="user"] .user-message-bubble-color',
+          '[data-turn="user"] > div > div'
+        ],
         composerTargets: [
           '#thread-bottom-container',
           '#thread-bottom',
           '#thread-bottom [class*="--thread-content-max-width"]',
+          '#thread-bottom :has(form[data-chatgpt-composer]):not(:has(> form[data-chatgpt-composer]))',
           '#thread-bottom :has(> form[data-chatgpt-composer])',
           '#thread-bottom > form[data-chatgpt-composer]'
         ]
@@ -87,7 +98,25 @@
       /* v0.3.1 #21: Gemini caps every markdown block at 708px (not the outer panel), plus the
        * User Turn, the response footer, the disclaimer and the 660px input area (probe 2026-11-22).
        * Owned here and mirrored by the hosts.css width rules (see the ChatGPT note above). */
-      contentWidth: { native: 708, targets: ['.md-content > *', 'user-query', '.response-footer', 'hallucination-disclaimer'], composerTargets: ['.input-area-container'] },
+      contentWidth: {
+        native: 708,
+        targets: ['chat-window', '.md-content > *', 'user-query', '.response-footer', 'hallucination-disclaimer'],
+        userTurnTargets: [
+          'user-query > user-query-content',
+          'user-query .user-query-container',
+          'user-query :has(.user-query-bubble-with-background)',
+          'user-query .user-query-bubble-with-background',
+          'user-query-content.user-query-bubble-with-background',
+          'user-query .user-query-bubble-with-background :is(.query-text, .query-text-line)',
+          'user-query .user-query-bubble-with-background > *'
+        ],
+        composerTargets: [
+          'input-container :has(> .input-area-container)',
+          '.input-area-container',
+          '.input-area-container :has(input-area-v2)',
+          '.input-area-container input-area-v2'
+        ]
+      },
       threadColumns: '.thread, .response-container',
       composerColumns: '.composer-container, input-area-v2',
       // v0.3.1 #19: grid area names the two-row Composer Surface rearranges (probe 2026-11-22).
@@ -1384,7 +1413,12 @@
       host,
       usesOverlayScrim: Boolean(spec.usesOverlayScrim),
       usesScrollerAlphaFade: Boolean(spec.usesScrollerAlphaFade),
-      contentWidth: Object.freeze({ native: spec.contentWidth.native, targets: [...spec.contentWidth.targets], composerTargets: [...spec.contentWidth.composerTargets] }),
+      contentWidth: Object.freeze({
+        native: spec.contentWidth.native,
+        targets: Object.freeze([...spec.contentWidth.targets]),
+        userTurnTargets: Object.freeze([...(spec.contentWidth.userTurnTargets || [])]),
+        composerTargets: Object.freeze([...spec.contentWidth.composerTargets])
+      }),
       userTurns,
       assistantTurns,
       conversationRoot: () => root.querySelector(spec.conversation) || root.body || root,
