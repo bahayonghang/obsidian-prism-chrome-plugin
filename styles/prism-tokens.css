@@ -386,6 +386,7 @@ html[data-op-enabled="true"][data-op-ligatures="false"] code {
 
 /* Native palette leaves host surfaces unchanged, while our widgets remain legible. */
 html[data-op-enabled="true"][data-op-effective-palette="host"][data-op-scheme="dark"] {
+  color-scheme: dark;
   --op-bg: #171717; --op-canvas: #212121; --op-sidebar: #171717;
   --op-card: #292929; --op-secondary: #323232; --op-muted: #292929;
   --op-tonal-0: #141414; --op-tonal-1: #212121; --op-tonal-2: #292929;
@@ -399,6 +400,7 @@ html[data-op-enabled="true"][data-op-effective-palette="host"][data-op-scheme="d
   --op-error: #ff8a80; --op-warning: #f6cb75; --op-success: #81c995;
 }
 html[data-op-enabled="true"][data-op-effective-palette="host"][data-op-scheme="light"] {
+  color-scheme: light;
   --op-bg: #fff; --op-canvas: #fff; --op-sidebar: #f5f5f5;
   --op-card: #fff; --op-secondary: #eee; --op-muted: #f6f6f6;
   --op-tonal-0: #ececec; --op-tonal-1: #f5f5f5; --op-tonal-2: #fff;

@@ -27,12 +27,16 @@ A single top-level response rendered by the AI model in the active conversation.
 _Avoid_: Bot reply, model node, response block
 
 **Content Width Preset**:
-One of three reading-column width modes applied across Host Surfaces and synchronized with the Composer Surface: `standard` keeps the host's native width, `full` spans the main area minus a left edge and a right reserve for the Conversation Rail, and `wide` is the midpoint of the two, at most 1200px.
+One of three reading-column width modes applied across Host Surfaces: `standard` keeps the host's native width, `full` spans the main area minus a left edge and a right reserve for the Conversation Rail, and `wide` is the midpoint of the two, at most 1200px. Under `wide` and `full`, User Turns scale proportionally (~80% of the reading column without a fixed pixel ceiling, while short prompts remain compact and right-aligned), and the Composer Surface aligns with the reading column.
 _Avoid_: Page width, layout mode, zoom level
 
 **Native Palette**:
 The `host` palette choice that leaves all Host Surface colors untouched while keeping extension-owned controls legible.
 _Avoid_: Raw mode, unstyled mode, default theme
+
+**Settings UI Theme**:
+The independent `auto` / `light` / `dark` color-scheme control governing the extension popup and options page, decoupled from Host Surface `themeMode`, optical palettes, and the extension enable switch.
+_Avoid_: Popup dark mode, host theme override, global color lock
 
 ### Reading & Estimation
 

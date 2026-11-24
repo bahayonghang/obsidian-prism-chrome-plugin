@@ -164,3 +164,13 @@ export async function setMainWidth(page, mainSelector, width) {
   if (Math.abs(final - width) >= 0.5) throw new Error(`Could not set main width to ${width}px (got ${final}px)`);
   return final;
 }
+
+/** Polls async predicate `fn` every 25ms until truthy or throws after `timeout` ms. */
+export async function waitUntil(fn, label, timeout = 5000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) {
+    if (await fn()) return;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  throw new Error(`Timed out waiting for ${label}`);
+}

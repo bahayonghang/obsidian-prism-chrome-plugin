@@ -814,14 +814,29 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-m
 /* content.js sets --op-reading-width (target text-column width) and --op-reading-shift on the root
  * for wide/full from the main area's width (Adapters.contentWidthTarget); standard sets nothing and
  * leaves the host's native width. The rules below touch only the per-site width limiters declared in
- * src/adapters.js (contentWidth.targets / composerTargets), which owns them: these selectors are a copy,
- * and tests/content-width.test.cjs fails when they drift. No geometry search and no per-node marks.
- * The margin-left formula centres each limiter in its own container, then shifts it left by
- * --op-reading-shift so a full column clears the Conversation Rail. Fallbacks are the native widths. */
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(main,#thread-bottom-container,#thread-bottom,#thread-bottom [class*="--thread-content-max-width"]) {
+ * src/adapters.js (contentWidth.targets / userTurnTargets / composerTargets), which owns them: these
+ * selectors are a copy, and tests/content-width.test.cjs fails when they drift. No geometry search
+ * and no per-node marks. The margin-left formula centres each limiter in its own container, then
+ * shifts it left by --op-reading-shift so a full column clears the Conversation Rail. */
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) main {
+  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+  --user-chat-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(#thread-bottom-container,#thread-bottom,#thread-bottom [class*="--thread-content-max-width"]) {
   --thread-content-max-width: var(--op-reading-width, 48rem) !important;
 }
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([class*="transcriptContent"],#thread-bottom :has(> form[data-chatgpt-composer])) {
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) #thread-bottom :has(form[data-chatgpt-composer]):not(:has(> form[data-chatgpt-composer])) {
+  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+  max-width: 100% !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) [class*="transcriptContent"] {
+  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+  --user-chat-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
+  max-width: calc(var(--op-reading-width, 48rem) + 40px) !important;
+  margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem) - 40px) / 2 + var(--op-reading-shift, 0px))) !important;
+  margin-right: auto !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) #thread-bottom :has(> form[data-chatgpt-composer]) {
   --thread-content-max-width: var(--op-reading-width, 48rem) !important;
   max-width: calc(var(--op-reading-width, 48rem) + 40px) !important;
   margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem) - 40px) / 2 + var(--op-reading-shift, 0px))) !important;
@@ -834,19 +849,62 @@ html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="
   margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem)) / 2 + var(--op-reading-shift, 0px))) !important;
   margin-right: auto !important;
 }
-html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(.md-content > *,user-query,.response-footer,hallucination-disclaimer) {
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-content-search-unit-key$=":user"] :has([data-user-message-bubble="true"]),[data-message-author-role="user"] :has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"])) {
+  --user-chat-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
+  max-width: 100% !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-user-message-bubble="true"],[data-message-author-role="user"] :where(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"]),[data-message-author-role="user"] > div:not(:has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"])),[data-testid="user-message"],[data-turn="user"] .user-message-bubble-color,[data-turn="user"] > div > div) {
+  width: fit-content !important;
+  max-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
+  margin-left: auto !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) chat-window {
+  --bard-chat-window-content-width-default: var(--op-reading-width, 744px) !important;
+  --bard-chat-window-content-width: var(--op-reading-width, 708px) !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) user-query {
+  width: 100% !important;
   max-width: var(--op-reading-width, 708px) !important;
   margin-left: max(0px, calc((100% - var(--op-reading-width, 708px)) / 2 + var(--op-reading-shift, 0px))) !important;
   margin-right: auto !important;
 }
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(.md-content > *,.response-footer,hallucination-disclaimer) {
+  max-width: var(--op-reading-width, 708px) !important;
+  margin-left: max(0px, calc((100% - var(--op-reading-width, 708px)) / 2 + var(--op-reading-shift, 0px))) !important;
+  margin-right: auto !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(user-query > user-query-content,user-query .user-query-container) {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) user-query :has(.user-query-bubble-with-background) {
+  max-width: 100% !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(user-query .user-query-bubble-with-background,user-query-content.user-query-bubble-with-background) {
+  width: fit-content !important;
+  max-width: min(100%, calc(var(--op-reading-width, 708px) * 0.8)) !important;
+  margin-left: auto !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(user-query .user-query-bubble-with-background :is(.query-text, .query-text-line),user-query .user-query-bubble-with-background > *) {
+  max-width: 100% !important;
+}
 /* The Gemini input area is natively 48px narrower than the reading column (660 vs 708) and keeps that inset. */
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) input-container :has(.input-area-container) {
+  width: 100% !important;
+  max-width: none !important;
+}
 html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) .input-area-container {
+  width: 100% !important;
   max-width: calc(var(--op-reading-width, 708px) - 48px) !important;
   margin-left: max(0px, calc((100% - var(--op-reading-width, 708px) + 48px) / 2 + var(--op-reading-shift, 0px))) !important;
   margin-right: auto !important;
 }
-html[data-op-enabled="true"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-user-message-bubble="true"],[data-message-author-role="user"] > div,[data-message-author-role="user"] :where(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"]),[data-testid="user-message"],[data-turn="user"] .user-message-bubble-color,[data-turn="user"] > div > div,user-query .user-query-bubble-with-background,user-query-content.user-query-bubble-with-background) {
-  max-width: min(78%, 820px) !important;
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) .input-area-container :has(input-area-v2) {
+  max-width: 100% !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) .input-area-container input-area-v2 {
+  width: 100% !important;
+  max-width: 100% !important;
 }
 /* === end Content Width Presets (v0.3.1 #21) === */
 

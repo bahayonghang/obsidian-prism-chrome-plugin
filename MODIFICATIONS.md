@@ -2,8 +2,8 @@
 
 **Project:** Obsidian Prism Web — Community Edition  
 **Maintainer:** bahayonghang  
-**Date:** 2026-11-23\
-**Version:** 0.4.1
+**Date:** 2026-11-24\
+**Version:** 0.4.2
 
 **License:** GPL-3.0-only
 
@@ -46,6 +46,10 @@ Spec #23 (#24–#27, 2026-11-23) extends the read-only structure probe (`pseudos
 ## v0.4.1 Gemini code surface, native math & offline formula preview
 
 Spec #32 (#33–#35, 2026-11-23) de-nests Gemini's double-nested `<code-block>` Code Surface ownership in `src/adapters.js` and `styles/hosts.css`, overrides Material/font icon CSS variables and marks painted SVG header icons reversibly (`data-op-code-icon-fill` / `data-op-code-icon-stroke`) for >= 4.5:1 contrast, adds scoped Native Math Surface foreground inheritance and `overflow-x: auto` wide-equation containment on both hosts, vendors pinned offline `temml@0.14.0` (`vendor/temml/temml.js` and `vendor/temml/temml-local.css` scoped strictly under `html[data-op-enabled="true"] .op-formula-preview` with zero `@font-face` or `.woff2` assets) alongside `src/formula.js` and `src/content.js` `syncFormulas()` (ADR-0003) for reversible MathML Core Formula Preview with `%` captions, per-segment fallback, lossless `Source` / `Formula` toggling, 280ms streaming debounce, 48-line fold coordination, Native Palette color inheritance, and single-count Context Vial invariance, exposes the `formulaPreview` Reading-tab switch (`src/config-schema.js` + `popup/popup.js`), and aligns package and browser manifests to `0.4.1`. No new permissions, host access, `web_accessible_resources`, bundled webfonts, or remote network dependencies are added.
+
+## v0.4.2 decoupled settings UI theme & proportional user turn width
+
+Spec #36 (#37–#39, 2026-11-24) introduces an independent `uiThemeMode` (`auto` / `light` / `dark`, default `auto`) with `resolveUiScheme`, `resolveUiPalette` (falling back safely from `host` Native Palette to `obsidian` / `crystal`), and `applyUiThemeToRoot` in `src/config-schema.js`, wires synchronized header toggle (`#btn-ui-theme`) and Appearance Details dropdown (`#cfg-uiThemeMode`) controls plus document-level `color-scheme`, `@media (prefers-color-scheme: light)` pre-load fallback, and Native Palette `color-scheme` declarations across `popup/*` and `styles/prism-tokens.css` while keeping Host Surface resolution and `#chat-preview` decoupled, and fixes palette-card clicks (`handlePaletteCard` / `previewSchemeOverride`) so clicking any card previews and updates only its group preset without mutating `themeMode` or dead-clicking already-checked defaults; extends `tools/structure-probe.js` (`userBubbleAncestors`, Gemini `userQueryText`, `inputAreaChildren`, and `--bard-chat-window-content-width`), adds adapter-owned `contentWidth.userTurnTargets` and expanded `targets` / `composerTargets` in `src/adapters.js` mirrored in `styles/hosts.css` to uncap nested ChatGPT/Gemini User Turn and composer wrappers, bridge `--user-chat-width` and `--bard-chat-window-content-width*`, remove the legacy `820px` ceiling, scale long User Turns proportionally (~80% of `--op-reading-width` across `wide` / `full`) while preserving compact `fit-content` right-aligned short prompts, and keep Composer Surface width synchronized; and aligns manifests, package metadata, documentation, and verification records to `0.4.2`. No new permissions, host access, or remote network dependencies are added.
 
 ## File attribution
 
