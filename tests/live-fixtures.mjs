@@ -212,7 +212,10 @@ async function assertNativeWidths(page, host, mainWidth) {
     near(composerWidth, base.paragraph, 0.5, `${label} composer`);
   } else {
     near(paragraph.box, base.block, 0.5, `${label} paragraph box`);
-    const blocks = await page.locator(`${s.assistant} > *`).evaluateAll(nodes => nodes.map(node => ({ tag: node.localName, width: node.getBoundingClientRect().width })));
+    const blocks = await page.locator(`${s.assistant} > *`).evaluateAll(nodes => nodes.map(node => {
+      const box = getComputedStyle(node).display === 'inline' && node.firstElementChild ? node.firstElementChild : node;
+      return { tag: node.localName, width: box.getBoundingClientRect().width };
+    }));
     assert.ok(blocks.length >= 8, `${label}: markdown has headings, lists, quote, table and code blocks`);
     for (const block of blocks) assert.ok(block.width <= base.block + 0.5, `${label}: ${block.tag} block (${block.width}) is capped at ${base.block}px`);
     near(await page.locator(s.column).first().evaluate(node => node.getBoundingClientRect().width), base.userQuery, 0.5, `${label} user-query`);

@@ -44,6 +44,8 @@ main{position:relative;flex:1 1 0;min-height:0;width:100%;display:flex;flex-dire
 .code-shell{border-radius:16px;background:#171717;overflow:hidden}
 .code-shell-header{display:flex;justify-content:space-between;align-items:center;padding:6px 14px;font-size:12px;color:var(--text-secondary);background:#2f2f2f}
 .code-shell pre{margin:0;padding:14px 16px;overflow:auto;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+.katex-display{display:block;margin:12px 0;background:#2b2d30;color:#f3f4f6;padding:8px 12px;border-radius:8px}
+.katex{display:inline-block;white-space:nowrap;color:#f3f4f6;background:#2b2d30;padding:0 4px;border-radius:4px}
 .turn-actions{display:flex;gap:4px;color:var(--text-secondary)}
 .turn-actions button{width:30px;height:30px;display:grid;place-items:center;border-radius:8px}
 /* In-flow flex footer paints var(--main-surface-primary) and a ::before gradient fade + mask. */
@@ -100,6 +102,8 @@ form[data-chatgpt-composer]{width:100%;background:transparent}
 <div class="code-shell"><div class="code-shell-header"><span>snippet</span><button type="button" aria-label="Copy">Copy</button></div><pre><code class="language-js">const sampleWidth = 768;
 const sampleGap = 20;
 console.log(sampleWidth + sampleGap * 2);</code></pre></div>
+<p>Inline math check <span class="katex">E = mc^2</span> inside prose.</p>
+<div class="katex-display"><span class="katex" style="white-space:nowrap">g(t) = c_0 + c_1 t + c_2 t^2 + c_3 t^3 + c_4 t^4 + c_5 t^5 + c_6 t^6 + c_7 t^7 + c_8 t^8 + c_9 t^9 + c_{10} t^{10} + c_{11} t^{11} + c_{12} t^{12} + c_{13} t^{13} + c_{14} t^{14} + c_{15} t^{15}</span></div>
 <p>A closing paragraph ends the answer before the action row.</p>
 </div><div class="turn-actions"><button type="button" aria-label="Copy"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button type="button" aria-label="Good response"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11v9M7 11l4-8a2 2 0 0 1 3 2l-1 5h6l-2 9H7"/></svg></button><button type="button" aria-label="More actions"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div></div></div></div>
 <div data-turn-key="5d2f8b6e-1a4c-4e97-b3d0-9c7a2e5f8b14" class="turn-container"><div data-virtualized-turn><div data-content-search-unit-key="68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13:4:user" class="user-turn"><h5 class="sr-only">You said:</h5><div data-user-message-bubble="true" class="user-message-bubble-color">And a short follow-up question?</div></div></div></div>

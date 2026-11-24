@@ -1517,3 +1517,82 @@ test('v0.4.1 #31: composerRestyle: false clears empty-sibling and disclaimer mar
   ctx.runtime.stop();
   assert.deepEqual(snapshotDomOrder(), initialOrder, 'ADR-0002: stop() leaves DOM parent/child/sibling order intact');
 });
+
+test('v0.4.1 #33: syncSurfaces marks computed SVG fill/stroke code header icons reversibly and clears on host palette, disable, and stop', async () => {
+  const styles = new Map();
+  const ctx = createRuntimeDom({}, {
+    host: 'gemini',
+    getComputedStyle: el => styles.get(el) || { position: 'static', fill: '', stroke: '' }
+  });
+  const e = Object.fromEntries(ctx.elements);
+  const makeIconEl = (tag, attrs = {}, computed = {}) => {
+    const node = ctx.h.context.document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) node.setAttribute(k, v);
+    styles.set(node, { position: 'static', ...computed });
+    return node;
+  };
+  const filledSvg = makeIconEl('svg', { viewBox: '0 0 24 24' }, { fill: 'rgb(227, 227, 227)', stroke: 'none' });
+  const filledPath = makeIconEl('path', { d: 'M5 5h14v14H5z' }, { fill: 'rgb(227, 227, 227)', stroke: 'none' });
+  filledSvg.append(filledPath);
+
+  const strokeSvg = makeIconEl('svg', { viewBox: '0 0 24 24' }, { fill: 'none', stroke: 'rgb(227, 227, 227)' });
+  const strokePath = makeIconEl('path', { d: 'M4 12h16' }, { fill: 'none', stroke: 'rgb(227, 227, 227)' });
+  strokeSvg.append(strokePath);
+
+  const ownedSvg = makeIconEl('svg', { 'data-op-owned': 'true' }, { fill: 'rgb(227, 227, 227)', stroke: 'none' });
+  e.codeHeader.append(filledSvg, strokeSvg, ownedSvg);
+
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 20));
+
+  assert.equal(filledSvg.getAttribute('data-op-code-icon-fill'), 'true');
+  assert.equal(filledPath.getAttribute('data-op-code-icon-fill'), 'true');
+  assert.equal(filledSvg.getAttribute('data-op-code-icon-stroke'), null);
+  assert.equal(filledPath.getAttribute('data-op-code-icon-stroke'), null);
+
+  assert.equal(strokeSvg.getAttribute('data-op-code-icon-fill'), null);
+  assert.equal(strokePath.getAttribute('data-op-code-icon-fill'), null);
+  assert.equal(strokeSvg.getAttribute('data-op-code-icon-stroke'), 'true');
+  assert.equal(strokePath.getAttribute('data-op-code-icon-stroke'), 'true');
+
+  assert.equal(ownedSvg.getAttribute('data-op-code-icon-fill'), null);
+
+  // Switch to Native Palette ('host'): icon marks clear cleanly.
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'host', themeMode: 'dark' }
+  });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  for (const el of [filledSvg, filledPath, strokeSvg, strokePath]) {
+    assert.equal(el.getAttribute('data-op-code-icon-fill'), null);
+    assert.equal(el.getAttribute('data-op-code-icon-stroke'), null);
+  }
+
+  // Re-enable prism palette -> marks return; then disable extension -> marks clear.
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark' }
+  });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(filledSvg.getAttribute('data-op-code-icon-fill'), 'true');
+  assert.equal(strokeSvg.getAttribute('data-op-code-icon-stroke'), 'true');
+
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: false }
+  });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  for (const el of [filledSvg, filledPath, strokeSvg, strokePath]) {
+    assert.equal(el.getAttribute('data-op-code-icon-fill'), null);
+    assert.equal(el.getAttribute('data-op-code-icon-stroke'), null);
+  }
+
+  // Re-enable -> marks return; then stop() -> zero residue.
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark' }
+  });
+  await new Promise(resolve => setTimeout(resolve, 15));
+  assert.equal(filledSvg.getAttribute('data-op-code-icon-fill'), 'true');
+  ctx.runtime.stop();
+  for (const el of [filledSvg, filledPath, strokeSvg, strokePath]) {
+    assert.equal(el.getAttribute('data-op-code-icon-fill'), null);
+    assert.equal(el.getAttribute('data-op-code-icon-stroke'), null);
+  }
+});

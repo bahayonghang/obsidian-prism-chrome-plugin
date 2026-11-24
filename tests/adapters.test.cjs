@@ -391,6 +391,45 @@ test('Gemini 2026 adapter exposes code-block shell, mode switcher, add trigger, 
   assert.equal(adapter.composerColumns(composer).includes(composerCol), true);
 });
 
+test('v0.4.1 #33: Gemini adapter returns only inner .code-block for double-nested code-block while flat code-block.code-block returns itself', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('gemini');
+  const main = el('main', { id: 'main' });
+  const mr = el('model-response');
+  const mrText = el('div', { class: 'model-response-text' });
+
+  // Double-nested: <code-block><div class="code-block"><div class="code-block-decoration">...</div><pre>...</pre></div></code-block>
+  const outerNested = el('code-block', {}, { style: { display: 'inline', visibility: 'visible', opacity: '1' } });
+  const innerNested = el('div', { class: 'code-block' });
+  const nestedHdr = el('div', { class: 'code-block-decoration' }, { textContent: 'snippet' });
+  const nestedWrap = el('div', { class: 'formatted-code-block-internal-container' });
+  const nestedPre = el('pre');
+  nestedPre.append(el('code', {}, { textContent: 'const x = 1;' }));
+  nestedWrap.append(nestedPre);
+  innerNested.append(nestedHdr, nestedWrap);
+  outerNested.append(innerNested);
+
+  // Flat: <code-block class="code-block">...</code-block>
+  const flatCb = el('code-block', { class: 'code-block' });
+  const flatHdr = el('div', { class: 'code-block-decoration' }, { textContent: 'js' });
+  const flatPre = el('pre');
+  flatPre.append(el('code', {}, { textContent: 'const y = 2;' }));
+  flatCb.append(flatHdr, flatPre);
+
+  // Outer code-block with an empty/non-code .code-block descendant falls back to outer code-block
+  const decoyOuter = el('code-block');
+  const decoyInner = el('div', { class: 'code-block' }, { textContent: 'empty' });
+  decoyOuter.append(decoyInner);
+
+  mrText.append(outerNested, flatCb, decoyOuter);
+  mr.append(mrText);
+  main.append(mr);
+  body.append(main);
+
+  const adapter = A.forHost('gemini', doc);
+  assert.deepEqual([...adapter.codeSurfaces()], [innerNested, flatCb, decoyOuter]);
+});
+
 test('cleanTurnText strips UI chrome and optionally excludes code blocks', () => {
   const A = adapters();
   const { el } = makeDoc('chatgpt');

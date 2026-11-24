@@ -12,7 +12,7 @@ body{margin:0;background:#131314;color:#e3e3e3;font:16px/1.75 "Google Sans Text"
 button{font:inherit;color:inherit;cursor:pointer;background:transparent;border:0}
 svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;flex:none}
 a{color:inherit;text-decoration:none}
-chat-app,bard-sidenav,side-navigation-v2,chat-window,infinite-scroller,user-query,user-query-content,model-response,response-container,message-content,message-actions,code-block,input-container,input-area-v2,rich-textarea,bard-mode-switcher,hallucination-disclaimer,uploader-file-preview{display:block}
+chat-app,bard-sidenav,side-navigation-v2,chat-window,infinite-scroller,user-query,user-query-content,model-response,response-container,message-content,message-actions,input-container,input-area-v2,rich-textarea,bard-mode-switcher,hallucination-disclaimer,uploader-file-preview{display:block}
 chat-app{display:flex;height:100vh;overflow:hidden}
 bard-sidenav{flex:0 0 312px;width:312px;height:100vh;background:#1e1f20;padding:12px}
 side-navigation-v2{display:flex;flex-direction:column;gap:4px;font-size:14px;line-height:20px}
@@ -31,7 +31,7 @@ user-query{width:100%;max-width:708px;margin:24px auto 16px}
 .query-text-line{margin:0}
 model-response{width:100%}
 /* Probe: under .enable-extended-and-xl-grid every direct child of .md-content gets max-width: 708px. */
-.enable-extended-and-xl-grid .md-content > *{max-width:708px;margin-inline:auto}
+.enable-extended-and-xl-grid .md-content > *,.enable-extended-and-xl-grid .md-content > code-block > .code-block{max-width:708px;margin-inline:auto}
 .md-content{font-family:"Google Sans Text","Google Sans","Helvetica Neue",sans-serif;font-size:16px;line-height:1.75}
 .md-content > *{margin-top:0;margin-bottom:16px}
 /* Probe: native h2 24px / 380, h3 20px / 470 (inverted hierarchy). h1 and h4 values are inferred. */
@@ -44,9 +44,14 @@ model-response{width:100%}
 .md-content blockquote{border-left:4px solid #444746;padding-left:16px}
 .md-content table{border-collapse:collapse;font-size:14px}
 .md-content th,.md-content td{border:1px solid #444746;padding:6px 12px;text-align:left}
-code-block{background:#1e1f20;border-radius:16px;overflow:hidden}
+.code-block{background:#1e1f20;border-radius:16px;overflow:hidden}
 .code-block-decoration{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:13px;background:#282a2c}
-code-block pre{margin:0;padding:16px;overflow:auto;font:14px/1.6 "Google Sans Mono",ui-monospace,monospace}
+.code-block-decoration .google-symbols,.code-block-decoration mat-icon{font-size:18px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
+.code-block pre{margin:0;padding:16px;overflow:auto;font:14px/1.6 "Google Sans Mono",ui-monospace,monospace}
+.math-block{background:#2b2d30;color:#f3f4f6;padding:8px 12px;border-radius:8px}
+.math-inline{background:#2b2d30;color:#f3f4f6;padding:0 4px;border-radius:4px}
+.katex-display{display:block;margin:8px 0}
+.katex{display:inline-block;white-space:nowrap;color:#f3f4f6;background:#2b2d30}
 /* Inferred: the response footer follows the reading column. */
 .response-footer{max-width:708px;margin:0 auto 8px}
 message-actions{display:flex;gap:4px;color:#c4c7c5}
@@ -87,9 +92,11 @@ hallucination-disclaimer{text-align:center;font-size:12px;line-height:16px;color
 <ol><li>Ordered step one</li><li>Ordered step two</li></ol>
 <blockquote><p>A quoted aside that stands apart from the surrounding paragraphs.</p></blockquote>
 <table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody><tr><td>Placement</td><td>Centered</td></tr><tr><td>Rhythm</td><td>Relaxed</td></tr></tbody></table>
-<code-block><div class="code-block-decoration header-formatted"><span>snippet</span><button type="button" aria-label="Copy code">Copy</button></div><pre><code class="code-container formatted">const sampleWidth = 708;
+<code-block><div class="code-block"><div class="code-block-decoration header-formatted"><span>snippet</span><div style="display:flex;align-items:center;gap:6px"><button type="button" aria-label="Download code"><mat-icon class="mat-icon google-symbols" fonticon="download" style="color:#e3e3e3">download</mat-icon></button><button type="button" aria-label="Copy code"><svg viewBox="0 0 24 24" aria-hidden="true" style="fill:#e3e3e3;stroke:none"><path d="M5 5h14v14H5z"/></svg></button></div></div><div class="formatted-code-block-internal-container"><pre><code class="code-container formatted">const sampleWidth = 708;
 const sampleInput = 660;
-console.log(sampleWidth - sampleInput);</code></pre></code-block>
+console.log(sampleWidth - sampleInput);</code></pre></div></div></code-block>
+<p>Inline math check <span class="math-inline"><span class="katex">E = mc^2</span></span> inside prose.</p>
+<div class="math-block"><span class="katex-display"><span class="katex" style="white-space:nowrap">f(x) = a_0 + a_1 x + a_2 x^2 + a_3 x^3 + a_4 x^4 + a_5 x^5 + a_6 x^6 + a_7 x^7 + a_8 x^8 + a_9 x^9 + a_{10} x^{10} + a_{11} x^{11} + a_{12} x^{12} + a_{13} x^{13} + a_{14} x^{14} + a_{15} x^{15}</span></span></div>
 <p>A closing paragraph ends the answer before the action row.</p>
 </div></message-content></div><div class="response-footer"><message-actions><button type="button" aria-label="Good response"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11v9M7 11l4-8a2 2 0 0 1 3 2l-1 5h6l-2 9H7"/></svg></button><button type="button" aria-label="Copy"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/></svg></button><button type="button" aria-label="Show more options"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button></message-actions></div></div></response-container></model-response>
 <user-query><user-query-content><div class="user-query-container"><span class="cdk-visually-hidden">You said</span><div class="user-query-bubble-with-background"><div class="query-text"><p class="query-text-line">And a short follow-up question?</p></div></div></div></user-query-content></user-query>

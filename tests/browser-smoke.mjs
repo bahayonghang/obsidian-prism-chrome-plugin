@@ -21,6 +21,8 @@ import { checkLiveWidthPresets } from './live-width.mjs';
 import { checkLiveComposerScrim } from './live-scrim.mjs';
 // v0.4.0 #27 Bottom Dock singleton handover & dynamic collision avoidance
 import { checkBottomDock } from './bottom-dock.mjs';
+// v0.4.1 #33 Gemini Code Surface nesting/contrast & dual-host Native Math Surface readability/overflow
+import { checkCodeAndNativeMathSurfaces } from './code-math-surface.mjs';
 import { paragraphWidth } from './measure.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -1314,6 +1316,8 @@ try {
     await checkLiveComposerScrim(liveSuite);
     // v0.4.0 #27 Bottom Dock singleton handover & dynamic collision avoidance
     await checkBottomDock(liveSuite);
+    // v0.4.1 #33 Gemini Code Surface nesting/contrast & dual-host Native Math Surface readability/overflow
+    await checkCodeAndNativeMathSurfaces(liveSuite);
   }
   if (!liveOnly && !baselinesOnly) {
     await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
