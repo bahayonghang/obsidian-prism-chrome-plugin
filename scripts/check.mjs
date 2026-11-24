@@ -15,7 +15,7 @@ const hosts = ['https://chatgpt.com/*', 'https://chat.openai.com/*', 'https://ge
 const optional = ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*'];
 const expectedScripts = [
   { run_at: 'document_start', js: ['src/config-schema.js', 'src/early-boot.js'], css: ['styles/prism-tokens.css', 'styles/hosts.css'] },
-  { run_at: 'document_idle', js: ['src/adapters.js', 'src/content.js'] }
+  { run_at: 'document_idle', css: ['vendor/temml/temml-local.css'], js: ['vendor/temml/temml.js', 'src/formula.js', 'src/adapters.js', 'src/content.js'] }
 ];
 
 function resource(path) {
@@ -75,14 +75,29 @@ function list(directory) {
   });
 }
 // tools/ holds developer-only scripts (the structure probe); they are syntax-checked but never packaged.
-const javascript = ['src', 'popup', 'scripts', 'tools'].flatMap(list).filter(path => ['.js', '.mjs', '.cjs'].includes(extname(path)));
+const javascript = ['src', 'popup', 'scripts', 'tools', 'vendor'].flatMap(list).filter(path => ['.js', '.mjs', '.cjs'].includes(extname(path)));
 for (const path of javascript) {
   const result = spawnSync(process.execPath, ['--check', resolve(root, path)], { encoding: 'utf8' });
   assert.equal(result.status, 0, `${path}: ${result.stderr || result.error || 'syntax check failed'}`);
-  if (path.startsWith('src/') || path.startsWith('popup/')) {
+  if (path.startsWith('src/') || path.startsWith('popup/') || path.startsWith('vendor/')) {
     const source = read(path);
     assert(!/\beval\s*\(|\bnew\s+Function\s*\(/.test(source), `${path}: dynamically evaluated code`);
     assert(!/\bimportScripts\s*\(\s*['"]https?:/.test(source), `${path}: remote executable code`);
+  }
+  if (path.startsWith('vendor/') || path === 'src/formula.js') {
+    const source = read(path);
+    assert(!/\b(?:innerHTML|outerHTML)\b|\bdocument\.write\s*\(/.test(source), `${path}: forbidden DOM HTML injection`);
+  }
+}
+const temmlCss = read('vendor/temml/temml-local.css');
+const temmlCssCode = temmlCss.replace(/\/\*[\s\S]*?\*\//g, '');
+assert(!/@font-face\b|@import\b|\.woff2?\b|url\(\s*['"]?https?:/i.test(temmlCssCode), 'vendor/temml/temml-local.css: forbidden webfont, @import, or remote url');
+assert(!/^\s*(?:body|math)(?![\w-])/m.test(temmlCssCode), 'vendor/temml/temml-local.css: unscoped body or math rule');
+for (const match of temmlCssCode.matchAll(/([^{}]+)\{/g)) {
+  const header = match[1].replace(/^[^{}]*\}/, '').trim();
+  if (!header || header.startsWith('@')) continue;
+  for (const sel of header.split(',').map(s => s.trim()).filter(Boolean)) {
+    assert(sel.startsWith('html[data-op-enabled="true"] .op-formula-preview'), `vendor/temml/temml-local.css: unscoped selector "${sel}"`);
   }
 }
 const html = read('popup/popup.html');
@@ -103,5 +118,7 @@ for (const [size, path] of Object.entries(chrome.icons)) {
 for (const path of ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md', 'README.md', 'PRIVACY.md', 'MODIFICATIONS.md', 'docs/ARCHITECTURE.md', 'docs/TESTING.md', 'docs/IMPLEMENTATION_PLAN.md']) resource(path);
 assert(read('LICENSE').includes('GNU GENERAL PUBLIC LICENSE'));
 assert(read('NOTICE').includes('RMvdesi'));
-assert(read('THIRD_PARTY_NOTICES.md').includes('Permission is hereby granted'));
+const notices = read('THIRD_PARTY_NOTICES.md');
+assert(notices.includes('Permission is hereby granted'));
+assert(notices.includes('Temml') && notices.includes('0.14.0') && notices.includes('Ron Kok'), 'THIRD_PARTY_NOTICES.md must credit Temml 0.14.0 by Ron Kok');
 console.log(`Checked ${javascript.length} JavaScript files, both browser manifests, packaged resources, CSP, permissions and notices.`);

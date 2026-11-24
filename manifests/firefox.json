@@ -69,7 +69,8 @@
         "https://chat.openai.com/*",
         "https://gemini.google.com/*"
       ],
-      "js": ["src/adapters.js", "src/content.js"],
+      "css": ["vendor/temml/temml-local.css"],
+      "js": ["vendor/temml/temml.js", "src/formula.js", "src/adapters.js", "src/content.js"],
       "run_at": "document_idle",
       "all_frames": false
     }
