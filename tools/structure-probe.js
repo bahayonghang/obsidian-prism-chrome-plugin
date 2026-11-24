@@ -51,7 +51,15 @@
       threadBottomSiblings: { siblingsAfter: '#thread-bottom' },
       dockSiblings: { siblingsAfter: '#thread-bottom-container' },
       disclaimerShells: { selector: '[class*="disclaimer"], [data-testid*="disclaimer"], [style*="view-transition-name"]', limit: 12 },
-      cornerFloats: { cornerFloats: true }
+      cornerFloats: { cornerFloats: true },
+      composerFooter: {
+        paintedFooter: {
+          form: 'form[data-chatgpt-composer]',
+          composerLayout: 'form[data-chatgpt-composer] [data-composer-layout]',
+          editor: 'form[data-chatgpt-composer] [contenteditable="true"]'
+        },
+        markers: { scrollFooter: '[data-thread-scroll-footer]', composerBackdrop: '[data-thread-composer-backdrop]' }
+      }
     },
     gemini: {
       sidebar: 'bard-sidenav, side-navigation-v2, mat-sidenav',
@@ -93,6 +101,8 @@
     'display', 'position', 'height', 'top', 'bottom', 'left', 'right', 'zIndex', 'opacity',
     'backgroundColor', 'backgroundImage', 'boxShadow', 'maskImage', 'webkitMaskImage', 'backdropFilter'
   ];
+  // v0.4.3 #41: anchor positioning of the painted footer and its pseudo-elements (keyword/length values only).
+  const ANCHOR_STYLE_KEYS = ['anchorName', 'anchorScope', 'positionAnchor', 'positionArea', 'insetInlineStart', 'insetInlineEnd', 'insetBlockStart', 'insetBlockEnd', 'width'];
   const INTERACTIVE_SELECTOR = 'a[href],button,[role="button"],input,textarea,select';
   const CORNER_EXCLUDED_SELF = 'main, [role="main"]';
   const CORNER_EXCLUDED_ANCESTOR = 'dialog, [role="dialog"], [aria-modal="true"], [data-op-owned], form[data-chatgpt-composer], input-area-v2, input-container';
@@ -193,11 +203,20 @@
     }
     return out;
   }
-  function pseudoStyles(element, pseudo) {
+  function anchorStyles(element, pseudo) {
+    const computed = getComputedStyle(element, pseudo);
+    const out = {};
+    for (const key of ANCHOR_STYLE_KEYS) {
+      const value = computed[key];
+      if (value !== undefined && value !== '') out[key] = redactStyle(value);
+    }
+    return out;
+  }
+  function pseudoStyles(element, pseudo, extraKeys = []) {
     const computed = getComputedStyle(element, pseudo);
     const content = computed.content;
     const out = { hasContent: Boolean(content && content !== 'none' && content !== 'normal') };
-    for (const key of PSEUDO_STYLE_KEYS) {
+    for (const key of [...PSEUDO_STYLE_KEYS, ...extraKeys]) {
       const value = computed[key];
       if (value !== undefined && value !== '') out[key] = redactStyle(value);
     }
@@ -242,7 +261,51 @@
     }
     return candidates.filter(node => !candidates.some(other => other !== node && other.contains(node)));
   }
+  const TRANSPARENT = /^(?:transparent|rgba\([^)]*,\s*0\))$/;
+  function paintsPseudo(element, pseudo) {
+    const computed = getComputedStyle(element, pseudo);
+    const content = computed.content;
+    if (!content || content === 'none' || content === 'normal') return false;
+    return (computed.backgroundImage && computed.backgroundImage !== 'none') ||
+      Boolean(computed.backgroundColor && !TRANSPARENT.test(computed.backgroundColor));
+  }
+  // v0.4.3 #41: the nearest ancestor of the composer form whose ::before/::after paints a surface, how many steps
+  // separate it from the form, Composer Surface and editor, and how many of those wrappers generate no box.
+  function collectPaintedFooter(spec) {
+    const form = document.querySelector(spec.paintedFooter.form);
+    let footer = null;
+    for (let node = form?.parentElement; node && !node.matches('main, body, html'); node = node.parentElement) {
+      if (paintsPseudo(node, '::before') || paintsPseudo(node, '::after')) { footer = node; break; }
+    }
+    if (!footer) return { count: 0, samples: [] };
+    const chain = start => {
+      if (!start || !footer.contains(start)) return null;
+      let ancestors = 0, noBox = 0;
+      for (let node = start.parentElement; node; node = node.parentElement) {
+        ancestors++;
+        if (node === footer) break;
+        if (getComputedStyle(node).display === 'contents') noBox++;
+      }
+      return { ancestors, noBox };
+    };
+    const chains = {};
+    for (const [name, selector] of Object.entries(spec.paintedFooter)) chains[name] = chain(document.querySelector(selector));
+    const markers = {};
+    for (const [name, selector] of Object.entries(spec.markers || {})) {
+      let step = 0, found = null;
+      for (let node = form.parentElement; node && node !== footer.parentElement; node = node.parentElement) {
+        step++;
+        if (node.matches(selector)) { found = step; break; }
+      }
+      markers[name] = found;
+    }
+    const sample = describe(footer);
+    sample.pseudos = { before: pseudoStyles(footer, '::before', ANCHOR_STYLE_KEYS), after: pseudoStyles(footer, '::after', ANCHOR_STYLE_KEYS) };
+    sample.anchor = anchorStyles(footer);
+    return { count: 1, chains, markers, formAnchor: anchorStyles(form), samples: [sample] };
+  }
   function collect(spec) {
+    if (typeof spec !== 'string' && spec.paintedFooter) return collectPaintedFooter(spec);
     if (typeof spec !== 'string' && spec.siblingsAfter) {
       const nodes = [];
       for (let node = document.querySelector(spec.siblingsAfter)?.nextElementSibling; node; node = node.nextElementSibling) nodes.push(node);
