@@ -58,6 +58,14 @@ _Avoid_: Context limit, real window, token quota
 The complete code presentation inside a conversation turn, encompassing its outer wrapper, sticky header with action icons, code well, syntax tokens, and inline code spans.
 _Avoid_: Code box, pre block, snippet
 
+**Formula Preview**:
+The reversible rendered-math view presented on a qualifying LaTeX Code Surface, showing typeset equations while preserving the original source intact for toggling and copying.
+_Avoid_: Math code block, formula box, equation snippet
+
+**Native Math Surface**:
+A mathematical expression rendered natively by the Host Surface outside any Code Surface, whose legibility and overflow stay consistent across palettes.
+_Avoid_: Native formula, math block, host math
+
 **Composer Surface**:
 The elevated optical input card housing the host's native prompt editor, rounded-square attachment previews, circular add button, Model Capsule, and action controls, bounded by a single crisp 1px border (no duplicate outline). When restyled it uses the prototype two-row layout: attachment previews on the top row, the editor on a full-width row, then on the bottom toolbar the circular `+` add button on the left with the Model Capsule immediately to its right and secondary ghost icons plus the high-contrast circular primary send/voice action on the right—arranged purely by overriding the host's own grid into two columns (`auto minmax(0, 1fr)`) and aligning the Model Capsule slot inside the flex toolbar via CSS `order` and `margin-inline-end: auto` (on a ChatGPT grid without area names, by naming the areas of its existing children) with zero DOM reparenting.
 _Avoid_: Input box, prompt bar, chat form
