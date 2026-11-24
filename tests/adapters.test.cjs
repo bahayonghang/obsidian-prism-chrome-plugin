@@ -1566,6 +1566,40 @@ test('v0.4.3 #41: without host markers the ancestor walk skips display: contents
   }
 });
 
+test('v0.4.3 #41: a host marker that is itself the scroll container\'s direct child is the painted footer, beyond any ancestor budget', () => {
+  for (const marker of ['data-thread-scroll-footer', 'data-thread-composer-backdrop']) {
+    const { doc, body, el } = makeDoc('chatgpt');
+    const block = (extra = {}) => ({ display: 'block', visibility: 'visible', opacity: '1', position: 'static', ...extra });
+    const band = { left: 0, right: 1280, top: 740, bottom: 900, width: 1280, height: 160 };
+    const main = el('main', { id: 'main' }, { rect: { left: 0, right: 1280, top: 0, bottom: 900, width: 1280, height: 900 }, style: block({ position: 'relative' }) });
+    const scroller = el('div', { class: 'thread-scroll-container' }, { rect: { left: 0, right: 1280, top: 52, bottom: 900, width: 1280, height: 848 }, style: block({ overflowY: 'auto' }) });
+    const turn = el('div', { 'data-turn-key': 't1' });
+    turn.append(el('div', { 'data-content-search-unit-key': 'c:1:assistant', 'data-markdown-text-style': 'assistant-message' }, { textContent: 'Reply' }));
+    // Flattened host: the marker is the absolutely positioned layer directly inside the scroller.
+    const footer = el('div', { [marker]: 'true' }, { rect: band, style: block({ position: 'absolute', zIndex: '20' }) });
+    let inner = footer;
+    // More box-generating wrappers than the bounded ancestor walk may visit.
+    for (let i = 0; i < 16; i++) {
+      const next = el('div', { class: `footer-box-${i}` }, { rect: band, style: block() });
+      inner.append(next);
+      inner = next;
+    }
+    const form = el('form', { 'data-chatgpt-composer': '' }, { rect: { left: 256, right: 1024, top: 744, bottom: 864, width: 768, height: 120 }, style: block() });
+    const composer = el('div', { 'data-composer-layout': 'single-line' }, { rect: { left: 256, right: 1024, top: 744, bottom: 864, width: 768, height: 120 }, style: block({ backgroundColor: 'rgb(48, 48, 48)' }) });
+    composer.append(el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' }, { rect: { left: 300, right: 900, top: 800, bottom: 830, width: 600, height: 30 } }));
+    form.append(composer);
+    inner.append(form);
+    scroller.append(turn, footer);
+    main.append(scroller);
+    body.append(main);
+    const found = adapters().forHost('chatgpt', doc).composerBackdropSurfaces(composer);
+    assert.equal(found.filter(node => node === footer).length, 1, `[${marker}="true"] directly inside the scroll container is the painted footer`);
+    for (const [name, node] of Object.entries({ composer, form, scroller, turn })) {
+      assert.equal(found.includes(node), false, `${marker}: ${name} is never a backdrop`);
+    }
+  }
+});
+
 test('v0.4.3 #41: the thread footer is paint-only: never the dock host, and left native in the Home State', () => {
   for (const markers of [true, false]) {
     const t = liveThreadFooterDoc({ markers });
