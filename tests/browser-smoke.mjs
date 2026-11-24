@@ -25,7 +25,7 @@ import { checkBottomDock } from './bottom-dock.mjs';
 import { checkCodeAndNativeMathSurfaces } from './code-math-surface.mjs';
 // v0.4.1 #34 Dual-host offline Temml MathML Formula Preview, toggle, copy preservation, fold coordination & zero-residue restore
 import { checkFormulaPreview } from './formula-preview.mjs';
-import { paragraphWidth } from './measure.mjs';
+import { paragraphWidth, waitUntil } from './measure.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ARTIFACTS = path.join(ROOT, 'test-artifacts');
@@ -142,14 +142,6 @@ async function actualChromiumExtension() {
     const workerURL = new URL(worker.url());
     const extensionOrigin = workerURL.protocol + '//' + workerURL.host;
     const options = await context.newPage();
-    const waitUntil = async (fn, label, timeout = 5000) => {
-      const deadline = Date.now() + timeout;
-      while (Date.now() < deadline) {
-        if (await fn()) return;
-        await new Promise(resolve => setTimeout(resolve, 25));
-      }
-      throw new Error(`Timed out waiting for ${label}`);
-    };
     const errors = [];
     options.on('pageerror', error => errors.push(error.message));
     await options.goto(extensionOrigin + '/' + manifest.options_ui.page);

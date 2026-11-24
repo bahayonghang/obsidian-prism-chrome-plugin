@@ -41,7 +41,7 @@
         targets: ['main', '[class*="transcriptContent"]'],
         userTurnTargets: [
           '[data-content-search-unit-key$=":user"] :has([data-user-message-bubble="true"])',
-          '[data-message-author-role="user"] > div:has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"])',
+          '[data-message-author-role="user"] :has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"])',
           '[data-user-message-bubble="true"]',
           '[data-message-author-role="user"] :where(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"])',
           '[data-message-author-role="user"] > div:not(:has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"]))',
@@ -111,7 +111,7 @@
           'user-query .user-query-bubble-with-background > *'
         ],
         composerTargets: [
-          'input-container :has(> .input-area-container)',
+          'input-container :has(.input-area-container)',
           '.input-area-container',
           '.input-area-container :has(input-area-v2)',
           '.input-area-container input-area-v2'

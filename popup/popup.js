@@ -193,6 +193,8 @@
   $('btn-atmosphere').addEventListener('click',()=>switchTab('motion',true));
   for(const button of document.querySelectorAll('[data-choice]')) button.addEventListener('click',()=>queueSave({[button.dataset.choice]:button.dataset.value}));
   for(const button of document.querySelectorAll('[data-preview-site]')) button.addEventListener('click',()=>{previewSite=button.dataset.previewSite;preview();});
+  let clickedPaletteRadio=null;
+  let clickedPaletteTimer=0;
   function handlePaletteCard(radio) {
     const key=radio.dataset.paletteKey;
     previewSchemeOverride=key==='palette'?'dark':'light';
@@ -200,8 +202,16 @@
     else render();
   }
   for(const radio of document.querySelectorAll('[data-palette-key]')) {
-    radio.addEventListener('click',()=>handlePaletteCard(radio));
-    radio.addEventListener('change',()=>handlePaletteCard(radio));
+    radio.addEventListener('click',()=>{
+      clearTimeout(clickedPaletteTimer);
+      clickedPaletteRadio=radio;
+      clickedPaletteTimer=setTimeout(()=>{if(clickedPaletteRadio===radio) clickedPaletteRadio=null;},0);
+      handlePaletteCard(radio);
+    });
+    radio.addEventListener('change',()=>{
+      if(clickedPaletteRadio===radio) {clearTimeout(clickedPaletteTimer);clickedPaletteRadio=null;return;}
+      handlePaletteCard(radio);
+    });
   }
   for(const box of document.querySelectorAll('[data-native]')) box.addEventListener('change',()=>{
     previewSchemeOverride=box.dataset.native==='palette'?'dark':'light';

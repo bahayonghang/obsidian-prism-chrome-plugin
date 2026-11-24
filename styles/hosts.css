@@ -849,7 +849,7 @@ html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="
   margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem)) / 2 + var(--op-reading-shift, 0px))) !important;
   margin-right: auto !important;
 }
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-content-search-unit-key$=":user"] :has([data-user-message-bubble="true"]),[data-message-author-role="user"] > div:has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"])) {
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-content-search-unit-key$=":user"] :has([data-user-message-bubble="true"]),[data-message-author-role="user"] :has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"])) {
   --user-chat-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
   max-width: 100% !important;
 }
@@ -860,7 +860,7 @@ html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="
 }
 html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) chat-window {
   --bard-chat-window-content-width-default: var(--op-reading-width, 744px) !important;
-  --bard-chat-window-content-width: var(--op-reading-width, 744px) !important;
+  --bard-chat-window-content-width: var(--op-reading-width, 708px) !important;
 }
 html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) user-query {
   width: 100% !important;
@@ -889,7 +889,7 @@ html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="w
   max-width: 100% !important;
 }
 /* The Gemini input area is natively 48px narrower than the reading column (660 vs 708) and keeps that inset. */
-html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) input-container :has(> .input-area-container) {
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) input-container :has(.input-area-container) {
   width: 100% !important;
   max-width: none !important;
 }

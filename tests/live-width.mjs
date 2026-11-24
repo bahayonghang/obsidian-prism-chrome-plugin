@@ -24,7 +24,7 @@ async function cyclePreset(page, expected) {
   await settle(page);
 }
 
-/** What the reader sees: paragraph, user bubbles, attachment, composer card boxes, the rail, and Gemini's per-block widths. */
+/** What the reader sees: paragraph, User Turns, attachment, composer card boxes, the rail, and Gemini's per-block widths. */
 async function measure(page, host) {
   const s = LIVE_SELECTORS[host];
   const paragraph = await paragraphWidth(page, s.paragraph);
@@ -149,7 +149,8 @@ async function applyGeminiNestedNativeCap(page) {
       '.user-query-bubble-container { display: flex; justify-content: flex-end; width: 100%; max-width: 520px; }',
       '.query-text, .query-text-line { max-width: 458px; }',
       'user-query-file-carousel { display: flex; justify-content: flex-end; gap: 8px; max-width: 100%; }',
-      '.input-area-outer-cap { width: 100%; max-width: var(--bard-chat-window-content-width-default, 744px); margin-inline: auto; }',
+      '.input-area-outer-cap { width: 100%; max-width: 744px; margin-inline: auto; }',
+      '.input-area-inner-cap { width: 100%; max-width: 700px; margin-inline: auto; }',
       'input-area-v2 { max-width: 660px; margin-inline: auto; }'
     ].join('\n')
   });
@@ -181,15 +182,18 @@ async function applyGeminiNestedNativeCap(page) {
     if (!inputAreaContainer) return false;
     const outerCap = document.createElement('div');
     outerCap.className = 'input-area-outer-cap';
+    const innerCap = document.createElement('div');
+    innerCap.className = 'input-area-inner-cap';
     inputAreaContainer.before(outerCap);
-    outerCap.append(inputAreaContainer);
+    outerCap.append(innerCap);
+    innerCap.append(inputAreaContainer);
     return Boolean(
       document.querySelector('user-query .query-content > .user-query-bubble-container > .user-query-bubble-with-background') &&
       document.querySelector('user-query user-query-file-carousel') &&
-      document.querySelector('input-container > .input-area-outer-cap > .input-area-container > input-area-v2')
+      document.querySelector('input-container > .input-area-outer-cap > .input-area-inner-cap > .input-area-container > input-area-v2')
     );
   });
-  assert.equal(applied, true, 'gemini variant: nested user-turn caps, attachment carousel, and outer input wrapper applied');
+  assert.equal(applied, true, 'gemini variant: nested user-turn caps, attachment carousel, and two-level outer input wrappers applied');
 }
 
 async function applyChatGPTNestedNativeCap(page) {

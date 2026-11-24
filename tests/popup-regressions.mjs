@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { waitUntil } from './measure.mjs';
 
 function assertUsableLayout(layout, label) {
   assert.ok(layout.width >= 439 && layout.width <= 441, `${label}: natural width should be 440 px, got ${layout.width}`);
@@ -81,14 +82,6 @@ export async function checkRealActionPopup({ context, worker, options, popupURL,
   const original = await options.evaluate(() => ObsidianPrismSchema.loadConfig());
   const measurements = [];
   let capture;
-  const waitUntil = async (fn, label, timeout = 5000) => {
-    const deadline = Date.now() + timeout;
-    while (Date.now() < deadline) {
-      if (await fn()) return;
-      await new Promise(resolve => setTimeout(resolve, 25));
-    }
-    throw new Error(`Timed out waiting for ${label}`);
-  };
   try {
     // Each opening creates a fresh action document, as a toolbar click does.
     for (const scheme of ['dark', 'light']) {
@@ -315,11 +308,24 @@ export async function checkPopupIntrinsicSize({ browser, root, engine, fixtureBr
     await frame.locator('.palette:has(input[value="obsidian"])').click();
     await frame.waitForFunction(() => document.getElementById('chat-preview').dataset.previewScheme === 'dark' && document.getElementById('chat-preview').dataset.previewPalette === 'obsidian');
     assert.equal(await frame.evaluate(() => window.__prismFixture.config().themeMode), 'auto', `${engine}: clicking checked obsidian card preserves themeMode auto`);
-    await frame.locator('.palette:has(input[value="alabaster"])').click();
+    const syncRenderMutations = await frame.evaluate(() => {
+      const preview = document.getElementById('chat-preview');
+      const observer = new MutationObserver(() => {});
+      observer.observe(preview, { attributes: true, attributeFilter: ['data-preview-palette'] });
+      document.querySelector('.palette:has(input[value="alabaster"])').click();
+      const count = observer.takeRecords().length;
+      observer.disconnect();
+      return count;
+    });
+    assert.equal(syncRenderMutations, 1, `${engine}: clicking unchecked palette card renders once synchronously`);
     await frame.waitForFunction(() => document.getElementById('chat-preview').dataset.previewPalette === 'alabaster' && window.__prismFixture.config().lightPreset === 'alabaster');
     assert.equal(await frame.evaluate(() => window.__prismFixture.config().themeMode), 'auto');
     await frame.locator('.palette:has(input[value="warm"])').click();
     await frame.waitForFunction(() => document.getElementById('chat-preview').dataset.previewPalette === 'warm' && window.__prismFixture.config().palette === 'warm');
+    assert.equal(await frame.evaluate(() => window.__prismFixture.config().themeMode), 'auto');
+    await frame.locator('input[data-palette-key="palette"][value="warm"]').evaluate(el => el.focus());
+    await page.keyboard.press('ArrowLeft');
+    await frame.waitForFunction(() => document.getElementById('chat-preview').dataset.previewPalette === 'obsidian' && window.__prismFixture.config().palette === 'obsidian');
     assert.equal(await frame.evaluate(() => window.__prismFixture.config().themeMode), 'auto');
     // Bilingual 440x600 overflow & header button visibility check.
     await frame.locator('#cfg-language').selectOption('zh-CN');
