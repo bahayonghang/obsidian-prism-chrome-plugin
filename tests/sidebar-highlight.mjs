@@ -215,12 +215,12 @@ async function assertStatesDistinct(page, host, label) {
   assert.equal(await signature(t.row), active, `${label}: hovering the active row keeps its single active highlight`);
   await hoverNothing(page);
   // Keyboard focus on an inactive row, then on the active one.
-  await page.locator(t.link).focus();
+  await page.locator(t.link).first().focus();
   await page.keyboard.press('Tab');
   await page.waitForFunction(selector => document.activeElement === document.querySelector(selector), t.idleRow);
   await settle(page);
   const focused = await signature(t.idleRow);
-  assert.ok(await page.locator(t.idleRow).evaluate(node => node.matches(':focus-visible')), `${label}: keyboard focus is focus-visible`);
+  assert.ok(await page.locator(t.idleRow).first().evaluate(node => node.matches(':focus-visible')), `${label}: keyboard focus is focus-visible`);
   assert.notEqual(focused, idle, `${label}: keyboard focus is visible on an inactive row`);
   assert.notEqual(focused, hovered, `${label}: keyboard focus differs from hover`);
   assert.notEqual(focused, active, `${label}: keyboard focus differs from the active highlight`);
@@ -229,7 +229,7 @@ async function assertStatesDistinct(page, host, label) {
   await settle(page);
   const focusedLink = await computed(page, t.link, ['outlineStyle', 'outlineWidth']);
   assert.ok(focusedLink.outlineStyle !== 'none' && parseFloat(focusedLink.outlineWidth) >= 1, `${label}: the focused active item shows a focus ring on top of its highlight`);
-  await page.locator(t.link).evaluate(node => node.blur());
+  await page.locator(t.link).first().evaluate(node => node.blur());
   if (t.tile) {
     const tileActive = await signature(t.tile);
     const idleTile = await rectOf(page, t.idleTile);
