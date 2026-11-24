@@ -39,11 +39,11 @@ Use a current Chrome and Firefox with a test conversation. These checks require 
 - [ ] 确认不再出现宠物；切换环境样式/纹理/速度，关闭动效、关闭对应网站开关，确认原网页恢复且再次开启不出现重复控件。
 - [ ] 不配置翻译服务时确认没有翻译请求；如需测试翻译，仅使用自己明确授权的接口，检查撤销权限和错误提示。Firefox长期安装另需Mozilla签名。
 
-### v0.4.3 线上复看（#43）
+### v0.4.3 线上复看（#43，所有者 2026-11-24 完成）
 
-- [ ] Chrome 重新加载 `dist/chrome`，在已登录的 ChatGPT 对话页确认输入框左右两侧与下方不再有不透明黑带，氛围光连续透出。
-- [ ] 图标栏激活项是四边一致的图标瓷片（无左边条、无宿主白色蒙层），会话激活行只有一层覆盖整行的高亮。
-- [ ] 滚动正文时，正文会从输入框两侧经过（本版不加淡出），由所有者判断是否可接受；不可接受另开 issue。
+- [x] Chrome 重新加载 `dist/chrome`，在已登录的 ChatGPT 对话页确认输入框左右两侧与下方不再有不透明黑带，氛围光连续透出。
+- [x] 图标栏激活项是四边一致的图标瓷片（无左边条、无宿主白色蒙层），会话激活行只有一层覆盖整行的高亮。
+- [x] 滚动正文时，正文会从输入框两侧经过（本版不加淡出），由所有者判断是否可接受；不可接受另开 issue。
 
 ### Detailed acceptance matrix
 
@@ -158,3 +158,13 @@ Completed on 2026-11-24 for the `#36`–`#39` v0.4.2 implementation, two-axis `/
 - **Reproducible Packaging & Archive Verification**: `python scripts/build.py` and `node scripts/pack-installers.mjs --verify-reproducible` verified two consecutive deterministic builds of 29-file `dist/obsidian-prism-web-0.4.2-chrome.zip` (pre-doc-update build: `276,777` bytes, SHA-256 `7756e91c086fe66afbfe28d7ab6f92ff9ba4a2367189c020ebbcd26da643367d`) and 29-file `dist/obsidian-prism-web-0.4.2-firefox.zip` (pre-doc-update build: `276,897` bytes, SHA-256 `7815b5a99f4f8a3d28eafe5fc132a37ca175629f1e924553afee718b12b9efdd`), plus `.crx` (`277,370` bytes) and `.xpi` (`276,897` bytes) installers, confirming zero `tools/` or `tests/` entries in either archive and byte-identical `dist/SHA256SUMS` / `dist/SHA256SUMS.installers` across repeated runs; `npm run check`, `npm test`, and reproducible `pack-installers.mjs --verify-reproducible` were re-run after this final documentation edit.
 
 All host-page browser checks ran against offline synthetic and probe-derived fixtures (`未在真实登录会话验证`). The standalone Selenium `native-firefox-popup.py` harness, GitHub Actions CI workflow run, and live signed-in manual acceptance checklist above remain unchecked and unexecuted in this local pass.
+
+## v0.4.3 local verification record
+
+Completed on 2026-11-24 for the `#40`–`#43` v0.4.3 implementation (`#41` thread footer band, `#42` sidebar Active Highlight), two-axis `/code-review` remediation (`951d17b`–`83075ed`), version alignment (`0.4.3`) and documentation sync, run in the integration worktree:
+
+- **Static & Unit Suite**: `just check` (11 JavaScript files, both manifests, CSP, permissions and notices) and `just test` (`146/146` PASS, zero skipped/failed), including the marker-led thread footer, the `display: contents`-free ancestor budget, a marker that is itself the scroll container's direct child, Home State exclusion, `sidebarActiveTargets` row/tile shapes and the `composerFooter` probe privacy checks.
+- **Headed Chromium Browser Suite** (`PRISM_BROWSER=chromium PRISM_ACTION_HEADED=1 node tests/browser-smoke.mjs`): `59` PASS, `0` FAIL, including the real toolbar popup/options checks, the thread-footer baseline and 4 palettes × `standard`/`wide`/`full`, and the sidebar Active Highlight on ChatGPT and Gemini. A headless full Chromium run stops earlier in the options-window step (`chrome.windows.update` rejects off-screen bounds); it is not a host-surface failure and was not part of this pass.
+- **Firefox Browser Suite** (`PRISM_BROWSER=firefox node tests/browser-smoke.mjs`): `57` PASS, `0` FAIL.
+- **Reproducible Packaging**: `just ci <path-to-key>` (pass the key path positionally; `just ci key=…` hands the literal `key=…` text to the packer) verified two consecutive deterministic builds (checksums below are from the build before this record was written; the packaged docs change them, and `just ci` was re-run after this edit): 29-file `obsidian-prism-web-0.4.3-chrome.zip` (`281,920` bytes, SHA-256 `9c38d13e57cac8d1c9f9f99a49b71a28b6524cc37953bd6f9ec3d56de00ef212`), 29-file `obsidian-prism-web-0.4.3-firefox.zip` and `.xpi` (`282,040` bytes, SHA-256 `42f5e709215c3698652169438a71219ff38bf1afd77a8eb32be193ea4d47f3a5`), and `.crx` (`282,513` bytes, SHA-256 `e06d850035b936aa6b0b12158bc4dae1eea38bc3137d688294be1b62c2c3fff1`), with byte-identical `dist/SHA256SUMS` / `dist/SHA256SUMS.installers` across the runs.
+- **Live signed-in review (owner, Chrome, unpacked `dist/chrome`)**: on a signed-in ChatGPT conversation the owner confirmed that the opaque band beside and below the Composer Surface is gone, that the icon-rail tile and the whole-row conversation highlight match the design, and that scrolled prose passing beside the Composer Surface (no body fade in this release) is acceptable. Gemini, Firefox and the rest of the manual matrix above were not re-checked on signed-in pages in this pass.
