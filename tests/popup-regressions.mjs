@@ -81,6 +81,14 @@ export async function checkRealActionPopup({ context, worker, options, popupURL,
   const original = await options.evaluate(() => ObsidianPrismSchema.loadConfig());
   const measurements = [];
   let capture;
+  const waitUntil = async (fn, label, timeout = 5000) => {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      if (await fn()) return;
+      await new Promise(resolve => setTimeout(resolve, 25));
+    }
+    throw new Error(`Timed out waiting for ${label}`);
+  };
   try {
     // Each opening creates a fresh action document, as a toolbar click does.
     for (const scheme of ['dark', 'light']) {
@@ -148,7 +156,7 @@ export async function checkRealActionPopup({ context, worker, options, popupURL,
       assertUsableLayout(motion, `${scheme} action popup motion panel`);
       if (scheme === 'dark') {
         await options.evaluate(() => chrome.extension.getViews({ type: 'popup' })[0].document.querySelector('[data-choice="ambientStyle"][data-value="spotlight"]').click());
-        await options.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientStyle === 'spotlight' && chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('cfg-ambientStyle').value === 'spotlight');
+        await waitUntil(() => options.evaluate(async () => (await ObsidianPrismSchema.loadConfig()).ambientStyle === 'spotlight' && chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('cfg-ambientStyle').value === 'spotlight'), 'action popup ambientStyle=spotlight');
       } else {
         const reopenedStyle = await options.evaluate(async () => ({ saved: (await ObsidianPrismSchema.loadConfig()).ambientStyle, control: chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('cfg-ambientStyle').value }));
         assert.deepEqual(reopenedStyle, { saved: 'spotlight', control: 'spotlight' }, 'a setting saved from the real action popup survives closing and reopening');
@@ -174,7 +182,7 @@ export async function checkRealActionPopup({ context, worker, options, popupURL,
         assert.equal(initialFormula.checked, true, 'real action popup #cfg-formulaPreview must default to checked');
         assert.ok(initialFormula.label.includes('Formula preview'), `expected Formula preview label, got "${initialFormula.label}"`);
         await options.evaluate(() => chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('cfg-formulaPreview').click());
-        await options.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).formulaPreview === false && chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('cfg-formulaPreview').checked === false);
+        await waitUntil(() => options.evaluate(async () => (await ObsidianPrismSchema.loadConfig()).formulaPreview === false && chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('cfg-formulaPreview').checked === false), 'action popup formulaPreview=false');
       } else {
         const reopenedFormula = await options.evaluate(async () => {
           const doc = chrome.extension.getViews({ type: 'popup' })[0].document;
@@ -187,7 +195,7 @@ export async function checkRealActionPopup({ context, worker, options, popupURL,
         assert.deepEqual(reopenedFormula, { saved: false, checked: false }, 'formulaPreview saved from the real action popup survives closing and reopening');
         measurements.at(-1).persistedFormulaPreview = reopenedFormula;
         await options.evaluate(() => chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('cfg-formulaPreview').click());
-        await options.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).formulaPreview === true && chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('cfg-formulaPreview').checked === true);
+        await waitUntil(() => options.evaluate(async () => (await ObsidianPrismSchema.loadConfig()).formulaPreview === true && chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('cfg-formulaPreview').checked === true), 'action popup formulaPreview=true');
         // Verify palette card clicks under themeMode: 'auto' (including already-checked defaults) + #btn-ui-theme sync & reopen persistence.
         await options.evaluate(() => ObsidianPrismSchema.saveConfig({ themeMode: 'auto', palette: 'obsidian', lightPreset: 'crystal' }));
         await options.evaluate(() => chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('tab-appearance').click());
@@ -199,10 +207,10 @@ export async function checkRealActionPopup({ context, worker, options, popupURL,
         await options.waitForFunction(() => chrome.extension.getViews({ type: 'popup' })[0]?.document.getElementById('chat-preview').dataset.previewPalette === 'obsidian');
         assert.equal(await options.evaluate(async () => (await ObsidianPrismSchema.loadConfig()).themeMode), 'auto', 'clicking checked dark palette card must preserve themeMode auto');
         await options.evaluate(() => chrome.extension.getViews({ type: 'popup' })[0].document.querySelector('input[data-palette-key="lightPreset"][value="alabaster"]').closest('.palette').click());
-        await options.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).lightPreset === 'alabaster' && chrome.extension.getViews({ type: 'popup' })[0]?.document.getElementById('chat-preview').dataset.previewPalette === 'alabaster');
+        await waitUntil(() => options.evaluate(async () => (await ObsidianPrismSchema.loadConfig()).lightPreset === 'alabaster' && chrome.extension.getViews({ type: 'popup' })[0]?.document.getElementById('chat-preview').dataset.previewPalette === 'alabaster'), 'action popup lightPreset=alabaster');
         assert.equal(await options.evaluate(async () => (await ObsidianPrismSchema.loadConfig()).themeMode), 'auto');
         await options.evaluate(() => chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('btn-ui-theme').click());
-        await options.waitForFunction(async () => {
+        await waitUntil(() => options.evaluate(async () => {
           const popupDoc = chrome.extension.getViews({ type: 'popup' })[0]?.document;
           const saved = await ObsidianPrismSchema.loadConfig();
           return saved.uiThemeMode === 'dark'
@@ -210,7 +218,7 @@ export async function checkRealActionPopup({ context, worker, options, popupURL,
             && popupDoc?.getElementById('cfg-uiThemeMode')?.value === 'dark'
             && document.documentElement.getAttribute('data-op-scheme') === 'dark'
             && document.getElementById('cfg-uiThemeMode')?.value === 'dark';
-        });
+        }), 'action popup btn-ui-theme sync uiThemeMode=dark');
       }
       await capture.dispose(); capture = null;
       await options.evaluate(() => chrome.extension.getViews({ type: 'popup' })[0].close());
