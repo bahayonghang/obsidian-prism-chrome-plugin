@@ -3,7 +3,7 @@
 **Project:** Obsidian Prism Web — Community Edition  
 **Maintainer:** bahayonghang  
 **Date:** 2026-11-24\
-**Version:** 0.4.2
+**Version:** 0.4.3
 
 **License:** GPL-3.0-only
 
