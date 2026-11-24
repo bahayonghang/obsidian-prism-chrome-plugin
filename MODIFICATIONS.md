@@ -3,7 +3,7 @@
 **Project:** Obsidian Prism Web — Community Edition  
 **Maintainer:** bahayonghang  
 **Date:** 2026-11-23\
-**Version:** 0.4.0
+**Version:** 0.4.1
 
 **License:** GPL-3.0-only
 
@@ -42,6 +42,10 @@ Spec #8 (#9–#14) updates the ChatGPT and Gemini DOM adapters, adds three Conte
 ## v0.4.0 dual-mode scrim, composer capsule & bottom dock hardening
 
 Spec #23 (#24–#27, 2026-11-23) extends the read-only structure probe (`pseudos`, full `ancestorsOf`, `siblingsAfter`, `cornerFloats`) and probe-derived offline fixtures (`live-baselines`), introduces dual-mode `Composer Scrim` distinguishing in-flow flex docks (zero canvas veil/blur, collapsed empty spacers, compacted bottom whitespace) from overlaid docks (`44%`/`26%` dark/light blur scrim, `56%`/`36%` fallback, `--op-dock-clearance`), bridges ChatGPT `contentWidth` presets onto `main` and `#thread-bottom` dock containers/wrappers/direct forms, reshapes the in-place two-row `Composer Surface` (`auto minmax(0, 1fr)` grid, left-aligned four-pointed star `Model Capsule` right of `+`, single 1px optical border, high-contrast primary action button with prioritized Send > Voice > Microphone selection), and adds `Bottom Dock` singleton `data-op-instance` handover (fully reversible across same-realm and isolated-world reloads), orphan root pruning, 11px anti-squish styling, and zero-polling dynamic collision avoidance against corner floats, the composer, and the Conversation Rail. No new permissions, host access, or remote network dependencies are added.
+
+## v0.4.1 Gemini code surface, native math & offline formula preview
+
+Spec #32 (#33–#35, 2026-11-23) de-nests Gemini's double-nested `<code-block>` Code Surface ownership in `src/adapters.js` and `styles/hosts.css`, overrides Material/font icon CSS variables and marks painted SVG header icons reversibly (`data-op-code-icon-fill` / `data-op-code-icon-stroke`) for >= 4.5:1 contrast, adds scoped Native Math Surface foreground inheritance and `overflow-x: auto` wide-equation containment on both hosts, vendors pinned offline `temml@0.14.0` (`vendor/temml/temml.js` and `vendor/temml/temml-local.css` scoped strictly under `html[data-op-enabled="true"] .op-formula-preview` with zero `@font-face` or `.woff2` assets) alongside `src/formula.js` and `src/content.js` `syncFormulas()` (ADR-0003) for reversible MathML Core Formula Preview with `%` captions, per-segment fallback, lossless `Source` / `Formula` toggling, 280ms streaming debounce, 48-line fold coordination, Native Palette color inheritance, and single-count Context Vial invariance, exposes the `formulaPreview` Reading-tab switch (`src/config-schema.js` + `popup/popup.js`), and aligns package and browser manifests to `0.4.1`. No new permissions, host access, `web_accessible_resources`, bundled webfonts, or remote network dependencies are added.
 
 ## File attribution
 
