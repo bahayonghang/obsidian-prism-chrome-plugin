@@ -409,14 +409,16 @@
     let layer = null;
     for (let node = composer.parentElement; node; node = node.parentElement) {
       if (node.matches('main,[role="main"],body,html')) break;
+      // Record a marker before the scroller check: a flattened host may put the marker itself directly inside
+      // the scroll container, and then the marker is the painted layer.
+      if (node.matches(spec.threadFooters)) markers.push(node);
       if (node.parentElement && isScrollContainer(node.parentElement, view)) {
         if (markers.length) layer = node;
         break;
       }
-      if (node.matches(spec.threadFooters)) markers.push(node);
     }
     if (!markers.length || !inConversationScroller(markers[0], view)) return [];
-    return [...markers, layer].filter(node => node && !isOwned(node) &&
+    return [...new Set([...markers, layer])].filter(node => node && !isOwned(node) &&
       !node.matches(OVERLAY_EXCLUDED) && !node.querySelector(MESSAGE_AREAS));
   }
   function findComposerBackdrops(spec, composer) {
