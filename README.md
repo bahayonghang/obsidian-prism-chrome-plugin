@@ -12,8 +12,8 @@
 |---|---|
 | 四套主题 | 深空黑曜 Obsidian、暖炭玄岩 Warm、白昼冷晶 Crystal、暖白画册 Alabaster；也可保留宿主配色 |
 | 外观微调 | 跟随系统亮暗、五档强调色、三档圆角、本地代码字体、连字；玻璃/实色/原生侧栏与紧凑密度 |
-| 设置中心 | 紧凑弹窗、完整设置工作台、常驻导航与保存状态、中英文、场景预设、外观/动效预览、JSON导入导出、跨标签页同步 |
-| 阅读工具 | 代码块去嵌套与顶栏图标全主题 >= 4.5:1 对比度统一、Native Math Surface（原生公式配色继承与超宽横向滚动兜底）、**Formula Preview**（本地离线 Temml v0.14.0 将合格 LaTeX 代码块渲染为原生 MathML Core 公式，支持 `%` 注释分段、源码/公式无损切换与「阅读」页签 `formulaPreview` 开关，原代码与原生复制保持无损）、长代码手动折叠、带搜索的会话大纲、`Alt+↑` / `Alt+↓` 跳转、三档内容宽度（标准 / 加宽 / 全栏，ChatGPT 主区与底栏同步伸缩）及右下角防挤压单键循环按钮 |
+| 设置中心 | 紧凑弹窗、完整设置工作台、**独立设置界面明暗主题**（顶栏一键切换与外观细节 `auto` / `light` / `dark` 选择，与站点配色及总开关解耦，色卡点击只预览并保存分组预设不覆盖站点跟随系统）、常驻导航与保存状态、中英文、场景预设、外观/动效预览、JSON导入导出、跨标签页同步 |
+| 阅读工具 | 代码块去嵌套与顶栏图标全主题 >= 4.5:1 对比度统一、Native Math Surface（原生公式配色继承与超宽横向滚动兜底）、**Formula Preview**（本地离线 Temml v0.14.0 将合格 LaTeX 代码块渲染为原生 MathML Core 公式，支持 `%` 注释分段、源码/公式无损切换与「阅读」页签 `formulaPreview` 开关，原代码与原生复制保持无损）、长代码手动折叠、带搜索的会话大纲、`Alt+↑` / `Alt+↓` 跳转、三档内容宽度（标准 / 加宽 / 全栏，User Turn 长提问按阅读列 ~80% 等比加宽且无 820px 硬顶、短提问保持紧凑贴右，ChatGPT/Gemini 主区与底栏同步伸缩）及右下角防挤压单键循环按钮 |
 | 环境与动效 | Aurora/Spotlight底部光晕、Spotlight聚光、字符/网格纹理、光效浓度、移动速度、双态 Composer Scrim（流内底栏透光收紧留白，叠层底栏 44%/26% 羽化模糊遮罩）、原位单层 1px 圆角悬浮输入框卡片与左侧四芒星 Model Capsule、高对比墨曜主圆钮、聚焦光效及回复活动余晖；全部可配置且支持原生配色零干预；右下角 Bottom Dock 支持跨重载单例接管与零轮询碰撞避让 |
 | 会话估算 | 按当前网页已加载文字校准估算 token 数；支持 `auto` 按可见模型标签自动匹配参考容量（ChatGPT 按档位：Pro / Thinking / High / xHigh 为 400K，Instant 为 128K，未识别的标签按 128K 兜底并显示 `?`；Gemini 未知模式按 1M 自动兜底）或手动覆盖，并在检测到可见附件时附加 `+` 标记与未计入附件提示 |
 | 可选翻译 | 关闭为默认状态；手动翻译网页已经显示的思考文字，自行配置兼容接口并授权目标站点 |
@@ -46,8 +46,8 @@ Windows若只有 `py` 命令，可将最后一步改为 `py -3 scripts/build.py`
 |---|---|
 | `dist/chrome/` | Chrome解压扩展目录 |
 | `dist/firefox/` | Firefox临时加载目录，使用独立Firefox清单 |
-| `dist/obsidian-prism-web-0.4.1-chrome.zip` | Chrome开发/提交包 |
-| `dist/obsidian-prism-web-0.4.1-firefox.zip` | Firefox开发/提交包，未签名 |
+| `dist/obsidian-prism-web-0.4.2-chrome.zip` | Chrome开发/提交包 |
+| `dist/obsidian-prism-web-0.4.2-firefox.zip` | Firefox开发/提交包，未签名 |
 | `dist/SHA256SUMS` | 两个ZIP的SHA-256校验值 |
 
 构建采用明确文件白名单，不包含Git目录、测试数据、开发依赖或本地密钥。相同源码与Python/zlib环境可生成相同ZIP字节。
@@ -78,6 +78,8 @@ Firefox：在 `about:debugging` 重新载入新版 Firefox 包，并刷新目标
 v0.4.0 在 v0.3.0 与 2026 探针适配基础上新增双态 `Composer Scrim` 与 ChatGPT 底部冗余留白收紧、三档内容宽度同步底栏容器与中间包装层、Prism 原型两行输入框布局（左侧四芒星 `Model Capsule` 紧随 `+`、单层 1px 描边、高对比主圆钮），以及 `Bottom Dock` 跨实例单例接管、防挤压 11px 按钮、零轮询角落浮件/输入框/大纲避让与视口内自适应弹层（详见 [ADR-0001](docs/adr/0001-local-dom-context-estimation.md) 与 [ADR-0002](docs/adr/0002-in-place-reversible-composer-styling.md)）。
 
 v0.4.1 在此基础上进一步修复 Gemini 双层嵌套 `<code-block>` 样式错位与顶栏 Material/SVG 图标对比度，为 ChatGPT 与 Gemini 的 Native Math Surface 增加非原生配色下的前景色兜底与超宽公式内部横向滚动，并引入基于锁定版本 Temml v0.14.0 的本地离线 **Formula Preview**（默认在「阅读」页签开启 `formulaPreview` /「自动渲染公式代码块」，将合格 LaTeX 代码块与 `%` 注释分段渲染为原生 MathML Core，支持「源码 / 公式」无损来回切换、48 行折叠协调、280ms 流式防抖与 Native Palette 颜色继承，不改写宿主 `<pre><code>` 与原生复制行为，详见 [ADR-0003](docs/adr/0003-local-mathml-formula-preview.md)）。
+
+v0.4.2 新增与 Host Surface 解耦的设置界面独立明暗控制 `uiThemeMode`（支持顶栏快捷按钮与外观「细节」下拉框双向同步、原生 `color-scheme` 声明、浅色系统预加载防闪黑及原生配色下回退到清晰标准色板，并修复外观页点击色卡破坏「跟随系统」及已选默认色卡无响应的问题），同时解开 Gemini 与 ChatGPT 双端 User Turn 多层中间包裹限宽及输入区包装壳限宽、移除旧 820px 硬上限，让长提问在「加宽 / 全栏」下按阅读列 ~80% 正向等比拓宽而短提问保持紧凑贴右、输入区与阅读列保持同步对齐。
 
 旧配色与浓度会保留，宠物设置自动失效。想直接查看新版完整环境效果，可先选择“流光”场景，再在“光影”中微调。正文中的光场会主动减弱，首页的光场更明显。完整设置页可通过弹窗右上角按钮打开。
 
@@ -146,9 +148,9 @@ npm run test:browser
 
 - Four light/dark palettes plus host colors; five accents, system appearance, rounded corners, installed code fonts, ligatures and compact sidebars.
 - Outside the host palette, conversation headings (h1–h4) follow the message body font, use the palette's primary foreground and keep a clear h1 > h2 > h3 > h4 weight hierarchy. There is no reading-font option; the body font stays the host's or yours.
-- A compact bilingual popup and full settings workspace with persistent navigation, motion preview, scene presets, live settings and sanitized JSON import/export.
+- A compact bilingual popup and full settings workspace with persistent navigation, independent settings UI light/dark control (`uiThemeMode`: header toggle and Details dropdown decoupled from Host Surface `themeMode`, with `color-scheme` declarations, light pre-load fallback, and non-destructive palette-card click previews), motion preview, scene presets, live settings and sanitized JSON import/export.
 - Glass/solid/native sidebar surfaces and an elevated, in-place reversible two-row Composer Surface (single 1px optical border; attachments on top, full-width editor, circular `+` and left-aligned four-pointed star Model Capsule via flex `order` + `margin-inline-end: auto`, ghost secondary actions, and high-contrast circular primary action on the right, without DOM reparenting or text rewriting per ADR-0002) plus a dual-mode Composer Scrim (clear glow and compacted bottom whitespace for in-flow docks; 44%/26% feathered blur occlusion and scroller clearance for overlaid docks).
-- Three Content Width Presets (`standard`, `wide`, `full`) synced across conversation turns and composer containers/wrappers with a Bottom Dock quick toggle featuring singleton handover, anti-squish 11px pills, zero-polling collision avoidance, and viewport-contained Context Vial popovers; Gemini Code Surface de-nesting and >= 4.5:1 WCAG AA Code Surface / header icon contrast across all four optical palettes; Native Math Surface foreground cleanup and `overflow-x: auto` wide-equation containment; manual long-code folding, sticky headers, a searchable conversation outline, and `Alt+Up/Down` navigation.
+- Three Content Width Presets (`standard`, `wide`, `full`) synced across conversation turns (including proportional ~80% User Turn widening without an 820px cap and compact right-aligned short prompts) and composer containers/wrappers with a Bottom Dock quick toggle featuring singleton handover, anti-squish 11px pills, zero-polling collision avoidance, and viewport-contained Context Vial popovers; Gemini Code Surface de-nesting and >= 4.5:1 WCAG AA Code Surface / header icon contrast across all four optical palettes; Native Math Surface foreground cleanup and `overflow-x: auto` wide-equation containment; manual long-code folding, sticky headers, a searchable conversation outline, and `Alt+Up/Down` navigation.
 - Local offline **Formula Preview** ([ADR-0003](docs/adr/0003-local-mathml-formula-preview.md)): pinned Temml v0.14.0 renders qualifying LaTeX code blocks into browser-native MathML Core with `%` comment captions, per-segment monospace fallback, 280ms streaming debounce, lossless `Source` / `Formula` toggling (leaving `<pre><code>`, native Copy, and Context Vial counts untouched), 48-line fold coordination, Native Palette color inheritance, and a Reading-tab `Formula preview` (`formulaPreview`, default on) toggle with zero-residue disable/restore.
 - Configurable Aurora/Spotlight environments, decorative glyph/grid textures, motion speed, focus glow and optional stream highlighting. Pixel companions have been removed, including legacy settings support.
 - A calibrated local-only DOM estimate of currently loaded text (ADR-0001) with `auto` model-matched Reference Capacity (ChatGPT tiers: Pro / Thinking / High / xHigh map to 400K and Instant to 128K; an unrecognized ChatGPT label falls back to 128K and is flagged with `?`; Gemini custom modes use the 1M auto fallback; a manual override always wins) and an explicit `+` indicator for uncounted visible attachments. It is **not** model quota, billing, or actual server-side context usage.
