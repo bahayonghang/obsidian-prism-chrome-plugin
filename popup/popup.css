@@ -1,5 +1,6 @@
 /* Obsidian Prism compact settings studio. Modified 2026-11-22. GPL-3.0-only. */
 :root {
+  color-scheme:light dark;
   font:12px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI","Microsoft YaHei",sans-serif;
   --ui-bg:var(--op-canvas,#0e0e11);
   --ui-panel:var(--op-card,#18181e);
@@ -7,7 +8,27 @@
   --ui-muted:var(--op-fg-muted,#9090a0);
   --ui-border:var(--op-border,rgba(255,255,255,.09));
   --ui-accent:var(--op-accent,#8b8fff);
+  --ui-link:var(--op-link,#9facff);
+  --ui-secondary:var(--op-secondary,#22232c);
   --ui-soft:color-mix(in srgb,var(--ui-accent) 5%,var(--ui-panel))
+}
+@media(prefers-color-scheme:light) {
+  :root {
+    --ui-bg:var(--op-canvas,#f4f7fb);
+    --ui-panel:var(--op-card,#fff);
+    --ui-text:var(--op-fg,#0f172a);
+    --ui-muted:var(--op-fg-muted,#5b6b82);
+    --ui-border:var(--op-border,rgba(15,23,42,.09));
+    --ui-accent:var(--op-accent,#2563eb);
+    --ui-link:var(--op-link,#1d4ed8);
+    --ui-secondary:var(--op-secondary,#e9eff8)
+  }
+}
+html[data-op-scheme="light"] {
+  color-scheme:light
+}
+html[data-op-scheme="dark"] {
+  color-scheme:dark
 }
 * {
   box-sizing:border-box
@@ -62,7 +83,7 @@ button,a,input,select {
   -webkit-tap-highlight-color:transparent
 }
 a {
-  color:var(--op-link,#9facff);
+  color:var(--ui-link);
   text-decoration:none
 }
 a:hover {
@@ -164,11 +185,23 @@ fieldset {
   transform:translateX(13px)
 }
 .icon-button {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  flex-shrink:0;
   width:29px;
   height:29px;
   padding:6px;
   margin-left:3px;
   background:transparent
+}
+.ui-theme-button svg {
+  display:none
+}
+.ui-theme-button[data-ui-theme="auto"] svg[data-icon="auto"],
+.ui-theme-button[data-ui-theme="light"] svg[data-icon="light"],
+.ui-theme-button[data-ui-theme="dark"] svg[data-icon="dark"] {
+  display:block
 }
 .icon-button svg,.tabs svg {
   width:100%;
@@ -281,7 +314,7 @@ fieldset {
   border:1px solid #80808024;
   border-radius:5px;
   overflow:hidden;
-  background:var(--op-secondary,#22232c);
+  background:var(--ui-secondary);
   flex-shrink:0
 }
 .scene-aurora>i {
@@ -291,7 +324,7 @@ fieldset {
   background:radial-gradient(ellipse at 50% 10%,color-mix(in srgb,var(--ui-accent) 55%,transparent),transparent 90%),var(--ui-soft)
 }
 .scene-eco>i {
-  background:var(--op-secondary,#23232a)
+  background:var(--ui-secondary)
 }
 .scene strong {
   display:block;
@@ -846,6 +879,9 @@ select,input[type=text],input[type=url],input[type=password] {
   grid-template-columns:1fr 1fr;
   gap:10px
 }
+.row-field + .two-fields {
+  margin-top:11px
+}
 .two-fields .field {
   margin:0
 }
@@ -889,13 +925,13 @@ select,input[type=text],input[type=url],input[type=password] {
   border:1px solid #80808020;
   display:block;
   border-radius:4px;
-  background:var(--op-secondary,#25252e)
+  background:var(--ui-secondary)
 }
 .atmosphere-card[data-value=aurora] i {
-  background:radial-gradient(ellipse at 20% 100%,#9980ed,transparent 65%),radial-gradient(ellipse at 80% 100%,#43b6e7,transparent 75%),var(--op-canvas,#171720)
+  background:radial-gradient(ellipse at 20% 100%,#9980ed,transparent 65%),radial-gradient(ellipse at 80% 100%,#43b6e7,transparent 75%),var(--ui-bg)
 }
 .atmosphere-card[data-value=spotlight] i {
-  background:radial-gradient(ellipse at 50% 0,color-mix(in srgb,var(--ui-accent) 42%,transparent),transparent 85%),var(--op-canvas,#171720)
+  background:radial-gradient(ellipse at 50% 0,color-mix(in srgb,var(--ui-accent) 42%,transparent),transparent 85%),var(--ui-bg)
 }
 .range-label {
   display:flex;

@@ -4,6 +4,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <title>Obsidian Prism · Settings</title>
   <link rel="icon" href="../icons/icon-48.png">
   <link rel="stylesheet" href="../styles/prism-tokens.css">
@@ -18,6 +19,7 @@
         <img src="../icons/icon-48.png" width="32" height="32" alt="" class="brand-icon">
         <div class="brand-copy"><h1 data-i18n="appTitle">黑曜棱镜</h1><p>PRISM / WEB <span id="version-label"></span></p></div>
         <label class="master-control" for="cfg-enabled"><span data-i18n="masterEnable">启用 Prism</span><input type="checkbox" role="switch" class="switch" id="cfg-enabled"></label>
+        <button type="button" class="icon-button ui-theme-button" id="btn-ui-theme" data-ui-theme="auto" aria-label="切换设置界面主题"><svg data-icon="auto" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><svg data-icon="light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg><svg data-icon="dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg></button>
         <button type="button" class="icon-button" id="btn-open-options" data-title="openFullOptions" aria-label="打开完整设置"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M10 4H5a1 1 0 0 0-1 1v14a1 1 0 0 0 1 1h14a1 1 0 0 0 1-1v-5"/></svg></button>
       </header>
       <div class="site-row"><label><input type="checkbox" id="cfg-enableChatGPT"><span>ChatGPT</span></label><label><input type="checkbox" id="cfg-enableGemini"><span>Gemini</span></label><span class="local-pill"><i></i>LOCAL FIRST</span></div>
