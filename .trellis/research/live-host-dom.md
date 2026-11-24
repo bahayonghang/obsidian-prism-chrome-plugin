@@ -78,7 +78,35 @@ v0.3.0 的夹具是按推测的结构手写的，浏览器测试量的是扩展�
 - **设置界面独立主题与色卡修复（#37）**：`src/config-schema.js` 新增枚举 `uiThemeMode`（`auto` / `light` / `dark`，默认 `auto`）与 `resolveUiScheme` / `resolveUiPalette` / `applyUiThemeToRoot`，使设置弹窗和完整设置页的明暗解析与 Host Surface `themeMode`、光学配色及 `enabled` 开关彻底解耦（`host` 时安全回退到 `obsidian` / `crystal`）；`popup/popup.html`、`popup/popup.css`、`popup/popup.js` 与 `styles/prism-tokens.css` 补全文档/原生配色 `color-scheme` 声明与 `@media (prefers-color-scheme: light)` 预加载兜底，在顶栏新增 `#btn-ui-theme` 一键循环切换按钮、在外观「细节」卡片新增 `#cfg-uiThemeMode` 下拉框并双向同步，同时修复色卡点击（`handlePaletteCard` 通过 `previewSchemeOverride` 驱动预览而不覆盖 `themeMode`，且已选默认色卡同样响应）。Node 单测与双浏览器弹窗/选项页回归测试通过。
 - **只读探针扩展与双端 User Turn / 输入区宽度治理（#38）**：`tools/structure-probe.js` 新增双端 `userBubbleAncestors`（depth 8）、Gemini `userQueryText` 与 `inputAreaChildren` 以及 `--bard-chat-window-content-width` 变量采集（保持零正文、不入发布包）；`src/adapters.js`（新增 `contentWidth.userTurnTargets` 并扩展 `targets`/`composerTargets`）与 `styles/hosts.css` 桥接 Gemini `chat-window` 变量、ChatGPT `main`/`transcriptContent`/User Turn 包裹链上的 `--user-chat-width`，解开双端多层 User Turn 包裹与内层文本限宽以及输入区外/内层包装壳限宽，去除旧 `820px` 硬顶，使长提问按 `calc(var(--op-reading-width, ...) * 0.8)` 随 `standard < wide < full` 等比正向递增，短提问保持 `fit-content` 紧凑贴右，Composer Surface 与阅读列同步加宽并避让 Conversation Rail。`tests/live-width.mjs` 在长/短双提问夹具与 `applyGeminiNestedNativeCap` / `applyChatGPTNestedNativeCap` 多层原生限宽变体、Native Palette、`<900px` 窄视口及零残留停用还原上通过（`未在真实登录会话验证`）。
 
+## 2026-11-24 线上实测（v0.4.2 生效；spec [#40](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/issues/40)，tickets #41–#43）
+
+来源：已登录 ChatGPT 对话页，`dist/chrome` 解包加载 v0.4.2，深色 Obsidian 配色，ego-browser 临时只读脚本（只取结构、几何、计算样式，不读正文；不是仓库里的 `tools/structure-probe.js`）。宿主构建 `data-build=361f1c56…`，外观预设 `codex`。
+
+### 实测事实
+
+- **底栏黑带的绘制者**：会话滚动容器（`.thread-scroll-container`）的一个绝对定位直接子节点（`z-index: 20`，`anchor-scope: --thread-composer`）。它包着 `[data-thread-scroll-footer="true"]` → `[data-thread-composer-backdrop="true"]`（同时带 `data-pip-obstacle="thread-footer"`）→ `form[data-chatgpt-composer]`。这三层自身背景透明，底色由底栏的两个伪元素画出：
+  - `::before`：输入框垂直中线到输入框底边，`linear-gradient(transparent → var(--color-surface))`；
+  - `::after`：输入框底边到底栏底边，纯色 `var(--color-surface)`；
+  - 两者 `inset-inline: var(--padding-toolbar)`（16px），用 CSS 锚点定位；规则只在 `:has([data-thread-composer-backdrop] [data-composer-body])` 时生效。`--color-surface` 线上为不透明 `#0e0e0e`。
+- **扩展没有清掉的原因**：线上 `data-op-composer-backdrop` 标记数为 0。底栏识别最多向上走 14 层祖先；线上 `form` 到底栏 19 层，Composer Surface 卡片到底栏 25 层，编辑器到底栏 32 层，其中 13–15 层是 `display: contents` 的零尺寸包装。`#thread-bottom-container`、`#thread-bottom`、`content-fade` 等声明的选择器线上已全部不匹配。`data-op-scroller-fade` 线上同样为 0。
+- **现场验证**：临时把这两个伪元素的 `background` 置为 `none`，黑带消失，光晕透到输入框两侧和下方，Composer Surface、Bottom Dock、Conversation Rail 不受影响。
+- **侧栏激活态**：图标栏激活按钮是 `button[data-uniform][data-selected][aria-current="page"]`，36×36，宿主用 `::before` 画 10% 白色蒙层；扩展的行高亮（11% 强调色底 + 左侧 2px 边）叠在其上。会话激活行的 `aria-current="page"` 同时在整行 `div[role="group"]`（262×36，背景 `rgba(255,255,255,.1)`）和行内 `a`（243×20）上，扩展的 `data-op-sidebar-active` 落在行内 `a`，形成两层高亮。
+- 宿主类名带哈希后缀（如 `footer-A8ZvKV`），不能作选择器；可依赖的是上述 `data-*` 标记和结构关系。
+
+### spec #40 的方案（已约定，未实现；助手起草，用户 2026-11-24 确认"都按推荐走"）
+
+- 版本取 `0.4.3`；spec 与 tickets 按已发布的内容和拆分执行。
+
+- 底栏识别以 `[data-thread-scroll-footer="true"]`、`[data-thread-composer-backdrop="true"]` 为主，祖先遍历兜底且 `display: contents` 不计层数；只清绘制，不改定位，不新增遮罩或正文淡出。
+- 激活高亮按形状分两种：图标瓷片（强调色填充 + 1px 内描边 + 强调色图标，无左边条）和整行单层高亮。
+- 本次不加正文淡出（用户已确认）。清掉黑带后滚动中的正文会从输入框两侧经过，是否可接受留到 #43 线上复看时由所有者判断，不可接受则另开 issue。底栏是滚动容器的子节点，给滚动容器加遮罩会连输入框一起淡化。
+
+### 取证方法备注
+
+- ego-browser 截图前先执行 `Page.bringToFront`，否则 `Page.captureScreenshot` 会超时；需要固定视口时用 `Emulation.setDeviceMetricsOverride`，结束后清除。
+
 ## 仍是推断值或未在线上验证
 
+- 2026-11-24 实测已推翻：ChatGPT 的 `#thread-bottom-container` / `#thread-bottom` 在线上已不存在，下面凡以它们为前提的输入列条目都需按上一节的结构重新取证。
 - 推断选择器与数值：ChatGPT `#thread-bottom [class*="--thread-content-max-width"]` 与中间包装层/直属 `form[data-chatgpt-composer]` 结构、嵌套用户气泡外/内限宽包裹层（`userTurnTargets` 覆盖链）、ChatGPT 两行输入框的 area 名 `leading`/`primary`/`trailing`（有结构槽位兜底）、输入框附件头行、h1/h4、线上真实角落浮件形态（`cornerFloatingObstacles`）；Gemini 网格列宽、`.response-footer` 宽度、h1/h4、User Turn 中间包裹容器链、滚动区 150px 底部留白及是否动态调白。
 - 未在线上验证：仓库内含 v0.4.0/v0.4.1/v0.4.2 扩展的 `tools/structure-probe.js` 尚未在真实登录页面上运行，需所有者授权后人工执行；本页实测事实仍来自 2026-11-22 更早一次只读探针，所有 v0.4.0/v0.4.1/v0.4.2 浏览器验证均运行于离线探针夹具（`未在真实登录会话验证`），线上 ChatGPT/Gemini 的 User Turn 多层祖先限宽、输入列结构、A/B 底栏模式、两行输入框真实网格、外层占位真实结构及角落浮件避让仍需登录实测验收。
