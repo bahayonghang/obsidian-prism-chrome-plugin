@@ -37,15 +37,65 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
       attributesList: map,
       get attributes() { return [...map].map(([name, value]) => ({ name, value })); },
       getAttribute(k) { return map.get(k) ?? null; },
-      setAttribute(k, v) { map.set(k, String(v)); },
+      setAttribute(name, val) {
+        map.set(String(name), String(val));
+        if (name === 'class') this.className = String(val);
+      },
       removeAttribute(k) { map.delete(k); },
       hasAttribute(k) { return map.has(k); },
       classList: {
-        toggle() {},
-        add() {},
-        remove() {},
+        toggle(name, force) {
+          const set = new Set(String(el.className || '').split(/\s+/).filter(Boolean));
+          const add = force === undefined ? !set.has(name) : Boolean(force);
+          if (add) set.add(name); else set.delete(name);
+          el.className = [...set].join(' ');
+          return add;
+        },
+        add(...names) {
+          const set = new Set(String(el.className || '').split(/\s+/).filter(Boolean));
+          for (const n of names) if (n) set.add(n);
+          el.className = [...set].join(' ');
+        },
+        remove(...names) {
+          const set = new Set(String(el.className || '').split(/\s+/).filter(Boolean));
+          for (const n of names) set.delete(n);
+          el.className = [...set].join(' ');
+        },
         contains(name) { return String(el.className || '').split(/\s+/).includes(name); }
       },
+      get firstChild() { return this.childNodes[0] || null; },
+      get nextElementSibling() {
+        const siblings = this.parentElement?.children;
+        if (!siblings) return null;
+        const idx = siblings.indexOf(this);
+        return idx >= 0 && idx + 1 < siblings.length ? siblings[idx + 1] : null;
+      },
+      insertAdjacentElement(pos, node) {
+        if (!this.parentElement || !node) return node;
+        if (pos === 'afterend') {
+          if (node.parentElement) node.remove();
+          node.parentElement = this.parentElement;
+          const cIdx = this.parentElement.children.indexOf(this);
+          this.parentElement.children.splice(cIdx + 1, 0, node);
+          const cnIdx = this.parentElement.childNodes.indexOf(this);
+          this.parentElement.childNodes.splice(cnIdx + 1, 0, node);
+          return node;
+        }
+        return node;
+      },
+      before(...nodes) {
+        if (!this.parentElement) return;
+        for (const node of nodes) {
+          if (!node || typeof node !== 'object') continue;
+          if (node.parentElement) node.remove();
+          node.parentElement = this.parentElement;
+          const cIdx = this.parentElement.children.indexOf(this);
+          this.parentElement.children.splice(cIdx, 0, node);
+          const cnIdx = this.parentElement.childNodes.indexOf(this);
+          this.parentElement.childNodes.splice(cnIdx, 0, node);
+        }
+      },
+      appendChild(node) { this.append(node); return node; },
       append(...nodes) {
         for (const n of nodes) {
           if (n && typeof n === 'object') {
@@ -157,6 +207,8 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
   let currentAttachments = options.attachments ?? [];
   let homeMode = Boolean(options.isHome);
 
+  let currentCodeBlocks = options.codeBlocks || [];
+  let streamingNow = Boolean(options.isStreaming);
   const fakeAdapter = {
     host,
     usesOverlayScrim: host === 'gemini',
@@ -180,8 +232,8 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     composerPrimaryAction: () => primaryActionBtn,
     composerAttachments: () => [composerAttachment],
     composerChips: () => [chip],
-    codeSurfaces: () => [codeSurface],
-    codeHeaders: () => [codeHeader],
+    codeSurfaces: () => options.codeSurfaces ? options.codeSurfaces() : [codeSurface],
+    codeHeaders: () => options.codeHeaders ? options.codeHeaders() : [codeHeader],
     threadTailSpacers: () => [spacer],
     threadColumns: () => [threadCol],
     composerColumns: () => [composerCol],
@@ -189,19 +241,21 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     activeModelLabel: () => currentModel,
     sidebarSurfaces: () => [],
     sidebarActiveRows: () => [],
-    codeBlocks: () => [],
+    codeBlocks: () => [...currentCodeBlocks],
     thoughtBlocks: () => [],
     isAssistantNode: () => false,
-    isStreaming: () => false,
+    isStreaming: () => streamingNow,
     scrollContainer: () => (options.useCustomScroller ? scrollerEl : body)
   };
   if (options.getComputedStyle) h.context.getComputedStyle = options.getComputedStyle;
 
   h.context.document = {
+    compatMode: 'CSS1Compat',
     documentElement: docEl,
     body,
     hidden: false,
     createElement: tag => makeEl(tag),
+    createElementNS: (_ns, tag) => makeEl(tag),
     createTextNode: text => ({ nodeType: 3, nodeValue: String(text), textContent: String(text), parentElement: null }),
     createDocumentFragment: () => {
       const frag = makeEl('fragment');
@@ -223,24 +277,31 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
   h.context.cancelAnimationFrame = () => {};
   let nowMs = 100;
   h.context.performance = { now: () => nowMs };
+  if (options.loadFormula) {
+    h.context.globalThis = h.context;
+    h.load('vendor/temml/temml.js');
+    h.load('src/formula.js');
+  }
   h.load('src/adapters.js');
   const realAdapters = h.context.ObsidianPrismAdapters;
   h.context.ObsidianPrismAdapters = {
     ...realAdapters,
     forHost: () => fakeAdapter,
     isOwned: n => Boolean(n && n.getAttribute && n.getAttribute('data-op-owned') !== null),
-    textOf: n => (n && n.textContent) || 'Sample turn text',
+    textOf: options.textOf || (n => (n && n.textContent) || 'Sample turn text'),
     visibleText: n => (n && n.textContent) || 'Sample turn text',
     cleanTurnText: options.cleanTurnText || ((n, opts) => realAdapters.cleanTurnText(n, opts)),
     estimateTurnTokens: options.estimateTurnTokens || (n => realAdapters.estimateTurnTokens(n))
   };
   h.load('src/content.js');
   return {
-    h, elements, body,
+    h, elements, body, makeEl,
     runtime: h.context.ObsidianPrismRuntime,
     setModel(label) { currentModel = label; },
     setAttachments(list) { currentAttachments = list; },
     setHome(flag) { homeMode = Boolean(flag); },
+    setCodeBlocks(list) { currentCodeBlocks = list; },
+    setStreaming(flag) { streamingNow = Boolean(flag); },
     advanceTime(ms) { nowMs += ms; }
   };
 }
@@ -1595,4 +1656,134 @@ test('v0.4.1 #33: syncSurfaces marks computed SVG fill/stroke code header icons 
     assert.equal(el.getAttribute('data-op-code-icon-fill'), null);
     assert.equal(el.getAttribute('data-op-code-icon-stroke'), null);
   }
+});
+
+test('v0.4.1 #34: runtime Formula Preview renders MathML, toggles losslessly, skips 48-line folding in preview, debounces streaming, keeps Native Palette & Context Vial, and leaves zero residue on stop', async () => {
+  let codeBlocksRef = [];
+  let surfacesRef = [];
+  let headersRef = [];
+  const ctx = createRuntimeDom({ language: 'zh-CN' }, {
+    host: 'gemini',
+    loadFormula: true,
+    codeSurfaces: () => surfacesRef,
+    codeHeaders: () => headersRef,
+    textOf: node => node?.textContent || '',
+    estimateTurnTokens: turn => {
+      const text = turn.children.map(c => c.textContent || '').join('');
+      return { prose: 10, code: text.length, total: 10 + text.length };
+    }
+  });
+  const e = Object.fromEntries(ctx.elements);
+  const makeNode = ctx.makeEl;
+
+  // 1) Long 50-line LaTeX block inside Gemini wrapper
+  const surface = makeNode('div', { class: 'code-block' });
+  const header = makeNode('div', { class: 'code-block-decoration' });
+  const label = makeNode('span'); label.textContent = 'Code snippet';
+  const actions = makeNode('div');
+  const copyBtn = makeNode('button', { 'aria-label': 'Copy' }); copyBtn.textContent = 'Copy';
+  actions.append(copyBtn);
+  header.append(label, actions);
+  const internalWrap = makeNode('div', { class: 'formatted-code-block-internal-container' });
+  const pre = makeNode('pre');
+  const code = makeNode('code', { class: 'code-container formatted' });
+  const latexLines = ['% 1. 目标函数', '\\mathcal{L}(\\theta) = \\frac{1}{N} \\sum_{i=1}^N (y_i - \\hat{y}_i)^2', ''];
+  for (let i = 1; i <= 47; i++) latexLines.push(`x_{${i}} = ${i}`);
+  const originalLatex = latexLines.join('\n');
+  code.textContent = originalLatex;
+  pre.append(code);
+  internalWrap.append(pre);
+  surface.append(header, internalWrap);
+  e.assistantTurn.append(surface);
+
+  // 2) Ordinary JS block
+  const jsSurface = makeNode('div', { class: 'code-block' });
+  const jsHeader = makeNode('div', { class: 'code-block-decoration' });
+  const jsLabel = makeNode('span'); jsLabel.textContent = 'Code snippet';
+  jsHeader.append(jsLabel);
+  const jsPre = makeNode('pre');
+  const jsCode = makeNode('code', { class: 'language-js' });
+  jsCode.textContent = 'const a = 1;\nconsole.log(a);';
+  jsPre.append(jsCode);
+  jsSurface.append(jsHeader, jsPre);
+  e.assistantTurn.append(jsSurface);
+
+  surfacesRef = [surface, jsSurface];
+  headersRef = [header, jsHeader];
+  ctx.setCodeBlocks([pre, jsPre]);
+
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 20));
+
+  assert.equal(ctx.runtime.diagnostics().formulaBlocks, 1);
+  assert.equal(surface.getAttribute('data-op-formula-active'), 'true');
+  assert.equal(internalWrap.getAttribute('data-op-formula-source-hidden'), 'true');
+  assert.equal(internalWrap.getAttribute('hidden'), null);
+  assert.equal(internalWrap.getAttribute('aria-hidden'), null);
+  assert.equal(pre.getAttribute('hidden'), null);
+  assert.equal(pre.getAttribute('aria-hidden'), null);
+  assert.equal(code.textContent, originalLatex);
+
+  const preview = surface.querySelector('.op-formula-preview');
+  assert.ok(preview, 'Formula Preview element should be rendered');
+  assert.equal(preview.getAttribute('data-op-owned'), '');
+  assert.ok(preview.querySelector('math'), 'Preview contains native <math>');
+  assert.equal(preview.querySelector('.op-formula-caption').textContent, '1. 目标函数');
+  assert.equal(jsSurface.querySelector('.op-formula-preview'), null, 'JS block must remain untouched');
+
+  // Formula view skips 48-line folding
+  assert.equal(surface.querySelector('.op-code-fold-bar'), null);
+  assert.equal(pre.classList.contains('op-code-folded'), false);
+
+  // Toggle button mounted inside header actions
+  const toggleBtn = actions.querySelector('.op-formula-toggle');
+  assert.ok(toggleBtn);
+  assert.equal(toggleBtn.textContent, '源码');
+
+  // Toggle to Source -> fold bar attaches; fold it -> toggle back to Formula -> unclipped; toggle back to Source -> fold state restored
+  toggleBtn.dispatchEvent({ type: 'click' });
+  assert.equal(internalWrap.getAttribute('data-op-formula-source-hidden'), null);
+  assert.equal(surface.getAttribute('data-op-formula-active'), null);
+  assert.equal(preview.hidden, true);
+  assert.equal(toggleBtn.textContent, '公式');
+
+  const foldBar = surface.querySelector('.op-code-fold-bar');
+  assert.ok(foldBar, 'Source view attaches 48-line fold bar');
+  foldBar.dispatchEvent({ type: 'click' });
+  assert.equal(pre.classList.contains('op-code-folded'), true);
+
+  toggleBtn.dispatchEvent({ type: 'click' });
+  assert.equal(pre.classList.contains('op-code-folded'), false, 'Formula view clears fold class');
+  assert.equal(surface.querySelector('.op-code-fold-bar'), null, 'Formula view removes fold bar');
+
+  toggleBtn.dispatchEvent({ type: 'click' });
+  assert.equal(pre.classList.contains('op-code-folded'), true, 'Returning to Source restores prior fold state');
+
+  // Toggle back to Formula, then test streaming debounce (~280ms)
+  toggleBtn.dispatchEvent({ type: 'click' });
+  ctx.setStreaming(true);
+  code.textContent = '% 更新标题\n\\alpha + \\beta = \\gamma';
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 60));
+  assert.equal(preview.querySelector('.op-formula-caption').textContent, '1. 目标函数', 'Streaming update debounces before re-rendering');
+  await new Promise(resolve => setTimeout(resolve, 480));
+  assert.equal(preview.querySelector('.op-formula-caption').textContent, '更新标题', 'Streaming update settles after debounce');
+  ctx.setStreaming(false);
+
+  // Native Palette ('host') keeps Formula Preview active
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'host', themeMode: 'dark' }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(ctx.runtime.diagnostics().formulaBlocks, 1);
+  assert.equal(internalWrap.getAttribute('data-op-formula-source-hidden'), 'true');
+
+  // stop() cleans up everything with zero residue
+  ctx.runtime.stop();
+  assert.equal(ctx.runtime.diagnostics().formulaBlocks, 0);
+  assert.equal(surface.querySelector('.op-formula-preview'), null);
+  assert.equal(actions.querySelector('.op-formula-toggle'), null);
+  assert.equal(internalWrap.getAttribute('data-op-formula-source-hidden'), null);
+  assert.equal(surface.getAttribute('data-op-formula-active'), null);
+  assert.equal(code.textContent, '% 更新标题\n\\alpha + \\beta = \\gamma');
 });

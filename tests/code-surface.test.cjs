@@ -264,3 +264,34 @@ test('v0.4.1 #33: hosts.css resets outer code-block:has(.code-block), colors Mat
   assert.match(mathSection, /background-color\s*:\s*transparent\s*!important/i, 'Native Math Surface must clear background slabs');
   assert.match(mathSection, /\.math-block[\s\S]*?\.katex-display[\s\S]*?overflow-x\s*:\s*auto\s*!important/i, 'Native Math Surface must contain wide display math with overflow-x: auto');
 });
+
+test('v0.4.1 #34: hosts.css scopes Formula Preview rules, hides source cleanly, and inherits host colors under Native Palette', () => {
+  const formulaMarker = '/* === Formula Preview (v0.4.1 #34) === */';
+  const idx = HOSTS_CSS.indexOf(formulaMarker);
+  assert.notEqual(idx, -1, 'hosts.css must contain the Formula Preview (v0.4.1 #34) section');
+  const nextIdx = HOSTS_CSS.indexOf('/* === ', idx + formulaMarker.length);
+  const section = nextIdx === -1 ? HOSTS_CSS.slice(idx) : HOSTS_CSS.slice(idx, nextIdx);
+  const rules = parseCssRules(section);
+  assert.ok(rules.length >= 6, 'Formula Preview section must define source-hidden, preview card, caption, math, fallback, toggle, and Native Palette rules');
+
+  const checkFormulaRules = list => {
+    for (const rule of list) {
+      if (rule.isAtRule) {
+        checkFormulaRules(rule.nested);
+        continue;
+      }
+      for (const sel of splitTopLevelSelectors(rule.selector)) {
+        assert.ok(
+          sel.startsWith('html[data-op-enabled="true"]'),
+          `Every selector in Formula Preview section must gate on html[data-op-enabled="true"]: ${sel}`
+        );
+      }
+    }
+  };
+  checkFormulaRules(rules);
+
+  assert.match(section, /\[data-op-formula-source-hidden="true"\]\s*\{[\s\S]*?display\s*:\s*none\s*!important/i);
+  assert.match(section, /\.op-formula-math[\s\S]*?overflow-x\s*:\s*auto/i);
+  assert.match(section, /\[data-op-effective-palette="host"\]\s+\.op-formula-preview\[data-op-owned\][\s\S]*?color\s*:\s*inherit/i);
+  assert.match(section, /\[data-op-effective-palette="host"\]\s+\.op-formula-toggle\[data-op-owned\][\s\S]*?color\s*:\s*inherit/i);
+});

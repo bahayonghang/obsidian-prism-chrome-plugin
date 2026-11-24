@@ -6,9 +6,12 @@
   if (global.ObsidianPrismRuntime) return;
   const Schema = global.ObsidianPrismSchema;
   const Adapters = global.ObsidianPrismAdapters;
+  const Formula = global.ObsidianPrismFormula;
   const host = Schema?.detectHost();
   const adapter = Adapters?.forHost(host);
   if (!Schema || !adapter) return;
+  const FORMULA_HEADER_SELECTOR = '.code-block-decoration, .code-header, .code-shell-header, [data-testid="code-block-header"], [data-test-id="code-block-header"], [data-op-code-header="true"]';
+  const FORMULA_DEBOUNCE_MS = 280;
 
   let cfg = Schema.DEFAULT_CONFIG;
   let enabled = false;
@@ -48,6 +51,8 @@
   let geometryFrame = null;
   const surfaceMarks = new Map();
   const codes = new Map();
+  const formulas = new Map();
+  const savedFoldState = new WeakMap();
   const thoughts = new Map();
   const fades = ['op-stream-f0','op-stream-f1','op-stream-f2','op-stream-f3','op-stream-f4'];
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
@@ -113,6 +118,7 @@
     documentObserver?.disconnect(); documentObserver = null; observedBody = null;
     events?.abort(); events = null;
     clearTimeout(pending); pending = null;
+    for (const entry of formulas.values()) { clearTimeout(entry.debounceTimer); entry.debounceTimer = null; }
     if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = null;
     if (geometryFrame) cancelAnimationFrame(geometryFrame); geometryFrame = null;
     dockObserver?.disconnect(); dockObserver = null; observedDock = null;
@@ -137,6 +143,8 @@
     handoverPending = false;
     surfaceMarks.clear();
     codes.clear();
+    for (const entry of formulas.values()) { clearTimeout(entry.debounceTimer); entry.debounceTimer = null; }
+    formulas.clear();
     thoughts.clear();
     rootVarOriginals.clear();
     readingWidth = '';
@@ -155,6 +163,20 @@
     const roots = [document.body, document.documentElement].filter(Boolean);
     for (const part of selectorList.split(',').map(s => s.trim()).filter(Boolean)) {
       const simple = part.replace(/\[[^\]]+\]/g, '');
+      if (!simple) {
+        const attrMatch = part.match(/\[([^\]=]+)(?:="([^"]*)")?\]/);
+        if (attrMatch) {
+          const walk = node => {
+            for (const child of node?.children || []) {
+              const val = child.getAttribute?.(attrMatch[1]);
+              if ((attrMatch[2] === undefined ? val !== null : val === attrMatch[2]) && !out.includes(child)) out.push(child);
+              walk(child);
+            }
+          };
+          for (const root of roots) walk(root);
+        }
+        continue;
+      }
       for (const root of roots) {
         if (!root.querySelectorAll) continue;
         for (const node of root.querySelectorAll(simple)) {
@@ -167,11 +189,21 @@
   function pruneOrphanRoots() {
     const keepButtons = new Set([...codes.values()].map(entry => entry.button));
     const keepToolbars = new Set([...thoughts.values()].map(entry => entry.toolbar));
+    const keepPreviews = new Set([...formulas.values()].filter(e => e.renderedOk).map(e => e.previewEl));
+    const keepToggles = new Set([...formulas.values()].filter(e => e.renderedOk).map(e => e.toggleBtn));
+    const keepBars = new Set([...formulas.values()].filter(e => e.renderedOk && e.barEl).map(e => e.barEl));
+    const keepHiddenTargets = new Set([...formulas.values()].filter(e => e.renderedOk && e.mode === 'preview').map(e => e.hideTarget));
+    const keepActiveSurfaces = new Set([...formulas.values()].filter(e => e.renderedOk && e.mode === 'preview' && e.surface && e.surface !== e.pre).map(e => e.surface));
     for (const node of queryAllNodes('#op-bottom-dock, .op-dock[data-op-owned]')) if (node !== dock) node.remove();
     for (const node of queryAllNodes('#op-rail-root, .op-rail[data-op-owned]')) if (node !== rail) node.remove();
     for (const node of queryAllNodes('#op-ambient-stage, .op-ambient[data-op-owned]')) if (node !== ambient) node.remove();
     for (const node of queryAllNodes('.op-code-fold-bar[data-op-owned]')) if (!keepButtons.has(node)) node.remove();
     for (const node of queryAllNodes('.op-thought-toolbar[data-op-owned]')) if (!keepToolbars.has(node)) node.remove();
+    for (const node of queryAllNodes('.op-formula-preview[data-op-owned]')) if (!keepPreviews.has(node)) node.remove();
+    for (const node of queryAllNodes('.op-formula-toggle[data-op-owned]')) if (!keepToggles.has(node)) node.remove();
+    for (const node of queryAllNodes('.op-formula-bar[data-op-owned]')) if (!keepBars.has(node)) node.remove();
+    for (const node of queryAllNodes('[data-op-formula-source-hidden="true"]')) if (!keepHiddenTargets.has(node)) node.removeAttribute('data-op-formula-source-hidden');
+    for (const node of queryAllNodes('[data-op-formula-active="true"]')) if (!keepActiveSurfaces.has(node)) node.removeAttribute('data-op-formula-active');
   }
 
   const t = key => Schema.t(cfg, key);
@@ -195,6 +227,16 @@
     pre.classList.remove('op-code-folded');
     if (entry.generatedId && pre.id === entry.generatedId) pre.removeAttribute('id');
     codes.delete(pre);
+  }
+  function cleanupFormula(pre, entry) {
+    clearTimeout(entry.debounceTimer);
+    entry.debounceTimer = null;
+    entry.hideTarget?.removeAttribute('data-op-formula-source-hidden');
+    if (entry.surface && entry.surface !== pre) entry.surface.removeAttribute('data-op-formula-active');
+    entry.previewEl?.remove();
+    entry.toggleBtn?.remove();
+    entry.barEl?.remove();
+    formulas.delete(pre);
   }
   function cleanupThought(element, entry) {
     entry.version++;
@@ -269,6 +311,7 @@
     // subscribing to ordinary text changes inside controls we still own.
     let changed = [rail,dock,ambient].some(root=>root&&!root.isConnected)
       || [...codes].some(([pre,entry])=>pre.isConnected&&!entry.button.isConnected)
+      || [...formulas.values()].some(entry=>entry.pre.isConnected&&entry.renderedOk&&(!entry.toggleBtn.isConnected||(entry.mode==='preview'&&!entry.previewEl.isConnected)))
       || [...thoughts].some(([element,entry])=>element.isConnected&&!entry.toolbar.isConnected);
     let responseChanged = false;
     for (const record of records) {
@@ -300,12 +343,215 @@
     pending = setTimeout(() => { pending = null; if (lostOwnership()) return; scan(); }, 160);
   }
 
+  function isFormulaViewActive(pre) {
+    const entry = formulas.get(pre);
+    return Boolean(entry && entry.renderedOk && entry.mode === 'preview');
+  }
+  function resolveFormulaSurface(pre, hostSurfaces) {
+    const matched = hostSurfaces.find(surface => surface === pre || surface.contains?.(pre));
+    if (matched) return matched;
+    const closestSurface = pre.closest?.('.code-block, [data-testid="code-block"], .code-block-wrapper, .code-shell');
+    if (closestSurface) return closestSurface;
+    const parent = pre.parentElement;
+    if (parent?.classList?.contains('formatted-code-block-internal-container')) {
+      return parent.parentElement || parent;
+    }
+    if (parent && !Adapters.isOwned(parent) && parent.querySelectorAll?.('pre').length === 1 && parent.querySelector?.(FORMULA_HEADER_SELECTOR)) {
+      return parent;
+    }
+    return pre;
+  }
+  function resolveFormulaHideTarget(pre) {
+    const parent = pre.parentElement;
+    const isInternal = Boolean(
+      parent &&
+      !Adapters.isOwned(parent) &&
+      parent.classList?.contains('formatted-code-block-internal-container') &&
+      parent.querySelectorAll?.('pre').length === 1 &&
+      [...(parent.children || [])].every(child => child === pre || Adapters.isOwned(child))
+    );
+    return isInternal ? parent : pre;
+  }
+  function resolveFormulaHeader(surface, pre, hostHeaders) {
+    const matched = hostHeaders.find(header => surface && surface !== pre && surface.contains?.(header));
+    if (matched) return matched;
+    const scope = surface && surface !== pre ? surface : pre.parentElement;
+    return scope?.querySelector?.(FORMULA_HEADER_SELECTOR) || null;
+  }
+  function mountFormulaToggle(entry) {
+    const { header, toggleBtn, hideTarget } = entry;
+    if (header) {
+      const actionBox = [...(header.children || [])].find(child =>
+        !Adapters.isOwned(child) &&
+        (child.localName || child.tagName || '').toLowerCase() !== 'button' &&
+        child.getAttribute?.('role') !== 'button' &&
+        (child.querySelector?.('button') || child.querySelector?.('[role="button"]'))
+      );
+      if (actionBox) {
+        toggleBtn.removeAttribute('data-op-formula-header-direct');
+        if (toggleBtn.parentElement !== actionBox || actionBox.firstChild !== toggleBtn) {
+          actionBox.prepend(toggleBtn);
+        }
+      } else {
+        toggleBtn.setAttribute('data-op-formula-header-direct', 'true');
+        const firstBtn = [...(header.children || [])].find(child =>
+          !Adapters.isOwned(child) &&
+          ((child.localName || child.tagName || '').toLowerCase() === 'button' || child.getAttribute?.('role') === 'button')
+        );
+        if (firstBtn && typeof firstBtn.before === 'function') {
+          if (firstBtn.previousElementSibling !== toggleBtn) firstBtn.before(toggleBtn);
+        } else if (toggleBtn.parentElement !== header) {
+          header.append(toggleBtn);
+        }
+      }
+      entry.barEl?.remove();
+      entry.barEl = null;
+      return;
+    }
+    toggleBtn.removeAttribute('data-op-formula-header-direct');
+    if (!entry.barEl) entry.barEl = own(make('div', 'op-formula-bar'));
+    if (toggleBtn.parentElement !== entry.barEl) entry.barEl.append(toggleBtn);
+    if (entry.barEl.nextElementSibling !== hideTarget) {
+      if (typeof hideTarget.before === 'function') hideTarget.before(entry.barEl);
+    }
+  }
+  function updateFormulaToggleLabel(entry) {
+    const preview = entry.mode === 'preview';
+    setText(entry.toggleBtn, t(preview ? 'formulaShowSource' : 'formulaShowPreview'));
+    const tip = t(preview ? 'formulaShowSourceLabel' : 'formulaShowPreviewLabel');
+    entry.toggleBtn.title = tip;
+    entry.toggleBtn.setAttribute('aria-label', tip);
+    entry.toggleBtn.setAttribute('aria-pressed', String(preview));
+    entry.toggleBtn.setAttribute('data-formula-mode', entry.mode);
+  }
+  function applyFormulaEntry(entry) {
+    const showPreview = Boolean(entry.renderedOk && entry.mode === 'preview');
+    if (showPreview) {
+      entry.hideTarget.setAttribute('data-op-formula-source-hidden', 'true');
+      if (entry.surface && entry.surface !== entry.pre) entry.surface.setAttribute('data-op-formula-active', 'true');
+      entry.previewEl.hidden = false;
+      if (entry.hideTarget.nextElementSibling !== entry.previewEl) {
+        entry.hideTarget.insertAdjacentElement('afterend', entry.previewEl);
+      }
+    } else {
+      entry.hideTarget.removeAttribute('data-op-formula-source-hidden');
+      if (entry.surface && entry.surface !== entry.pre) entry.surface.removeAttribute('data-op-formula-active');
+      entry.previewEl.hidden = true;
+    }
+    mountFormulaToggle(entry);
+    updateFormulaToggleLabel(entry);
+  }
+  function commitFormulaEntry(entry) {
+    if (lostOwnership() || !enabled || stopped || !entry.pre.isConnected || cfg.formulaPreview === false || !Formula || !global.temml) {
+      cleanupFormula(entry.pre, entry);
+      syncCodes();
+      return;
+    }
+    const code = entry.pre.querySelector('code') || entry.pre;
+    const source = Adapters.textOf(code);
+    const hint = Formula.extractLanguageHint(entry.surface, entry.pre, code);
+    entry.code = code;
+    entry.lastSource = source;
+    entry.lastHint = hint;
+    if (!Formula.isLikelyLatex(source, hint)) {
+      cleanupFormula(entry.pre, entry);
+      syncCodes();
+      return;
+    }
+    const rendered = Formula.renderFormulaPreview(document, global.temml, source);
+    if (!rendered.ok || !rendered.fragment) {
+      cleanupFormula(entry.pre, entry);
+      syncCodes();
+      return;
+    }
+    entry.renderedOk = true;
+    entry.previewEl.replaceChildren(rendered.fragment);
+    applyFormulaEntry(entry);
+    syncCodes();
+  }
+  function syncFormulas() {
+    const temml = global.temml;
+    const active = Boolean(cfg.formulaPreview !== false && Formula && temml);
+    const current = new Set(active ? adapter.codeBlocks().filter(pre => !Adapters.isOwned(pre)) : []);
+    for (const [pre, entry] of formulas) {
+      if (!current.has(pre) || !pre.isConnected) cleanupFormula(pre, entry);
+    }
+    if (!current.size) {
+      pruneOrphanRoots();
+      return;
+    }
+    const hostSurfaces = adapter.codeSurfaces?.() || [];
+    const hostHeaders = adapter.codeHeaders?.() || [];
+    const isStreaming = Boolean(adapter.isStreaming?.());
+    for (const pre of current) {
+      const code = pre.querySelector('code') || pre;
+      const source = Adapters.textOf(code);
+      const surface = resolveFormulaSurface(pre, hostSurfaces);
+      const hideTarget = resolveFormulaHideTarget(pre);
+      const header = resolveFormulaHeader(surface, pre, hostHeaders);
+      const hint = Formula.extractLanguageHint(surface, pre, code);
+      let entry = formulas.get(pre);
+      if (entry) {
+        entry.code = code;
+        entry.surface = surface;
+        entry.header = header;
+        if (entry.hideTarget !== hideTarget) {
+          entry.hideTarget?.removeAttribute('data-op-formula-source-hidden');
+          entry.hideTarget = hideTarget;
+        }
+        if (source !== entry.lastSource || hint !== entry.lastHint) {
+          entry.lastSource = source;
+          entry.lastHint = hint;
+          clearTimeout(entry.debounceTimer);
+          entry.debounceTimer = setTimeout(() => {
+            entry.debounceTimer = null;
+            commitFormulaEntry(entry);
+          }, FORMULA_DEBOUNCE_MS);
+        } else if (entry.renderedOk) {
+          applyFormulaEntry(entry);
+        }
+        continue;
+      }
+      if (!Formula.isLikelyLatex(source, hint)) continue;
+      const previewEl = own(make('div', 'op-formula-preview'));
+      const toggleBtn = own(make('button', 'op-formula-toggle'));
+      entry = {
+        pre, code, surface, hideTarget, header, previewEl, toggleBtn, barEl: null,
+        mode: 'preview', lastSource: source, lastHint: hint, renderedOk: false, debounceTimer: null
+      };
+      toggleBtn.addEventListener('click', () => {
+        if (!enabled || lostOwnership()) return;
+        entry.mode = entry.mode === 'preview' ? 'source' : 'preview';
+        applyFormulaEntry(entry);
+        syncCodes();
+      });
+      formulas.set(pre, entry);
+      if (isStreaming) {
+        entry.debounceTimer = setTimeout(() => {
+          entry.debounceTimer = null;
+          commitFormulaEntry(entry);
+        }, FORMULA_DEBOUNCE_MS);
+      } else {
+        commitFormulaEntry(entry);
+      }
+    }
+    pruneOrphanRoots();
+  }
+
   function syncCodes() {
-    const current = new Set(cfg.longCodeFold ? adapter.codeBlocks() : []);
+    const current = new Set(cfg.longCodeFold ? adapter.codeBlocks().filter(pre => !Adapters.isOwned(pre)) : []);
     for (const [pre, entry] of codes) {
       if (!current.has(pre) || !pre.isConnected) cleanupCode(pre, entry);
     }
     for (const pre of current) {
+      if (isFormulaViewActive(pre)) {
+        const existing = codes.get(pre);
+        if (existing) {
+          savedFoldState.set(pre, existing.folded);
+          cleanupCode(pre, existing);
+        }
+        continue;
+      }
       const count = Adapters.textOf(pre.querySelector('code') || pre).replace(/\n$/, '').split('\n').length;
       if (count < 48) {
         if (codes.has(pre)) cleanupCode(pre, codes.get(pre));
@@ -316,7 +562,9 @@
         const button = own(make('button','op-code-fold-bar'));
         const generatedId = pre.id ? null : 'op-code-'+(++nextId);
         if (generatedId) pre.id = generatedId;
-        entry = {button, generatedId, folded:false, lines:count};
+        const priorFolded = Boolean(savedFoldState.get(pre));
+        entry = {button, generatedId, folded:priorFolded, lines:count};
+        if (entry.folded) pre.classList.add('op-code-folded');
         button.setAttribute('aria-controls',pre.id);
         button.addEventListener('click', () => {
           if (!enabled) return;
@@ -325,6 +573,7 @@
           const beforeTop = button.getBoundingClientRect().top;
           const startsAbove = pre.getBoundingClientRect().top < viewportTop;
           entry.folded = !entry.folded;
+          savedFoldState.set(pre, entry.folded);
           pre.classList.toggle('op-code-folded', entry.folded);
           updateFoldLabel(entry);
           if (startsAbove && scroller) {
@@ -1060,6 +1309,7 @@
   function resetConversation() {
     activeTurn=-1; railSignature=''; lastEstimate=0; lastModelLabel=''; lastAttachments=0;
     for(const [element,entry] of thoughts) cleanupThought(element,entry);
+    for(const [pre,entry] of formulas) cleanupFormula(pre,entry);
     for(const [pre,entry] of codes) cleanupCode(pre,entry);
     clearActivity();
     closeRail(); setDockOpen(false);
@@ -1069,7 +1319,7 @@
     if(lostOwnership() || !enabled || stopped || document.hidden || !document.body) return;
     passes++;
     if(route!==location.href) {route=location.href;revision++;resetConversation();}
-    syncSurfaces(); syncReadingWidth(); syncDockClearance(); syncScrollerFade(); syncAmbient(); syncCodes(); syncRail(); syncDock(); syncThoughts(); syncDockAvoidance();
+    syncSurfaces(); syncReadingWidth(); syncDockClearance(); syncScrollerFade(); syncAmbient(); syncFormulas(); syncCodes(); syncRail(); syncDock(); syncThoughts(); syncDockAvoidance();
   }
   function suspend() {
     if (lostOwnership()) return;
@@ -1081,6 +1331,7 @@
     document.documentElement.removeAttribute('data-op-home');
     document.documentElement.removeAttribute('data-op-visibility');
     clearActivity();
+    for(const [pre,entry] of formulas) cleanupFormula(pre,entry);
     for(const [pre,entry] of codes) cleanupCode(pre,entry);
     for(const [element,entry] of thoughts) cleanupThought(element,entry);
     rail?.remove();dock?.remove();ambient?.remove();rail=dock=ambient=null;
@@ -1173,7 +1424,7 @@
   });
   global.ObsidianPrismRuntime=Object.freeze({
     refresh:schedule,
-    diagnostics:()=>({passes,enabled,observing:Boolean(observer),pending:Boolean(pending),codeBlocks:codes.size,thoughtBlocks:thoughts.size,surfaces:surfaceMarks.size}),
+    diagnostics:()=>({passes,enabled,observing:Boolean(observer),pending:Boolean(pending),codeBlocks:codes.size,formulaBlocks:formulas.size,thoughtBlocks:thoughts.size,surfaces:surfaceMarks.size}),
     stop(){
       if(lostOwnership()) return;
       revision++;suspend();disconnectRuntime({permanent:true});

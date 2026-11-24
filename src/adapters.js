@@ -1380,7 +1380,7 @@
       sidebarSurfaces: () => findSidebars(spec, root),
       sidebarActiveRows: (sidebars) => findSidebarActiveRows(sidebars === undefined ? findSidebars(spec, root) : sidebars),
       cornerFloatingObstacles: (composer) => findCornerFloatingObstacles(root, composer === undefined ? findComposer(spec, root) : composer, spec),
-      codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))],
+      codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))].filter(pre => !isOwned(pre) && !pre.parentElement?.closest?.('pre')),
       thoughtBlocks: () => collect(spec.thoughts),
       isAssistantNode(node) {
         const element = elementOf(node);

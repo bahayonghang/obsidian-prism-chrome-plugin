@@ -166,8 +166,16 @@ test('locale dictionaries cover identical visible setting keys', () => {
     assert.equal(Object.hasOwn(S.I18N['zh-CN'], key), true, `zh-CN missing ${key}`);
     assert.equal(Object.hasOwn(S.I18N['en-US'], key), true, `en-US missing ${key}`);
   }
-  assert.equal(S.I18N['zh-CN'].contextWindow, '参考容量');
+    assert.equal(S.I18N['zh-CN'].contextWindow, '参考容量');
   assert.equal(S.I18N['en-US'].contextWindow, 'Reference capacity');
+  for (const key of ['formulaShowSource', 'formulaShowPreview', 'formulaShowSourceLabel', 'formulaShowPreviewLabel']) {
+    assert.equal(Object.hasOwn(S.I18N['zh-CN'], key), true, `zh-CN missing ${key}`);
+    assert.equal(Object.hasOwn(S.I18N['en-US'], key), true, `en-US missing ${key}`);
+  }
+  assert.equal(S.I18N['zh-CN'].formulaShowSource, '源码');
+  assert.equal(S.I18N['zh-CN'].formulaShowPreview, '公式');
+  assert.equal(S.I18N['en-US'].formulaShowSource, 'Source');
+  assert.equal(S.I18N['en-US'].formulaShowPreview, 'Formula');
   for (const lang of ['zh-CN', 'en-US']) for (const [key, value] of Object.entries(S.I18N[lang])) assert.equal(typeof value === 'string' && value.length > 0, true, `${lang}.${key}`);
 });
 

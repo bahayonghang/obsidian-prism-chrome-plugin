@@ -493,6 +493,30 @@ test('estimateTurnTokens separates prose and code without double counting', () =
   assert.deepEqual({ ...A.estimateTurnTokens(null) }, { prose: 0, code: 0, total: 0 });
 });
 
+test('v0.4.1 #34: codeBlocks and estimateTurnTokens exclude owned Formula Preview and fallback pre nodes while counting hidden-source code once', () => {
+  const A = adapters();
+  const { el, doc, body } = makeDoc('gemini');
+  const turn = el('model-response');
+  const card = el('div', { class: 'code-block' });
+  const sourceWrap = el('div', { class: 'formatted-code-block-internal-container', 'data-op-formula-source-hidden': 'true' });
+  const pre = el('pre');
+  pre.append(el('code', {}, { textContent: '1234567890123456' }));
+  sourceWrap.append(pre);
+
+  const ownedPreview = el('div', { class: 'op-formula-preview', 'data-op-owned': '' });
+  const caption = el('p', { class: 'op-formula-caption' }, { textContent: 'Ignored caption text' });
+  const fallbackPre = el('pre', { class: 'op-formula-fallback' }, { textContent: 'Ignored fallback pre' });
+  ownedPreview.append(caption, fallbackPre);
+
+  card.append(sourceWrap, ownedPreview);
+  turn.append(card);
+  body.append(turn);
+
+  const adapter = A.forHost('gemini', doc);
+  assert.deepEqual([...adapter.codeBlocks()], [pre]);
+  assert.deepEqual({ ...A.estimateTurnTokens(turn) }, { prose: 0, code: 5, total: 5 });
+});
+
 test('resolveReferenceCapacity maps ChatGPT and Gemini models, falls back cleanly, and honors manual overrides', () => {
   const A = adapters();
   assert.deepEqual({ ...A.resolveReferenceCapacity('chatgpt', 'ChatGPT 5.2', 128000) }, {
