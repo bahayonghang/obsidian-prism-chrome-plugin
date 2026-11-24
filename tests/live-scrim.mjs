@@ -14,6 +14,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { onLiveFixture, injectExtension as injectRuntime, patchConfig, settle as frames, applyChatGPTBottomVariants, LIVE_SELECTORS } from './live-fixtures.mjs';
 import { capturePixels, regionStats } from './measure.mjs';
+import { checkChatGPTThreadFooter } from './live-footer.mjs';
 
 /** The @supports condition that switches the scrim from the fallback gradient to the blur. */
 export const SCRIM_BLUR_SUPPORTS = '@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))';
@@ -1093,4 +1094,6 @@ export async function checkLiveComposerScrim(options) {
   await checkGeminiOverlay(options);
   await checkFallback(options, 'gemini', PALETTES[0]);
   await checkFallback(options, 'gemini', PALETTES[2]);
+  // v0.4.3 #41 live ChatGPT thread footer (2026-11-24 facts)
+  await checkChatGPTThreadFooter(options);
 }
