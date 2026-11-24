@@ -28,6 +28,8 @@ export const LIVE_SELECTORS = {
     voice: 'button[aria-label="Start Voice"]',
     attachment: '[class*="composerGrid"] [class*="file-tile"]',
     belowSpacer: '.composer-below-spacer',
+    // v0.4.3 #41 thread-footer variant: the scroll container's child that holds the host marker (structural, no host class).
+    threadFooter: '[data-prism-test-scroller] > :has([data-thread-scroll-footer="true"])',
     disclaimer: '#thread-bottom [class*="disclaimer"]',
     cornerFloat: '.host-corner-help'
   },
@@ -163,12 +165,12 @@ export const THREAD_FOOTER_DEPTH = 21;
  * [data-thread-scroll-footer], [data-thread-composer-backdrop] + [data-pip-obstacle] and [data-composer-body].
  */
 export async function applyChatGPTThreadFooter(page, { enabled = true } = {}) {
-  await page.evaluate(enabled => {
+  await page.evaluate(({ enabled, threadFooter }) => {
     const scroller = document.querySelector('[data-prism-test-scroller]');
     const form = document.querySelector('form[data-chatgpt-composer]');
     const layout = form.querySelector('[data-composer-layout]');
     const store = window.__prismThreadFooterFixture || (window.__prismThreadFooterFixture = {});
-    document.querySelector('.thread-footer_A8ZvKV')?.remove();
+    document.querySelector(threadFooter)?.remove();
     if (store.dock && !store.dock.isConnected) {
       store.dock.querySelector('.composer-column').prepend(form);
       scroller.after(store.dock);
@@ -201,7 +203,7 @@ export async function applyChatGPTThreadFooter(page, { enabled = true } = {}) {
     layout.setAttribute('data-composer-body', '');
     store.dock.remove();
     scroller.append(footer);
-  }, enabled);
+  }, { enabled, threadFooter: LIVE_SELECTORS.chatgpt.threadFooter });
   await settle(page);
 }
 
@@ -580,10 +582,10 @@ async function checkChatGPTBottomVariantBaselines(suite) {
  * Surface's own shadow.
  */
 export async function threadFooterRegions(page) {
-  return page.evaluate(() => {
+  return page.evaluate(threadFooter => {
     const box = node => { const r = node.getBoundingClientRect(); return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, width: r.width, height: r.height }; };
     const composer = box(document.querySelector('[data-composer-layout]'));
-    const footer = box(document.querySelector('.thread-footer_A8ZvKV'));
+    const footer = box(document.querySelector(threadFooter));
     const main = box(document.querySelector('main'));
     const x = Math.max(main.left + 20, composer.left - 40);
     const width = Math.min(24, composer.left - 4 - x);
@@ -593,7 +595,7 @@ export async function threadFooterRegions(page) {
       below: { x, y: composer.bottom + 4, width, height: Math.max(1, footer.bottom - composer.bottom - 8) },
       above: { x, y: Math.min(composer.top, footer.top) - 32, width, height: 8 }
     };
-  });
+  }, LIVE_SELECTORS.chatgpt.threadFooter);
 }
 
 /** The 2026-11-24 ChatGPT thread footer reproduces the opaque band natively; the probe reports its depth privately. */
@@ -604,8 +606,8 @@ async function checkChatGPTThreadFooterBaseline(suite) {
     await applyChatGPTThreadFooter(page);
     await page.locator(LIVE_SELECTORS.chatgpt.scroller).evaluate(node => { node.scrollTop = node.scrollHeight; });
     await settle(page);
-    const shape = await page.evaluate(() => {
-      const footer = document.querySelector('.thread-footer_A8ZvKV');
+    const shape = await page.evaluate(threadFooter => {
+      const footer = document.querySelector(threadFooter);
       const form = document.querySelector('form[data-chatgpt-composer]');
       let depth = 0, noBox = 0;
       for (let node = form.parentElement; node !== footer; node = node.parentElement) {
@@ -618,7 +620,7 @@ async function checkChatGPTThreadFooterBaseline(suite) {
         inScroller: footer.parentElement.matches('[data-prism-test-scroller]'),
         legacyDock: document.querySelectorAll('#thread-bottom-container,#thread-bottom').length
       };
-    });
+    }, LIVE_SELECTORS.chatgpt.threadFooter);
     assert.deepEqual(shape, { depth: THREAD_FOOTER_DEPTH, noBox: 18, position: 'absolute', zIndex: '20', inScroller: true, legacyDock: 0 },
       'chatgpt thread footer: absolutely positioned child of the scroll container, 21 ancestors above the form, 18 without a box');
     const regions = await threadFooterRegions(page);
@@ -654,10 +656,10 @@ async function checkChatGPTThreadFooterBaseline(suite) {
     await page.keyboard.press('Backspace');
 
     await applyChatGPTThreadFooter(page, { enabled: false });
-    const restored = await page.evaluate(() => ({
-      footers: document.querySelectorAll('.thread-footer_A8ZvKV,[data-composer-body]').length,
+    const restored = await page.evaluate(threadFooter => ({
+      footers: document.querySelectorAll(`${threadFooter},[data-composer-body]`).length,
       dockHasForm: Boolean(document.querySelector('#thread-bottom-container .composer-column > form[data-chatgpt-composer]'))
-    }));
+    }), LIVE_SELECTORS.chatgpt.threadFooter);
     assert.deepEqual(restored, { footers: 0, dockHasForm: true }, 'chatgpt thread footer: { enabled: false } restores the default fixture');
     const back = await page.locator(LIVE_SELECTORS.chatgpt.composer).evaluate(node => node.getBoundingClientRect().toJSON());
     assert.deepEqual(back, original, 'chatgpt thread footer: the default composer geometry returns');

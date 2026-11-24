@@ -8,19 +8,12 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { onLiveFixture, injectExtension, patchConfig, settle, applyChatGPTThreadFooter, threadFooterRegions, LIVE_SELECTORS } from './live-fixtures.mjs';
-import { regionStats } from './measure.mjs';
+import { regionStats, PALETTES, channelGap } from './measure.mjs';
 
-const PALETTES = [
-  { name: 'obsidian', scheme: 'dark', patch: { themeMode: 'dark', palette: 'obsidian' }, hostPatch: { palette: 'host' } },
-  { name: 'warm', scheme: 'dark', patch: { themeMode: 'dark', palette: 'warm' }, hostPatch: { palette: 'host' } },
-  { name: 'crystal', scheme: 'light', patch: { themeMode: 'light', lightPreset: 'crystal' }, hostPatch: { lightPreset: 'host' } },
-  { name: 'alabaster', scheme: 'light', patch: { themeMode: 'light', lightPreset: 'alabaster' }, hostPatch: { lightPreset: 'host' } }
-];
 const WIDTHS = ['standard', 'wide', 'full'];
 const S = LIVE_SELECTORS.chatgpt;
 
 const fmt = c => `rgb(${Math.round(c.r)},${Math.round(c.g)},${Math.round(c.b)})`;
-const channelGap = (a, b) => Math.max(Math.abs(a.r - b.r), Math.abs(a.g - b.g), Math.abs(a.b - b.b));
 const blueness = c => c.b - (c.r + c.g) / 2;
 const mean = async (page, clip) => (await regionStats(page, clip)).mean;
 
@@ -31,8 +24,8 @@ async function scrollToEnd(page) {
 
 /** Footer positioning and its pseudo-element boxes as computed by the browser, plus the Composer Surface box. */
 async function footerGeometry(page) {
-  return page.evaluate(selector => {
-    const footer = document.querySelector('.thread-footer_A8ZvKV');
+  return page.evaluate(({ threadFooter, composer: selector }) => {
+    const footer = document.querySelector(threadFooter);
     const composer = document.querySelector(selector).getBoundingClientRect();
     const footerRect = footer.getBoundingClientRect();
     const pick = (style, keys) => Object.fromEntries(keys.map(key => [key, style[key]]));
@@ -44,7 +37,7 @@ async function footerGeometry(page) {
       composerGap: Math.round((footerRect.bottom - composer.bottom) * 10) / 10,
       composer: { left: composer.left, top: composer.top, width: composer.width, height: composer.height }
     };
-  }, S.composer);
+  }, { threadFooter: S.threadFooter, composer: S.composer });
 }
 
 /** A small area inside the Composer Surface, right of the empty editor's placeholder. */
@@ -179,7 +172,7 @@ export async function checkChatGPTThreadFooter(suite) {
     assert.ok(turns > 0);
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-home') === 'true');
     await settle(page);
-    const homeAfter = await page.evaluate(() => getComputedStyle(document.querySelector('.thread-footer_A8ZvKV'), '::after').backgroundColor);
+    const homeAfter = await page.evaluate(threadFooter => getComputedStyle(document.querySelector(threadFooter), '::after').backgroundColor, S.threadFooter);
     assert.equal(homeAfter, 'rgb(14, 14, 14)', `${engine} chatgpt thread footer Home State: the conversation footer keeps its native paint`);
     await page.evaluate(() => {
       const { parent, nodes } = window.__prismHomeTurns;

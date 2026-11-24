@@ -8,7 +8,7 @@
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { onLiveFixture, injectExtension, patchConfig, settle } from './live-fixtures.mjs';
-import { capturePixels } from './measure.mjs';
+import { capturePixels, PALETTES, channelGap } from './measure.mjs';
 
 const TARGETS = {
   chatgpt: {
@@ -24,12 +24,6 @@ const TARGETS = {
     idleRow: 'side-navigation-v2 a[href^="/app/"]:not([aria-current])'
   }
 };
-const PALETTES = [
-  { palette: 'obsidian', patch: { themeMode: 'dark', palette: 'obsidian' } },
-  { palette: 'warm', patch: { themeMode: 'dark', palette: 'warm' } },
-  { palette: 'crystal', patch: { themeMode: 'light', lightPreset: 'crystal' } },
-  { palette: 'alabaster', patch: { themeMode: 'light', lightPreset: 'alabaster' } }
-];
 const ACCENTS = ['follow', 'cobalt', 'iris', 'amber', 'mono'];
 
 /** Parses rgb()/rgba()/color(srgb …)/#hex into 0–255 channels plus alpha. */
@@ -47,7 +41,6 @@ function parseColor(value) {
   if (/^rgba?\(/.test(text)) return { r: numbers[0], g: numbers[1], b: numbers[2], a: numbers[3] ?? 1 };
   return null;
 }
-const distance = (a, b) => Math.max(Math.abs(a.r - b.r), Math.abs(a.g - b.g), Math.abs(a.b - b.b));
 const show = c => c ? `rgb(${Math.round(c.r)}, ${Math.round(c.g)}, ${Math.round(c.b)}${c.a !== undefined && c.a < 1 ? ` / ${c.a}` : ''})` : String(c);
 function contrast(fg, bg) {
   const lum = c => [c.r, c.g, c.b].map(v => v / 255).map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4)
@@ -120,19 +113,19 @@ async function assertIconTile(page, label) {
   assert.ok(fill && fill.a === 1, `${label}: the icon tile has an opaque fill (got ${style.backgroundColor})`);
   for (const [x, y] of [[w / 2, 3], [3, h / 2], [w - 4, h / 2], [w / 2, h - 4]]) {
     const pixel = image.at(x, y);
-    assert.ok(distance(pixel, fill) <= 3, `${label}: tile fill at (${x},${y}) is the tile colour ${show(fill)}, no host overlay on top (got ${show(pixel)})`);
+    assert.ok(channelGap(pixel, fill) <= 3, `${label}: tile fill at (${x},${y}) is the tile colour ${show(fill)}, no host overlay on top (got ${show(pixel)})`);
   }
   for (const inset of [0, 1]) {
     const edges = { left: image.at(inset, h / 2), right: image.at(w - 1 - inset, h / 2), top: image.at(w / 2, inset), bottom: image.at(w / 2, h - 1 - inset) };
     const values = Object.values(edges);
-    const spread = Math.max(...values.flatMap(a => values.map(b => distance(a, b))));
+    const spread = Math.max(...values.flatMap(a => values.map(b => channelGap(a, b))));
     assert.ok(spread <= 6, `${label}: all four tile edges share one colour ${inset}px in (no single-side bar): ${JSON.stringify(Object.fromEntries(Object.entries(edges).map(([k, v]) => [k, show(v)])))}`);
-    if (inset === 0) assert.ok(distance(edges.left, fill) >= 10, `${label}: the tile has a visible ring (edge ${show(edges.left)} vs fill ${show(fill)})`);
-    else assert.ok(distance(edges.left, fill) <= 3, `${label}: the ring is 1px, not a 2px bar (got ${show(edges.left)})`);
+    if (inset === 0) assert.ok(channelGap(edges.left, fill) >= 10, `${label}: the tile has a visible ring (edge ${show(edges.left)} vs fill ${show(fill)})`);
+    else assert.ok(channelGap(edges.left, fill) <= 3, `${label}: the ring is 1px, not a 2px bar (got ${show(edges.left)})`);
   }
   const icon = parseColor((await computed(page, `${tile} svg`, ['color'])).color);
   let nearest = Infinity;
-  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) nearest = Math.min(nearest, distance(image.at(x, y), icon));
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) nearest = Math.min(nearest, channelGap(image.at(x, y), icon));
   assert.ok(nearest <= 24, `${label}: the icon is painted in the icon colour ${show(icon)} (nearest pixel off by ${nearest})`);
   return { fill, icon };
 }
@@ -152,7 +145,7 @@ async function assertRowHighlight(page, host, label) {
   // Scan one column (clear of text and rounded corners) through the row and its inner link.
   const column = Math.round(rect.right - 12);
   const matches = [];
-  for (let y = clip.y; y < clip.y + image.height; y++) if (distance(at(column, y), fill) <= 3) matches.push(y);
+  for (let y = clip.y; y < clip.y + image.height; y++) if (channelGap(at(column, y), fill) <= 3) matches.push(y);
   assert.ok(matches.length, `${label}: the row highlight colour ${show(fill)} is painted`);
   const top = Math.min(...matches), bottom = Math.max(...matches) + 1;
   assert.equal(matches.length, bottom - top, `${label}: one uninterrupted layer (no inner link layer) from ${top} to ${bottom}: ${matches.join(',')}`);
@@ -160,9 +153,9 @@ async function assertRowHighlight(page, host, label) {
     `${label}: highlight box ${top}–${bottom} equals the whole row ${rect.top}–${rect.bottom} (inner link ${linkRect.top}–${linkRect.bottom})`);
   const middle = rect.top + rect.height / 2;
   const edge = at(Math.floor(rect.left), middle);
-  assert.ok(distance(edge, fill) >= 20, `${label}: the row has a left accent edge (edge ${show(edge)} vs fill ${show(fill)})`);
-  assert.ok(distance(at(Math.floor(rect.left) + 2, middle), fill) <= 3, `${label}: the left edge is 2px wide`);
-  assert.ok(distance(at(Math.ceil(rect.right) - 1, middle), fill) <= 3, `${label}: only the left side carries an edge`);
+  assert.ok(channelGap(edge, fill) >= 20, `${label}: the row has a left accent edge (edge ${show(edge)} vs fill ${show(fill)})`);
+  assert.ok(channelGap(at(Math.floor(rect.left) + 2, middle), fill) <= 3, `${label}: the left edge is 2px wide`);
+  assert.ok(channelGap(at(Math.ceil(rect.right) - 1, middle), fill) <= 3, `${label}: only the left side carries an edge`);
   const text = parseColor((await computed(page, link, ['color'])).color);
   const ratio = contrast(text, fill);
   assert.ok(ratio >= 4.5, `${label}: active row text contrast ${ratio.toFixed(2)}:1 >= 4.5:1`);
@@ -258,7 +251,7 @@ export async function checkSidebarActiveHighlight(suite) {
         () => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
       const tag = `${engine} ${host}`;
 
-      for (const { palette, patch } of PALETTES) {
+      for (const { name: palette, patch } of PALETTES) {
         await patchConfig(page, patch);
         await page.waitForFunction(value => document.documentElement.getAttribute('data-op-effective-palette') === value, palette);
         await settle(page);

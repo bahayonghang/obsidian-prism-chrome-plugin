@@ -12,6 +12,18 @@ export const LIVE_FIXTURE_URLS = {
 };
 /** The main conversation area whose width setMainWidth controls (everything right of the sidebar). */
 export const MAIN_SELECTORS = { chatgpt: 'main', gemini: 'chat-window' };
+/**
+ * The four Prism palettes as config patches: `name` is the resulting data-op-effective-palette, `scheme` the
+ * page colour scheme, `patch` selects the palette and `hostPatch` switches the same theme mode back to Native Palette.
+ */
+export const PALETTES = [
+  { name: 'obsidian', scheme: 'dark', patch: { themeMode: 'dark', palette: 'obsidian' }, hostPatch: { palette: 'host' } },
+  { name: 'warm', scheme: 'dark', patch: { themeMode: 'dark', palette: 'warm' }, hostPatch: { palette: 'host' } },
+  { name: 'crystal', scheme: 'light', patch: { themeMode: 'light', lightPreset: 'crystal' }, hostPatch: { lightPreset: 'host' } },
+  { name: 'alabaster', scheme: 'light', patch: { themeMode: 'light', lightPreset: 'alabaster' }, hostPatch: { lightPreset: 'host' } }
+];
+/** Largest per-channel difference between two { r, g, b } colours (0–255). */
+export const channelGap = (a, b) => Math.max(Math.abs(a.r - b.r), Math.abs(a.g - b.g), Math.abs(a.b - b.b));
 
 /** Decodes an 8-bit, non-interlaced RGB/RGBA PNG (Playwright screenshots) into RGBA pixels. */
 export function decodePNG(buffer) {
