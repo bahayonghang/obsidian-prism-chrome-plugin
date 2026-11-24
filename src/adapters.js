@@ -17,6 +17,9 @@
       editors: ['#prompt-textarea', '[data-testid="prompt-textarea"]', 'textarea[name="prompt-textarea"]', 'main [contenteditable="true"][role="textbox"]', 'main textarea'],
       composers: ['[data-composer-layout]', '#composer-background', '[data-testid="chat-composer"]', '[data-testid="composer"]', '[data-composer-surface]', '.composer-parent'],
       composerBackdrops: '#thread-bottom-container,#thread-bottom,[class*="content-fade"],.content-fade,[class*="fade-mask"],[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
+      /* v0.4.3 #41 live footer (2026-11-24): host markers on the conversation footer. The layer inside the scroll
+       * container that wraps [data-thread-scroll-footer] paints the band with ::before/::after; only paint is cleared. */
+      threadFooters: '[data-thread-scroll-footer="true"],[data-thread-composer-backdrop="true"]',
       codeSurfaces: '[data-testid="code-block"], .code-block-wrapper, .code-shell',
       codeHeaders: '.code-header, .code-shell-header, [data-testid="code-block-header"]',
       codeWells: '',
@@ -385,6 +388,37 @@
     // A genuine form with controls is safer than styling an arbitrary ancestor.
     return fallback;
   }
+  const isScrollContainer = (node, view) => Boolean(node && /(auto|scroll)/.test(view.getComputedStyle(node)?.overflowY || ''));
+  /* v0.4.3 #41: the live ChatGPT footer (2026-11-24) is an absolutely positioned layer directly inside the
+   * conversation scroll container; its ::before/::after paint the band. The host markers identify it without an
+   * ancestor budget. A marker-less layer is recognized structurally (absolute/fixed child of a scroll container). */
+  function isThreadFooterLayer(spec, node, view) {
+    if (!spec.threadFooters || !node?.parentElement) return false;
+    if (node.matches?.(spec.threadFooters)) return true;
+    return ['absolute','fixed'].includes(view.getComputedStyle(node)?.position) && isScrollContainer(node.parentElement, view);
+  }
+  // Conversation-only: a footer whose scroll container holds no messages (Home State) is left native.
+  function inConversationScroller(node, view) {
+    let scope = node?.parentElement;
+    while (scope && !isScrollContainer(scope, view)) scope = scope.parentElement;
+    return Boolean((scope || node?.ownerDocument)?.querySelector?.(MESSAGE_AREAS));
+  }
+  function findThreadFooter(spec, composer, view) {
+    if (!spec.threadFooters) return [];
+    const markers = [];
+    let layer = null;
+    for (let node = composer.parentElement; node; node = node.parentElement) {
+      if (node.matches('main,[role="main"],body,html')) break;
+      if (node.parentElement && isScrollContainer(node.parentElement, view)) {
+        if (markers.length) layer = node;
+        break;
+      }
+      if (node.matches(spec.threadFooters)) markers.push(node);
+    }
+    if (!markers.length || !inConversationScroller(markers[0], view)) return [];
+    return [...markers, layer].filter(node => node && !isOwned(node) &&
+      !node.matches(OVERLAY_EXCLUDED) && !node.querySelector(MESSAGE_AREAS));
+  }
   function findComposerBackdrops(spec, composer) {
     if (!composer || isOwned(composer)) return [];
     const view = composer.ownerDocument?.defaultView;
@@ -397,13 +431,16 @@
     let boundary = -1;
     // Recognize only the small docking region around a known native editor.
     // Structure and positioning remain stable after its paint is overridden.
-    for (let node = composer.parentElement, depth = 0; node && depth < 14; node = node.parentElement, depth++) {
+    // v0.4.3 #41: zero-size `display: contents` wrappers generate no box and do not use up the 14-layer budget.
+    for (let node = composer.parentElement, depth = 0; node && depth < 14; node = node.parentElement) {
       if (node.matches('main,[role="main"],body,html,chat-window,dialog,[role="dialog"],[aria-modal="true"],aside,nav,[role="navigation"]') ||
           node.matches(OVERLAY_EXCLUDED) || node.querySelector(MESSAGE_AREAS)) break;
       if (isOwned(node)) break;
       path.push(node);
-      const rect = node.getBoundingClientRect();
       const style = view.getComputedStyle(node);
+      if (style?.display === 'contents') continue;
+      depth++;
+      const rect = node.getBoundingClientRect();
       const smallRegion = rect.height > 0 && rect.height <= Math.max(composerRect.height + 220, viewportHeight * 0.48) &&
         rect.width >= composerRect.width - 24 && rect.right > composerRect.left && rect.left < composerRect.right &&
         rect.bottom >= composerRect.top - 80 && rect.top <= composerRect.bottom + 140;
@@ -411,11 +448,12 @@
         rect.bottom >= Math.min(viewportHeight - 96, composerRect.bottom - 4);
       const nearBottomInFlowDock = rect.bottom >= Math.min(viewportHeight - 120, composerRect.bottom - 4) &&
         Boolean(node.parentElement && (node.parentElement.querySelector(MESSAGE_AREAS) || node.parentElement.matches('.composer-parent,main,[role="main"]')));
-      if (smallRegion && (node.matches(spec.composerBackdrops) || bottomDock || nearBottomInFlowDock)) boundary = path.length - 1;
+      const homeThreadFooter = isThreadFooterLayer(spec, node, view) && !inConversationScroller(node, view);
+      if (smallRegion && !homeThreadFooter && (node.matches(spec.composerBackdrops) || bottomDock || nearBottomInFlowDock)) boundary = path.length - 1;
     }
-    if (boundary < 0) return [];
-    const surfaces = path.slice(0, boundary + 1);
-    const outerDock = path[boundary];
+    const threadFooter = findThreadFooter(spec, composer, view);
+    const surfaces = boundary < 0 ? [] : path.slice(0, boundary + 1);
+    const outerDock = boundary < 0 ? null : path[boundary];
     const isProtectedBackdrop = node => {
       if (!node || isOwned(node)) return true;
       if (node === composer || composer.contains?.(node)) return true;
@@ -492,7 +530,8 @@
         }
       }
     }
-    return [...new Set(surfaces)].filter(node => !isProtectedBackdrop(node));
+    return [...new Set([...surfaces, ...threadFooter])].filter(node => !isProtectedBackdrop(node) &&
+      !(isThreadFooterLayer(spec, node, view) && !inConversationScroller(node, view)));
   }
   function findSidebars(spec, root) {
     const result = [];
@@ -921,9 +960,12 @@
     if (!backdrops.length) return null;
     // Outermost structural ancestor in the bounded dock chain (ignore empty fade siblings).
     const ancestors = [];
+    const view = composer.ownerDocument?.defaultView || global;
     for (let node = composer.parentElement; node; node = node.parentElement) {
       if (backdrops.includes(node)) ancestors.push(node);
     }
+    // v0.4.3 #41: a host thread footer is paint-only; dock spacing and z-index rules never target it or its contents.
+    if (ancestors.some(node => isThreadFooterLayer(spec, node, view))) return null;
     return ancestors.length ? ancestors[ancestors.length - 1] : null;
   }
   function isComposerDockOverlaid(dock, scroller, view = dock?.ownerDocument?.defaultView || global) {

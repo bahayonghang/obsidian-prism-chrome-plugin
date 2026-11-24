@@ -1406,6 +1406,92 @@ test('v0.4.1 #30: findComposerBackdrops covers depth<=14, fade-mask, container f
   }
 });
 
+/**
+ * v0.4.3 #41: the 2026-11-24 live ChatGPT footer. An absolutely positioned layer inside the conversation scroll
+ * container paints the band with ::before/::after; form[data-chatgpt-composer] sits 21 ancestors below it and
+ * most of them are zero-size `display: contents` wrappers. `markers: false` strips the data-thread-* markers.
+ */
+function liveThreadFooterDoc({ markers = true, conversation = true } = {}) {
+  const { doc, body, el } = makeDoc('chatgpt');
+  const contents = { display: 'contents', visibility: 'visible', opacity: '1', position: 'static' };
+  const block = (extra = {}) => ({ display: 'block', visibility: 'visible', opacity: '1', position: 'static', ...extra });
+  const zero = { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 };
+  const band = { left: 0, right: 1280, top: 740, bottom: 900, width: 1280, height: 160 };
+  const main = el('main', { id: 'main' }, { rect: { left: 0, right: 1280, top: 0, bottom: 900, width: 1280, height: 900 }, style: block({ position: 'relative' }) });
+  const parent = el('div', { class: 'composer-parent' }, { rect: { left: 0, right: 1280, top: 52, bottom: 900, width: 1280, height: 848 } });
+  const scroller = el('div', { class: 'thread-scroll-container' }, { rect: { left: 0, right: 1280, top: 52, bottom: 900, width: 1280, height: 848 }, style: block({ overflowY: 'auto' }) });
+  const turn = el('div', { 'data-turn-key': 't1' });
+  if (conversation) turn.append(el('div', { 'data-content-search-unit-key': 'c:1:assistant', 'data-markdown-text-style': 'assistant-message' }, { textContent: 'Reply' }));
+  const footer = el('div', { class: 'footer-A8ZvKV' }, { rect: band, style: block({ position: 'absolute', zIndex: '20' }) });
+  const wrapChain = (top, count, prefix) => {
+    let cur = top;
+    for (let i = 0; i < count; i++) {
+      const next = el('div', { class: `${prefix}-${i}` }, { rect: zero, style: contents });
+      cur.append(next);
+      cur = next;
+    }
+    return cur;
+  };
+  const scrollFooter = el('div', markers ? { 'data-thread-scroll-footer': 'true' } : {}, { rect: band, style: block() });
+  wrapChain(footer, 5, 'footer-contents').append(scrollFooter);
+  const backdrop = el('div', markers ? { 'data-thread-composer-backdrop': 'true', 'data-pip-obstacle': 'thread-footer' } : {}, { rect: { ...band, top: 744 }, style: block() });
+  const menu = el('div', { role: 'menu', class: 'content-fade' }, { rect: { left: 300, right: 500, top: 600, bottom: 740, width: 200, height: 140 }, style: block({ position: 'absolute' }) });
+  menu.append(el('button', { type: 'button' }));
+  const dialog = el('div', { role: 'dialog' }, { rect: { left: 400, right: 800, top: 300, bottom: 500, width: 400, height: 200 }, style: block({ position: 'fixed' }) });
+  const scrollFooterInner = wrapChain(scrollFooter, 4, 'scroll-footer-contents');
+  scrollFooterInner.append(backdrop, menu, dialog);
+  const column = el('div', { class: 'composer-column' }, { rect: { left: 236, right: 1044, top: 744, bottom: 884, width: 808, height: 140 }, style: block() });
+  wrapChain(backdrop, 4, 'backdrop-contents').append(column);
+  const form = el('form', { 'data-chatgpt-composer': '' }, { rect: { left: 256, right: 1024, top: 744, bottom: 864, width: 768, height: 120 }, style: block() });
+  wrapChain(column, 5, 'column-contents').append(form);
+  const composer = el('div', { class: 'ComposerLayoutRoot_m3kp', 'data-composer-layout': 'single-line', 'data-composer-body': '' }, { rect: { left: 256, right: 1024, top: 744, bottom: 864, width: 768, height: 120 }, style: block({ backgroundColor: 'rgb(48, 48, 48)' }) });
+  const attachment = el('div', { class: 'file-tile_p4wt' }, { rect: { left: 260, right: 360, top: 750, bottom: 790, width: 100, height: 40 } });
+  const editor = el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' }, { rect: { left: 300, right: 900, top: 800, bottom: 830, width: 600, height: 30 } });
+  composer.append(attachment, editor, el('button', { type: 'button', 'aria-label': 'Send prompt' }));
+  form.append(composer);
+  scroller.append(turn, footer);
+  parent.append(scroller);
+  main.append(parent);
+  body.append(main);
+  let depth = 0;
+  for (let node = form.parentElement; node && node !== footer; node = node.parentElement) depth++;
+  return { doc, adapter: adapters().forHost('chatgpt', doc), scroller, turn, footer, scrollFooter, backdrop, column, form, composer, attachment, menu, dialog, depth };
+}
+
+test('v0.4.3 #41: ChatGPT host thread-footer markers identify the live footer beyond the old 14-ancestor walk', () => {
+  const t = liveThreadFooterDoc();
+  assert.ok(t.depth >= 19, `fixture keeps >= 19 ancestors between form and footer (got ${t.depth})`);
+  const found = t.adapter.composerBackdropSurfaces(t.composer);
+  assert.equal(found.includes(t.footer), true, 'the painted layer wrapping [data-thread-scroll-footer] inside the scroll container is a backdrop');
+  assert.equal(found.includes(t.scrollFooter), true, '[data-thread-scroll-footer="true"] is a backdrop');
+  assert.equal(found.includes(t.backdrop), true, '[data-thread-composer-backdrop="true"] is a backdrop');
+  for (const [name, node] of Object.entries({ composer: t.composer, attachment: t.attachment, menu: t.menu, dialog: t.dialog, scroller: t.scroller, turn: t.turn })) {
+    assert.equal(found.includes(node), false, `${name} is never a backdrop`);
+  }
+});
+
+test('v0.4.3 #41: without host markers the ancestor walk skips display: contents wrappers and still reaches the footer', () => {
+  const t = liveThreadFooterDoc({ markers: false });
+  const found = t.adapter.composerBackdropSurfaces(t.composer);
+  assert.equal(found.includes(t.footer), true, 'zero-size display: contents wrappers do not use up the ancestor budget');
+  for (const [name, node] of Object.entries({ composer: t.composer, attachment: t.attachment, menu: t.menu, dialog: t.dialog, scroller: t.scroller, turn: t.turn })) {
+    assert.equal(found.includes(node), false, `${name} is never a backdrop`);
+  }
+});
+
+test('v0.4.3 #41: the thread footer is paint-only: never the dock host, and left native in the Home State', () => {
+  for (const markers of [true, false]) {
+    const t = liveThreadFooterDoc({ markers });
+    const scrim = t.adapter.composerScrimSurface(t.composer);
+    assert.ok(!scrim || !(scrim === t.footer || t.footer.contains(scrim)), `markers=${markers}: no dock spacing/z-index host inside the footer`);
+    const home = liveThreadFooterDoc({ markers, conversation: false });
+    const found = home.adapter.composerBackdropSurfaces(home.composer);
+    for (const [name, node] of Object.entries({ footer: home.footer, scrollFooter: home.scrollFooter, backdrop: home.backdrop })) {
+      assert.equal(found.includes(node), false, `markers=${markers}: Home State does not mark the conversation footer ${name}`);
+    }
+  }
+});
+
 test('v0.4.1 #30: isIndependentMessageScroller distinguishes independent sibling scrollers from sticky/root/owned scrollers', () => {
   const A = adapters();
   const { doc, body, el } = makeDoc('chatgpt');
