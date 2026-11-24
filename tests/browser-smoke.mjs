@@ -147,28 +147,56 @@ async function actualChromiumExtension() {
     await options.goto(extensionOrigin + '/' + manifest.options_ui.page);
     await options.waitForFunction(() => Boolean(document.querySelector('#settings-fields') && !document.querySelector('#settings-fields').disabled));
     assert.equal(await options.locator('#cfg-enabled').isChecked(), true);
+    await options.emulateMedia({ colorScheme: 'light' });
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light' && getComputedStyle(document.documentElement).colorScheme === 'light');
+    assert.equal(await options.evaluate(() => document.documentElement.getAttribute('data-op-effective-palette')), 'crystal');
+    await options.emulateMedia({ colorScheme: 'dark' });
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'dark' && getComputedStyle(document.documentElement).colorScheme === 'dark');
+    assert.equal(await options.evaluate(() => document.documentElement.getAttribute('data-op-effective-palette')), 'obsidian');
+    await options.emulateMedia({ colorScheme: null });
     await options.evaluate(async () => {
-      await ObsidianPrismSchema.saveConfig({ themeMode: 'dark', palette: 'warm', language: 'en-US' });
+      await ObsidianPrismSchema.saveConfig({ uiThemeMode: 'dark', themeMode: 'dark', palette: 'warm', language: 'en-US' });
     });
-    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'dark');
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'dark' && getComputedStyle(document.documentElement).colorScheme === 'dark');
     await prepareNativeOptionsWindow(options);
     await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-dark.png'), fullPage: true });
     await options.locator('#tab-motion').click();
     await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-motion-dark.png'), fullPage: true });
-    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ themeMode: 'light', lightPreset: 'alabaster' }));
-    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
+    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ uiThemeMode: 'light', themeMode: 'light', lightPreset: 'alabaster' }));
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light' && getComputedStyle(document.documentElement).colorScheme === 'light');
     await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-motion-light.png'), fullPage: true });
     await options.locator('#tab-appearance').click();
     await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-light.png'), fullPage: true });
-    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ themeMode: 'dark' }));
+    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ uiThemeMode: 'dark', themeMode: 'dark', lightPreset: 'crystal' }));
     chat = await context.newPage();
     await chat.goto(fixtureURLs.chatgpt);
     await chat.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'warm');
     await chat.waitForSelector('.op-code-fold-bar');
     assert.equal(await chat.locator('.op-code-fold-bar').count(), 1);
+    // Changing uiThemeMode must lock Options theme without touching open ChatGPT Host Surface or #chat-preview.
+    await options.locator('#cfg-uiThemeMode').selectOption('light');
+    await options.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).uiThemeMode === 'light' && document.documentElement.getAttribute('data-op-scheme') === 'light' && getComputedStyle(document.documentElement).colorScheme === 'light');
+    await chat.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await options.evaluate(() => document.documentElement.getAttribute('data-op-effective-palette')), 'crystal');
+    assert.equal(await options.locator('#btn-ui-theme').getAttribute('data-ui-theme'), 'light');
+    assert.equal(await options.locator('#chat-preview').getAttribute('data-preview-scheme'), 'dark');
+    assert.equal(await options.locator('#chat-preview').getAttribute('data-preview-palette'), 'warm');
+    assert.equal(await chat.evaluate(() => document.documentElement.getAttribute('data-op-scheme')), 'dark');
+    assert.equal(await chat.evaluate(() => document.documentElement.getAttribute('data-op-effective-palette')), 'warm');
+    // Under Native Palette ('host'), settings UI falls back to crystal/obsidian with matching color-scheme.
+    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ palette: 'host', lightPreset: 'host', uiThemeMode: 'light' }));
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'crystal');
+    assert.equal(await options.evaluate(() => getComputedStyle(document.documentElement).colorScheme), 'light');
+    await chat.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'host');
+    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ uiThemeMode: 'dark' }));
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
+    assert.equal(await options.evaluate(() => getComputedStyle(document.documentElement).colorScheme), 'dark');
+    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ palette: 'warm', lightPreset: 'crystal', uiThemeMode: 'auto' }));
+    await chat.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'warm');
     await options.evaluate(() => ObsidianPrismSchema.saveConfig({ enabled: false }));
     await chat.waitForFunction(() => !document.documentElement.hasAttribute('data-op-enabled'));
     assert.equal(await chat.locator('[data-op-owned]').count(), 0);
+    assert.equal(await options.evaluate(() => document.documentElement.getAttribute('data-op-enabled')), 'true', 'settings UI stays themed even when Prism is disabled');
     await options.evaluate(() => ObsidianPrismSchema.saveConfig({ enabled: true, palette: 'obsidian' }));
     await chat.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
     await chat.waitForSelector('.op-code-fold-bar');
@@ -184,6 +212,14 @@ async function actualChromiumExtension() {
     await popup.goto(extensionOrigin + '/' + manifest.action.default_popup);
     await popup.waitForFunction(() => Boolean(document.querySelector('#settings-fields') && !document.querySelector('#settings-fields').disabled));
     assert.equal(await popup.locator('#cfg-mascot').count(), 0);
+    assert.equal(await popup.locator('#btn-ui-theme').isVisible(), true);
+    assert.equal(await popup.locator('#cfg-uiThemeMode').isVisible(), true);
+    assert.equal(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'popup appearance tab has no horizontal overflow in en-US');
+    await popup.locator('#cfg-language').selectOption('zh-CN');
+    await popup.waitForFunction(() => document.documentElement.lang === 'zh-CN');
+    assert.equal(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'popup appearance tab has no horizontal overflow in zh-CN');
+    await popup.locator('#cfg-language').selectOption('en-US');
+    await popup.waitForFunction(() => document.documentElement.lang === 'en-US');
     await popup.screenshot({ path: path.join(ARTIFACTS, 'chromium-popup-appearance.png') });
     await popup.locator('#tab-motion').click();
     for (const id of ['cfg-ambientStyle', 'cfg-ambientTexture', 'cfg-motionSpeed', 'cfg-ambientIntensity', 'cfg-composerGlow']) assert.equal(await popup.locator('#' + id).count(), 1, `motion control ${id} must be available`);
@@ -221,6 +257,11 @@ async function actualChromiumExtension() {
     await options.setViewportSize({ width: 420, height: 600 });
     assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options remain responsive at 420 pixels');
     await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-420.png') });
+    await options.locator('#cfg-language').selectOption('zh-CN');
+    await options.waitForFunction(() => document.documentElement.lang === 'zh-CN');
+    assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options remain responsive at 420 pixels in zh-CN');
+    await options.locator('#cfg-language').selectOption('en-US');
+    await options.waitForFunction(() => document.documentElement.lang === 'en-US');
     await options.locator('#tab-reading').click();
     await options.waitForFunction(() => document.body.dataset.activeTab === 'reading');
     assert.equal(await options.locator('#cfg-formulaPreview').isVisible(), true);
@@ -231,8 +272,11 @@ async function actualChromiumExtension() {
     const imported = await popup.evaluate(() => ObsidianPrismSchema.loadConfig());
     assert.equal(Object.hasOwn(imported, 'mascot'), false, 'legacy backups cannot reintroduce pets');
     assert.equal(imported.thoughtTranslate, false, 'import does not silently enable external translation');
+    await popup.locator('#file-import').setInputFiles({ name: 'ui-theme-settings.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'obsidian-prism-web', settings: { uiThemeMode: 'light', palette: 'obsidian' } })) });
+    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).uiThemeMode === 'light');
+    assert.equal((await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).uiThemeMode, 'light');
     assert.deepEqual(errors, []);
-    console.log('PASS Chromium unpacked extension: service worker, options, serialized settings, live content updates and keyboard tabs');
+    console.log('PASS Chromium unpacked extension: service worker, options, uiThemeMode decoupling, serialized settings, live content updates and keyboard tabs');
   } catch (error) {
     const current = popup || chat || options;
     if (current && !current.isClosed()) await current.screenshot({ path: path.join(ARTIFACTS, 'chromium-extension-failure.png'), fullPage: true }).catch(() => {});
@@ -771,6 +815,7 @@ function fixtureBridge(input) {
       openOptionsPage: bridge(() => undefined),
       sendMessage: bridge(message => {
         if (message.type === 'OP_CONFIG_PATCH') return { ok: true, config: patch(message.patch) };
+        if (message.type === 'OP_CONFIG_RESET') return { ok: true, config: patch(window.ObsidianPrismSchema.DEFAULT_CONFIG) };
         if (message.type === 'OP_CONTENT_WIDTH_SET') {
           if (!window.ObsidianPrismSchema.ENUMS.contentWidth.includes(message.contentWidth)) return { ok: false, error: 'INVALID_CONTENT_WIDTH' };
           return { ok: true, config: patch({ contentWidth: message.contentWidth }) };
