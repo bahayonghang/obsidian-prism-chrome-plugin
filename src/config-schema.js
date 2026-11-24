@@ -10,7 +10,7 @@
   const DATA_PERMISSIONS = ['websiteContent', 'personalCommunications', 'authenticationInfo'];
   const DEFAULT_CONFIG = Object.freeze({
     enabled: true, enableChatGPT: true, enableGemini: true, language: 'zh-CN',
-    themeMode: 'auto', palette: 'obsidian', lightPreset: 'crystal', accentTone: 'follow',
+    themeMode: 'auto', uiThemeMode: 'auto', palette: 'obsidian', lightPreset: 'crystal', accentTone: 'follow',
     cornerStyle: 'balanced', codeFont: 'default', codeLigatures: false,
     ambientIntensity: 65, ambientStyle: 'aurora', ambientTexture: 'glyphs',
     motionSpeed: 'slow', composerGlow: true, sidebarStyle: 'glass',
@@ -22,7 +22,7 @@
     thoughtEndpoint: '', thoughtModel: ''
   });
   const ENUMS = Object.freeze({
-    language: ['zh-CN', 'en-US'], themeMode: ['auto', 'dark', 'light'],
+    language: ['zh-CN', 'en-US'], themeMode: ['auto', 'dark', 'light'], uiThemeMode: ['auto', 'light', 'dark'],
     palette: ['obsidian', 'warm', 'host'], lightPreset: ['crystal', 'alabaster', 'host'],
     accentTone: ['follow', 'cobalt', 'iris', 'amber', 'mono'],
     cornerStyle: ['sharp', 'balanced', 'soft'], codeFont: ['default', 'jetbrains', 'fira', 'cascadia'],
@@ -43,7 +43,7 @@
       masterEnable:'启用 Prism', masterHint:'随时关闭，恢复网页原有外观', hostChatGPT:'ChatGPT',hostGemini:'Gemini',
       tabAppearance:'外观',tabWorkbench:'阅读',tabMotion:'光影',tabThought:'翻译',tabAbout:'关于',
       scenePresets:'一键场景',presetUltra:'流光',presetFocus:'专注',presetEco:'静默',
-      themeMode:'明暗模式',modeAuto:'跟随系统',modeDark:'深色',modeLight:'浅色',
+      themeMode:'明暗模式',uiThemeMode:'设置界面主题',uiThemeToggle:'切换设置界面主题',modeAuto:'跟随系统',modeDark:'深色',modeLight:'浅色',
       darkPalette:'深色配色',lightPalette:'浅色配色',palObsidian:'深空黑曜',palWarm:'暖炭玄岩',palCrystal:'白昼冷晶',palAlabaster:'暖白画册',palHost:'保留原生配色',
       paletteHint:'选择色卡可立即预览对应的明暗模式。',accentTone:'点睛色',accFollow:'跟随站点',accCobalt:'钴蓝',accIris:'鸢尾紫',accAmber:'琥珀金',accMono:'银钛',
       cornerStyle:'圆角',cornerSharp:'利落',cornerBalanced:'均衡',cornerSoft:'柔和',languageLabel:'界面语言',
@@ -84,7 +84,7 @@
       masterEnable:'Enable Prism',masterHint:'Turn off anytime to restore the original page',hostChatGPT:'ChatGPT',hostGemini:'Gemini',
       tabAppearance:'Appearance',tabWorkbench:'Reading',tabMotion:'Effects',tabThought:'Translate',tabAbout:'About',
       scenePresets:'Quick scenes',presetUltra:'Aurora',presetFocus:'Focus',presetEco:'Still',
-      themeMode:'Color mode',modeAuto:'System',modeDark:'Dark',modeLight:'Light',darkPalette:'Dark palette',lightPalette:'Light palette',
+      themeMode:'Color mode',uiThemeMode:'Settings UI theme',uiThemeToggle:'Switch settings UI theme',modeAuto:'System',modeDark:'Dark',modeLight:'Light',darkPalette:'Dark palette',lightPalette:'Light palette',
       palObsidian:'Obsidian',palWarm:'Warm Basalt',palCrystal:'Crystal',palAlabaster:'Alabaster',palHost:'Keep native colors',paletteHint:'Choose a card to preview its light or dark mode.',
       accentTone:'Accent',accFollow:'Site',accCobalt:'Cobalt',accIris:'Iris',accAmber:'Amber',accMono:'Titanium',
       cornerStyle:'Corners',cornerSharp:'Sharp',cornerBalanced:'Balanced',cornerSoft:'Soft',languageLabel:'Language',
@@ -172,9 +172,12 @@
     if (host === 'gemini.google.com') return 'gemini';
     return 'unknown';
   }
+  function systemScheme() {
+    return global.matchMedia && global.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
   function preferredScheme(cfg) {
     if (cfg.themeMode === 'dark' || cfg.themeMode === 'light') return cfg.themeMode;
-    return global.matchMedia && global.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    return systemScheme();
   }
   function resolvePalette(cfg) { return preferredScheme(cfg) === 'dark' ? cfg.palette : cfg.lightPreset; }
   function resolveScheme(cfg) {
@@ -194,6 +197,24 @@
       if (nativeScheme === 'dark' || nativeScheme === 'light') return nativeScheme;
     }
     return preferred;
+  }
+  /** Resolve the light/dark scheme for the extension settings UI independently of Host Surface themeMode. */
+  function resolveUiScheme(cfg) {
+    const mode = cfg && cfg.uiThemeMode;
+    if (mode === 'light' || mode === 'dark') return mode;
+    return systemScheme();
+  }
+  /** Resolve the optical palette for the settings UI, falling back from Native Palette ('host') to standard Prism palettes. */
+  function resolveUiPalette(cfg, scheme) {
+    const clean = sanitizeConfig(cfg);
+    const resolved = scheme === 'light' || scheme === 'dark' ? scheme : resolveUiScheme(clean);
+    if (resolved === 'dark') return clean.palette === 'warm' ? 'warm' : 'obsidian';
+    return clean.lightPreset === 'alabaster' ? 'alabaster' : 'crystal';
+  }
+  function writeRootState(root, attributes, ambientIntensity) {
+    for (const [key, value] of Object.entries(attributes)) if (root.getAttribute('data-op-'+key) !== value) root.setAttribute('data-op-'+key,value);
+    const alpha = (ambientIntensity/100).toFixed(3);
+    if (root.style.getPropertyValue('--op-ambient-alpha') !== alpha) root.style.setProperty('--op-ambient-alpha',alpha);
   }
   const originals = new WeakMap();
   function applyConfigToRoot(input, rootElement) {
@@ -250,9 +271,23 @@
       'composer-glow':String(cfg.composerGlow), 'sidebar-style':cfg.sidebarStyle,
       'content-width':cfg.contentWidth, 'formula-preview':String(cfg.formulaPreview)
     };
-    for (const [key,value] of Object.entries(attributes)) if (root.getAttribute('data-op-'+key) !== value) root.setAttribute('data-op-'+key,value);
-    const alpha = (cfg.ambientIntensity/100).toFixed(3);
-    if (root.style.getPropertyValue('--op-ambient-alpha') !== alpha) root.style.setProperty('--op-ambient-alpha',alpha);
+    writeRootState(root, attributes, cfg.ambientIntensity);
+    return true;
+  }
+  /** Apply decoupled settings-UI root attributes while keeping extension controls active regardless of cfg.enabled. */
+  function applyUiThemeToRoot(input, rootElement) {
+    const cfg = sanitizeConfig(input), root = rootElement || global.document && global.document.documentElement;
+    if (!root) return false;
+    const scheme = resolveUiScheme(cfg);
+    const reduced = global.matchMedia && global.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const attributes = {
+      enabled:'true', scheme, 'effective-palette': resolveUiPalette(cfg, scheme),
+      'ui-theme-mode': cfg.uiThemeMode,
+      accent:cfg.accentTone, corners:cfg.cornerStyle, 'code-font':cfg.codeFont,
+      ligatures:String(cfg.codeLigatures), motion: reduced ? 'off' : cfg.motionLevel,
+      lang:cfg.language
+    };
+    writeRootState(root, attributes, cfg.ambientIntensity);
     return true;
   }
   async function loadConfig() {
@@ -288,5 +323,5 @@
     if (api && api.runtime && typeof api.runtime.getBrowserInfo === 'function') value.data_collection = DATA_PERMISSIONS.slice();
     return value;
   }
-  global.ObsidianPrismSchema = Object.freeze({STORAGE_KEY,SECRETS_KEY,DATA_PERMISSIONS,DEFAULT_CONFIG,ENUMS,SCENE_PRESETS,I18N,getExtApi,callApi,validEndpoint,sanitizePatch,sanitizeConfig,detectHost,resolveScheme,resolvePalette,applyConfigToRoot,loadConfig,saveConfig,saveContentWidth,subscribe,t,sendMessage,permissionRequest});
+  global.ObsidianPrismSchema = Object.freeze({STORAGE_KEY,SECRETS_KEY,DATA_PERMISSIONS,DEFAULT_CONFIG,ENUMS,SCENE_PRESETS,I18N,getExtApi,callApi,validEndpoint,sanitizePatch,sanitizeConfig,detectHost,resolveScheme,resolvePalette,resolveUiScheme,resolveUiPalette,applyConfigToRoot,applyUiThemeToRoot,loadConfig,saveConfig,saveContentWidth,subscribe,t,sendMessage,permissionRequest});
 })(globalThis);
