@@ -203,24 +203,25 @@
     }
     return out;
   }
-  function anchorStyles(element, pseudo) {
-    const computed = getComputedStyle(element, pseudo);
-    const out = {};
-    for (const key of ANCHOR_STYLE_KEYS) {
+  // Copies the set, non-empty `keys` of a computed style into `out`, each value redacted.
+  function readRedactedStyles(computed, keys, out = {}) {
+    for (const key of keys) {
       const value = computed[key];
       if (value !== undefined && value !== '') out[key] = redactStyle(value);
     }
     return out;
   }
+  // A pseudo-element is generated only when its computed `content` is neither `none` nor `normal`.
+  function hasPseudoContent(computed) {
+    const content = computed.content;
+    return Boolean(content && content !== 'none' && content !== 'normal');
+  }
+  function anchorStyles(element, pseudo) {
+    return readRedactedStyles(getComputedStyle(element, pseudo), ANCHOR_STYLE_KEYS);
+  }
   function pseudoStyles(element, pseudo, extraKeys = []) {
     const computed = getComputedStyle(element, pseudo);
-    const content = computed.content;
-    const out = { hasContent: Boolean(content && content !== 'none' && content !== 'normal') };
-    for (const key of [...PSEUDO_STYLE_KEYS, ...extraKeys]) {
-      const value = computed[key];
-      if (value !== undefined && value !== '') out[key] = redactStyle(value);
-    }
-    return out;
+    return readRedactedStyles(computed, [...PSEUDO_STYLE_KEYS, ...extraKeys], { hasContent: hasPseudoContent(computed) });
   }
   function describe(element) {
     const ancestors = [];
@@ -264,8 +265,7 @@
   const TRANSPARENT = /^(?:transparent|rgba\([^)]*,\s*0\))$/;
   function paintsPseudo(element, pseudo) {
     const computed = getComputedStyle(element, pseudo);
-    const content = computed.content;
-    if (!content || content === 'none' || content === 'normal') return false;
+    if (!hasPseudoContent(computed)) return false;
     return (computed.backgroundImage && computed.backgroundImage !== 'none') ||
       Boolean(computed.backgroundColor && !TRANSPARENT.test(computed.backgroundColor));
   }
