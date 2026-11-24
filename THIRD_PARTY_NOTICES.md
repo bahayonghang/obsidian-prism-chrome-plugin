@@ -45,6 +45,13 @@ Any derivative work or modified redistribution MUST remain open-source under **G
 - **Original License**: MIT License (compatible with `GPL-3.0-only`)
 - **Scope in Obsidian Prism**: Upstream `zh-CN` dictionary source (`vendor/host-i18n/zh-CN.json`) and DOM translation matching pattern reference; re-architected cleanly in `vendor/host-i18n/host-i18n-runtime.js` as a Zero-ASAR pure CDP Channel 4 on-demand localization channel featuring universal 4-layer auto-yield, ping-pong conflict circuit breaker, and `WeakMap`-backed lossless `destroy()`.
 
+### 1.5 `ronkok/Temml` (`v0.14.0`)
+- **Repository**: <https://github.com/ronkok/Temml>
+- **Upstream Baseline**: `v0.14.0` (Author: `Ron Kok`)
+- **Copyright**: `Copyright (c) 2020 Ron Kok`
+- **Original License**: MIT License (compatible with `GPL-3.0-only`)
+- **Scope in Obsidian Prism**: Vendored unmodified runtime in `vendor/temml/temml.js` and local MathML styling derived in `vendor/temml/temml-local.css` (removed `@font-face` / `.woff2` webfont dependencies, substituted local system math font stacks, and explicitly scoped every rule under `html[data-op-enabled="true"] .op-formula-preview` for Chrome 111+ compatibility without CSS nesting) to power offline Formula Preview.
+
 ---
 
 ## 2. Upstream Design Inspiration & Component Credits
@@ -78,6 +85,7 @@ Copyright (c) 2026 0DNANCY (agy-claude-style)
 Copyright (c) 2026 AG Pulse contributors (antigrative-dashboard)
 Copyright (c) 2026 月上寒 / LLYSH-HANNARI (antigravity-Codex-Claude-effort-slider)
 Copyright (c) 2026 Antigravity Chinese Localization Contributors (yiheng8023/antigravity-chinese)
+Copyright (c) 2020 Ron Kok (Temml)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal

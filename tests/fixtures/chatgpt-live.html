@@ -44,6 +44,8 @@ main{position:relative;flex:1 1 0;min-height:0;width:100%;display:flex;flex-dire
 .code-shell{border-radius:16px;background:#171717;overflow:hidden}
 .code-shell-header{display:flex;justify-content:space-between;align-items:center;padding:6px 14px;font-size:12px;color:var(--text-secondary);background:#2f2f2f}
 .code-shell pre{margin:0;padding:14px 16px;overflow:auto;font:13px/1.6 ui-monospace,SFMono-Regular,Menlo,monospace}
+.katex-display{display:block;margin:12px 0;background:#2b2d30;color:#f3f4f6;padding:8px 12px;border-radius:8px}
+.katex{display:inline-block;white-space:nowrap;color:#f3f4f6;background:#2b2d30;padding:0 4px;border-radius:4px}
 .turn-actions{display:flex;gap:4px;color:var(--text-secondary)}
 .turn-actions button{width:30px;height:30px;display:grid;place-items:center;border-radius:8px}
 /* In-flow flex footer paints var(--main-surface-primary) and a ::before gradient fade + mask. */
@@ -100,6 +102,77 @@ form[data-chatgpt-composer]{width:100%;background:transparent}
 <div class="code-shell"><div class="code-shell-header"><span>snippet</span><button type="button" aria-label="Copy">Copy</button></div><pre><code class="language-js">const sampleWidth = 768;
 const sampleGap = 20;
 console.log(sampleWidth + sampleGap * 2);</code></pre></div>
+<p>Inline math check <span class="katex">E = mc^2</span> inside prose.</p>
+<div class="katex-display"><span class="katex" style="white-space:nowrap">g(t) = c_0 + c_1 t + c_2 t^2 + c_3 t^3 + c_4 t^4 + c_5 t^5 + c_6 t^6 + c_7 t^7 + c_8 t^8 + c_9 t^9 + c_{10} t^{10} + c_{11} t^{11} + c_{12} t^{12} + c_{13} t^{13} + c_{14} t^{14} + c_{15} t^{15}</span></div>
+<div class="code-shell"><div class="code-shell-header"><span>Code snippet</span><button type="button" aria-label="Copy">Copy</button></div><pre><code>% 1. 目标函数 (Objective)
+\mathcal{L}(\theta) = \frac{1}{N} \sum_{i=1}^N (y_i - \hat{y}_i)^2
+
+% 2. 梯度更新推导
+\begin{aligned}
+g_t &amp;= \nabla_\theta \mathcal{L}(\theta_t) \\
+
+\theta_{t+1} &amp;= \theta_t - \eta g_t
+\end{aligned}</code></pre></div>
+<div class="code-shell"><div class="code-shell-header"><span>LaTeX</span><button type="button" aria-label="Copy">Copy</button></div><pre><code class="language-latex">% 欧拉恒等式
+e^{i\pi} + 1 = 0</code></pre></div>
+<div class="code-shell"><div class="code-shell-header"><span>LaTeX</span><button type="button" aria-label="Copy">Copy</button></div><pre><code class="language-latex">% 有效公式段
+\int_0^1 x^2 \, dx = \frac{1}{3}
+
+% 语法错误段
+\frac{1}{</code></pre></div>
+<div class="code-shell"><div class="code-shell-header"><span>LaTeX</span><button type="button" aria-label="Copy">Copy</button></div><pre><code class="language-latex">\frac{1}{
+
+\unknownTemmlMacro{bad}</code></pre></div>
+<div class="code-shell"><div class="code-shell-header"><span>LaTeX</span><button type="button" aria-label="Copy">Copy</button></div><pre><code class="language-latex">% 1. 长推导展开
+S_1 = \frac{1}{1^2}
+a_{2} = \frac{1}{2^2}
+a_{3} = \frac{1}{3^2}
+a_{4} = \frac{1}{4^2}
+a_{5} = \frac{1}{5^2}
+a_{6} = \frac{1}{6^2}
+a_{7} = \frac{1}{7^2}
+a_{8} = \frac{1}{8^2}
+a_{9} = \frac{1}{9^2}
+a_{10} = \frac{1}{10^2}
+a_{11} = \frac{1}{11^2}
+a_{12} = \frac{1}{12^2}
+a_{13} = \frac{1}{13^2}
+a_{14} = \frac{1}{14^2}
+a_{15} = \frac{1}{15^2}
+a_{16} = \frac{1}{16^2}
+a_{17} = \frac{1}{17^2}
+a_{18} = \frac{1}{18^2}
+a_{19} = \frac{1}{19^2}
+a_{20} = \frac{1}{20^2}
+a_{21} = \frac{1}{21^2}
+a_{22} = \frac{1}{22^2}
+a_{23} = \frac{1}{23^2}
+a_{24} = \frac{1}{24^2}
+a_{25} = \frac{1}{25^2}
+a_{26} = \frac{1}{26^2}
+a_{27} = \frac{1}{27^2}
+a_{28} = \frac{1}{28^2}
+a_{29} = \frac{1}{29^2}
+a_{30} = \frac{1}{30^2}
+a_{31} = \frac{1}{31^2}
+a_{32} = \frac{1}{32^2}
+a_{33} = \frac{1}{33^2}
+a_{34} = \frac{1}{34^2}
+a_{35} = \frac{1}{35^2}
+a_{36} = \frac{1}{36^2}
+a_{37} = \frac{1}{37^2}
+a_{38} = \frac{1}{38^2}
+a_{39} = \frac{1}{39^2}
+a_{40} = \frac{1}{40^2}
+a_{41} = \frac{1}{41^2}
+a_{42} = \frac{1}{42^2}
+a_{43} = \frac{1}{43^2}
+a_{44} = \frac{1}{44^2}
+a_{45} = \frac{1}{45^2}
+a_{46} = \frac{1}{46^2}
+a_{47} = \frac{1}{47^2}
+a_{48} = \frac{1}{48^2}
+a_{49} = \frac{1}{49^2}</code></pre></div>
 <p>A closing paragraph ends the answer before the action row.</p>
 </div><div class="turn-actions"><button type="button" aria-label="Copy"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15V5a2 2 0 0 1 2-2h10"/></svg></button><button type="button" aria-label="Good response"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11v9M7 11l4-8a2 2 0 0 1 3 2l-1 5h6l-2 9H7"/></svg></button><button type="button" aria-label="More actions"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg></button></div></div></div></div>
 <div data-turn-key="5d2f8b6e-1a4c-4e97-b3d0-9c7a2e5f8b14" class="turn-container"><div data-virtualized-turn><div data-content-search-unit-key="68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13:4:user" class="user-turn"><h5 class="sr-only">You said:</h5><div data-user-message-bubble="true" class="user-message-bubble-color">And a short follow-up question?</div></div></div></div>

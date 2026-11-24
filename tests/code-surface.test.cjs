@@ -215,3 +215,90 @@ test('hosts.css Code Surface Readability section gates every rule against host p
   assert.match(HOSTS_CSS, /\[data-op-sticky-code="true"\][\s\S]*?position:\s*sticky\s*!important;\s*top:\s*0;\s*z-index:\s*5;/);
   assert.match(HOSTS_CSS, /pre\.op-code-folded\s*\{[\s\S]*?max-height:\s*260px\s*!important/);
 });
+
+test('v0.4.1 #33: hosts.css resets outer code-block:has(.code-block), colors Material/font icons and computed SVG icon attrs, and scopes Native Math Surface', () => {
+  const codeMarker = '/* === Code Surface Readability (v0.3.0) === */';
+  const codeIdx = HOSTS_CSS.indexOf(codeMarker);
+  assert.notEqual(codeIdx, -1);
+  const codeNextIdx = HOSTS_CSS.indexOf('/* === ', codeIdx + codeMarker.length);
+  const codeSection = codeNextIdx === -1 ? HOSTS_CSS.slice(codeIdx) : HOSTS_CSS.slice(codeIdx, codeNextIdx);
+  const codeRules = parseCssRules(codeSection);
+
+  const outerResetRule = codeRules.find(rule => !rule.isAtRule && /code-block:has\(\.code-block\)/.test(rule.selector) && !/\.code-block\s*>|>\s*\.code-block/.test(rule.selector));
+  assert.ok(outerResetRule, 'Code Surface Readability must explicitly reset outer code-block:has(.code-block)');
+  assert.match(outerResetRule.body, /display\s*:\s*block\s*!important/i);
+  assert.match(outerResetRule.body, /background\s*:\s*transparent\s*!important/i);
+  assert.match(outerResetRule.body, /border\s*:\s*0\s*!important/i);
+  assert.match(outerResetRule.body, /padding\s*:\s*0\s*!important/i);
+
+  assert.match(codeSection, /mat-icon|\.google-symbols|\.material-icons/, 'Code Surface Readability must style Material/font icons');
+  assert.match(codeSection, /--mat-icon-color\s*:\s*var\(--op-code-header-icon\)/, 'Code Surface Readability must override Material icon CSS variables');
+  assert.match(codeSection, /--mdc-icon-button-icon-color\s*:\s*var\(--op-code-header-icon\)/, 'Code Surface Readability must override MDC icon button CSS variables');
+  assert.match(codeSection, /\[data-op-code-icon-fill="true"\]:not\(\[fill="none"\]\)/, 'Code Surface Readability must style computed filled SVG marks while preserving :not([fill="none"]) guard');
+  assert.match(codeSection, /\[data-op-code-icon-stroke="true"\]:not\(\[stroke="none"\]\)/, 'Code Surface Readability must style computed stroke SVG marks');
+
+  const mathMarker = '/* === Native Math Surface Readability & Overflow (v0.4.1 #33) === */';
+  const mathIdx = HOSTS_CSS.indexOf(mathMarker);
+  assert.notEqual(mathIdx, -1, 'hosts.css must contain the Native Math Surface Readability & Overflow (v0.4.1 #33) section');
+  const mathNextIdx = HOSTS_CSS.indexOf('/* === ', mathIdx + mathMarker.length);
+  const mathSection = mathNextIdx === -1 ? HOSTS_CSS.slice(mathIdx) : HOSTS_CSS.slice(mathIdx, mathNextIdx);
+  const mathRules = parseCssRules(mathSection);
+  assert.ok(mathRules.length >= 2, 'Native Math Surface section must define color/background and display overflow rules');
+
+  const checkMathRules = list => {
+    for (const rule of list) {
+      if (rule.isAtRule) {
+        checkMathRules(rule.nested);
+        continue;
+      }
+      for (const sel of splitTopLevelSelectors(rule.selector)) {
+        assert.ok(
+          sel.startsWith('html[data-op-enabled="true"]') && sel.includes(':not([data-op-effective-palette="host"])'),
+          `Every selector in Native Math Surface section must gate on enabled=true and :not([data-op-effective-palette="host"]): ${sel}`
+        );
+      }
+    }
+  };
+  checkMathRules(mathRules);
+  assert.match(mathSection, /var\(--op-fg\)/, 'Native Math Surface must use --op-fg for contrast');
+  assert.match(mathSection, /background-color\s*:\s*transparent\s*!important/i, 'Native Math Surface must clear background slabs');
+  assert.match(mathSection, /\.math-block[\s\S]*?\.katex-display[\s\S]*?overflow-x\s*:\s*auto\s*!important/i, 'Native Math Surface must contain wide display math with overflow-x: auto');
+});
+
+test('v0.4.1 #34: hosts.css scopes Formula Preview rules, hides source cleanly, and inherits host colors under Native Palette', () => {
+  const formulaMarker = '/* === Formula Preview (v0.4.1 #34) === */';
+  const idx = HOSTS_CSS.indexOf(formulaMarker);
+  assert.notEqual(idx, -1, 'hosts.css must contain the Formula Preview (v0.4.1 #34) section');
+  const nextIdx = HOSTS_CSS.indexOf('/* === ', idx + formulaMarker.length);
+  const section = nextIdx === -1 ? HOSTS_CSS.slice(idx) : HOSTS_CSS.slice(idx, nextIdx);
+  const rules = parseCssRules(section);
+  assert.ok(rules.length >= 6, 'Formula Preview section must define source-hidden, preview card, caption, math, fallback, toggle, and Native Palette rules');
+
+  const checkFormulaRules = list => {
+    for (const rule of list) {
+      if (rule.isAtRule) {
+        checkFormulaRules(rule.nested);
+        continue;
+      }
+      for (const sel of splitTopLevelSelectors(rule.selector)) {
+        assert.ok(
+          sel.startsWith('html[data-op-enabled="true"]'),
+          `Every selector in Formula Preview section must gate on html[data-op-enabled="true"]: ${sel}`
+        );
+      }
+    }
+  };
+  checkFormulaRules(rules);
+
+  assert.match(section, /\[data-op-formula-source-hidden="true"\]\s*\{[\s\S]*?display\s*:\s*none\s*!important/i);
+  assert.match(section, /\.op-formula-math[\s\S]*?overflow-x\s*:\s*auto/i);
+  assert.match(section, /\[data-op-effective-palette="host"\]\s+\.op-formula-preview\[data-op-owned\][\s\S]*?color\s*:\s*inherit/i);
+  assert.match(section, /\[data-op-effective-palette="host"\]\s+\.op-formula-toggle\[data-op-owned\][\s\S]*?color\s*:\s*inherit/i);
+
+  assert.equal(HOSTS_CSS.includes('--op-font-code'), false, 'hosts.css must use --op-code-font-family rather than nonexistent --op-font-code');
+  assert.match(section, /\.op-formula-fallback[\s\S]*?var\(--op-code-font-family\)/);
+  assert.match(HOSTS_CSS, /:is\(button,\s*\[role="button"\],\s*a\):not\(\.op-formula-toggle\)[\s\S]*?border-color:\s*var\(--op-border-strong\)\s*!important/);
+  assert.match(section, /\.op-formula-bar\[data-op-owned\]\[data-op-formula-bare="true"\][\s\S]*?border:\s*1px\s+solid/i);
+  assert.match(section, /\.op-formula-preview\[data-op-owned\]\[data-op-formula-bare="true"\][\s\S]*?border:\s*1px\s+solid/i);
+  assert.match(section, /\.op-formula-bar\[data-op-owned\]\[data-op-formula-bare="true"\]\s*\+\s*pre:not\(\[data-op-formula-source-hidden="true"\]\)/);
+});

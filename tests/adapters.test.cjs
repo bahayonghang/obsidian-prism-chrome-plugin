@@ -391,6 +391,45 @@ test('Gemini 2026 adapter exposes code-block shell, mode switcher, add trigger, 
   assert.equal(adapter.composerColumns(composer).includes(composerCol), true);
 });
 
+test('v0.4.1 #33: Gemini adapter returns only inner .code-block for double-nested code-block while flat code-block.code-block returns itself', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('gemini');
+  const main = el('main', { id: 'main' });
+  const mr = el('model-response');
+  const mrText = el('div', { class: 'model-response-text' });
+
+  // Double-nested: <code-block><div class="code-block"><div class="code-block-decoration">...</div><pre>...</pre></div></code-block>
+  const outerNested = el('code-block', {}, { style: { display: 'inline', visibility: 'visible', opacity: '1' } });
+  const innerNested = el('div', { class: 'code-block' });
+  const nestedHdr = el('div', { class: 'code-block-decoration' }, { textContent: 'snippet' });
+  const nestedWrap = el('div', { class: 'formatted-code-block-internal-container' });
+  const nestedPre = el('pre');
+  nestedPre.append(el('code', {}, { textContent: 'const x = 1;' }));
+  nestedWrap.append(nestedPre);
+  innerNested.append(nestedHdr, nestedWrap);
+  outerNested.append(innerNested);
+
+  // Flat: <code-block class="code-block">...</code-block>
+  const flatCb = el('code-block', { class: 'code-block' });
+  const flatHdr = el('div', { class: 'code-block-decoration' }, { textContent: 'js' });
+  const flatPre = el('pre');
+  flatPre.append(el('code', {}, { textContent: 'const y = 2;' }));
+  flatCb.append(flatHdr, flatPre);
+
+  // Outer code-block with an empty/non-code .code-block descendant falls back to outer code-block
+  const decoyOuter = el('code-block');
+  const decoyInner = el('div', { class: 'code-block' }, { textContent: 'empty' });
+  decoyOuter.append(decoyInner);
+
+  mrText.append(outerNested, flatCb, decoyOuter);
+  mr.append(mrText);
+  main.append(mr);
+  body.append(main);
+
+  const adapter = A.forHost('gemini', doc);
+  assert.deepEqual([...adapter.codeSurfaces()], [innerNested, flatCb, decoyOuter]);
+});
+
 test('cleanTurnText strips UI chrome and optionally excludes code blocks', () => {
   const A = adapters();
   const { el } = makeDoc('chatgpt');
@@ -452,6 +491,30 @@ test('estimateTurnTokens separates prose and code without double counting', () =
   const result = A.estimateTurnTokens(turn);
   assert.deepEqual({ ...result }, { prose: 2, code: 5, total: 7 });
   assert.deepEqual({ ...A.estimateTurnTokens(null) }, { prose: 0, code: 0, total: 0 });
+});
+
+test('v0.4.1 #34: codeBlocks and estimateTurnTokens exclude owned Formula Preview and fallback pre nodes while counting hidden-source code once', () => {
+  const A = adapters();
+  const { el, doc, body } = makeDoc('gemini');
+  const turn = el('model-response');
+  const card = el('div', { class: 'code-block' });
+  const sourceWrap = el('div', { class: 'formatted-code-block-internal-container', 'data-op-formula-source-hidden': 'true' });
+  const pre = el('pre');
+  pre.append(el('code', {}, { textContent: '1234567890123456' }));
+  sourceWrap.append(pre);
+
+  const ownedPreview = el('div', { class: 'op-formula-preview', 'data-op-owned': '' });
+  const caption = el('p', { class: 'op-formula-caption' }, { textContent: 'Ignored caption text' });
+  const fallbackPre = el('pre', { class: 'op-formula-fallback' }, { textContent: 'Ignored fallback pre' });
+  ownedPreview.append(caption, fallbackPre);
+
+  card.append(sourceWrap, ownedPreview);
+  turn.append(card);
+  body.append(turn);
+
+  const adapter = A.forHost('gemini', doc);
+  assert.deepEqual([...adapter.codeBlocks()], [pre]);
+  assert.deepEqual({ ...A.estimateTurnTokens(turn) }, { prose: 0, code: 5, total: 5 });
 });
 
 test('resolveReferenceCapacity maps ChatGPT and Gemini models, falls back cleanly, and honors manual overrides', () => {
@@ -1606,4 +1669,65 @@ test('v0.4.1 review: adapters expose per-host scrim and scroller Alpha fade capa
   assert.equal(chatgpt.usesScrollerAlphaFade, true);
   assert.equal(gemini.usesOverlayScrim, true);
   assert.equal(gemini.usesScrollerAlphaFade, false);
+});
+
+test('v0.4.1 review: adapters own ChatGPT .code-shell and Gemini well/header/surface resolution without sibling leakage', () => {
+  const A = adapters();
+
+  // ChatGPT: .code-shell + .code-shell-header + bare <pre>
+  const cg = makeDoc('chatgpt');
+  const cgMain = cg.el('main', { id: 'main' });
+  const cgTurn = cg.el('article', { 'data-turn': 'assistant' });
+  const cgMd = cg.el('div', { class: 'markdown' });
+  const shell = cg.el('div', { class: 'code-shell' });
+  const shellHeader = cg.el('div', { class: 'code-shell-header' }, { textContent: 'Python' });
+  const shellPre = cg.el('pre');
+  shellPre.append(cg.el('code', {}, { textContent: 'print(1)' }));
+  shell.append(shellHeader, shellPre);
+  const barePre = cg.el('pre');
+  barePre.append(cg.el('code', {}, { textContent: '\\alpha + \\beta' }));
+  cgMd.append(shell, barePre);
+  cgTurn.append(cgMd);
+  cgMain.append(cgTurn);
+  cg.body.append(cgMain);
+
+  const cgAdapter = A.forHost('chatgpt', cg.doc);
+  assert.deepEqual([...cgAdapter.codeSurfaces()], [shell, barePre]);
+  assert.deepEqual([...cgAdapter.codeHeaders()], [shellHeader]);
+  assert.equal(cgAdapter.codeSurfaceFor(shellPre), shell);
+  assert.equal(cgAdapter.codeHeaderFor(shell, shellPre), shellHeader);
+  assert.equal(cgAdapter.codeWellFor(shellPre, shell), shellPre);
+  assert.equal(cgAdapter.codeSurfaceFor(barePre), barePre);
+  assert.equal(cgAdapter.codeHeaderFor(barePre, barePre), null);
+  assert.equal(cgAdapter.codeWellFor(barePre, barePre), barePre);
+  assert.equal(A.cleanTurnText(cgTurn, { excludeCode: true }), '');
+
+  // Gemini: double-nested <code-block> + .formatted-code-block-internal-container + bare <pre>
+  const gm = makeDoc('gemini');
+  const gmMain = gm.el('main', { id: 'main' });
+  const gmTurn = gm.el('model-response');
+  const gmMd = gm.el('div', { class: 'markdown' });
+  const outer = gm.el('code-block');
+  const inner = gm.el('div', { class: 'code-block' });
+  const dec = gm.el('div', { class: 'code-block-decoration' }, { textContent: '代码段' });
+  const well = gm.el('div', { class: 'formatted-code-block-internal-container' });
+  const gmPre = gm.el('pre');
+  gmPre.append(gm.el('code', {}, { textContent: 'E = mc^2' }));
+  well.append(gmPre);
+  inner.append(dec, well);
+  outer.append(inner);
+  const gmBarePre = gm.el('pre');
+  gmBarePre.append(gm.el('code', {}, { textContent: '\\frac{1}{2}' }));
+  gmMd.append(outer, gmBarePre);
+  gmTurn.append(gmMd);
+  gmMain.append(gmTurn);
+  gm.body.append(gmMain);
+
+  const gmAdapter = A.forHost('gemini', gm.doc);
+  assert.equal(gmAdapter.codeSurfaceFor(gmPre), inner);
+  assert.equal(gmAdapter.codeHeaderFor(inner, gmPre), dec);
+  assert.equal(gmAdapter.codeWellFor(gmPre, inner), well);
+  assert.equal(gmAdapter.codeSurfaceFor(gmBarePre), gmBarePre);
+  assert.equal(gmAdapter.codeHeaderFor(gmBarePre, gmBarePre), null);
+  assert.equal(gmAdapter.codeWellFor(gmBarePre, gmBarePre), gmBarePre);
 });

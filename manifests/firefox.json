@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Obsidian Prism Web — Community Edition",
   "short_name": "Prism Web",
-  "version": "0.4.0",
+  "version": "0.4.1",
   "description": "Community adaptation of Obsidian Prism themes and reading tools for ChatGPT and Gemini. Optional manual translation.",
   "author": "bahayonghang; upstream design by RMvdesi",
   "homepage_url": "https://github.com/bahayonghang/obsidian-prism-chrome-plugin",
@@ -69,7 +69,8 @@
         "https://chat.openai.com/*",
         "https://gemini.google.com/*"
       ],
-      "js": ["src/adapters.js", "src/content.js"],
+      "css": ["vendor/temml/temml-local.css"],
+      "js": ["vendor/temml/temml.js", "src/formula.js", "src/adapters.js", "src/content.js"],
       "run_at": "document_idle",
       "all_frames": false
     }

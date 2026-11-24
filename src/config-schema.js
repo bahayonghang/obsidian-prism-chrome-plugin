@@ -16,7 +16,7 @@
     motionSpeed: 'slow', composerGlow: true, sidebarStyle: 'glass',
     motionLevel: 'subtle', streamChoreography: true,
     semanticAura: true, composerRestyle: true, sidebarCompact: false,
-    stickyCodeHeader: true, longCodeFold: true, railOutline: true,
+    stickyCodeHeader: true, longCodeFold: true, formulaPreview: true, railOutline: true,
     turnJumpShortcuts: true, contentWidth: 'standard', contextVial: true, contextWindowTokens: 'auto',
     thoughtTranslate: false, thoughtView: 'bilingual',
     thoughtEndpoint: '', thoughtModel: ''
@@ -49,7 +49,7 @@
       cornerStyle:'圆角',cornerSharp:'利落',cornerBalanced:'均衡',cornerSoft:'柔和',languageLabel:'界面语言',
       previewTitle:'外观预览',previewPrompt:'让复杂的想法变得清楚。',previewReply:'从一个小问题开始，再慢慢深入。',previewInput:'继续探索…',previewBadge:'样式预览',
       readingTitle:'把长对话读得轻松一点',readingHint:'增强控件仅作用于支持的网站。',
-      stickyCodeHeader:'固定代码标题栏',longCodeFold:'手动折叠长代码',longCodeFoldHint:'48 行起显示折叠按钮，原文保持完整。',
+      stickyCodeHeader:'固定代码标题栏',longCodeFold:'手动折叠长代码',longCodeFoldHint:'48 行起显示折叠按钮，原文保持完整。',formulaPreview:'自动渲染公式代码块',formulaPreviewHint:'本地离线将 LaTeX 代码块渲染为原生公式，可随时切回源码。',
       railOutline:'会话大纲',railHint:'按提问查找与跳转。',turnJumpShortcuts:'Alt + ↑ / ↓ 跳转提问',shortcutHint:'输入文字时不会抢占按键。',
       contentWidth:'内容宽度',contentWidthHint:'切换标准、加宽与全栏阅读列。',widthStandard:'标准',widthWide:'加宽',widthFull:'全栏',widthToggleLabel:'切换内容宽度',
       contextVial:'上下文估算',contextHint:'仅估算已加载的对话，不代表实际用量、额度或模型容量。',contextWindow:'参考容量',contextWindowAuto:'自动匹配模型',
@@ -73,6 +73,7 @@
       independentNote:'本扩展为独立社区作品，与 RMvdesi、OpenAI 或 Google 没有官方隶属或背书关系。',
       privacyNote:'主题与阅读功能在本机运行，无统计追踪。只有主动启用并点击翻译时才会连接你授权的服务。',
       outlineTitle:'会话大纲',outlineSearch:'搜索提问…',outlineEmpty:'暂无匹配的提问',foldCollapse:'收起长代码',foldExpand:'展开全部代码',linesUnit:'行',
+      formulaShowSource:'源码',formulaShowPreview:'公式',formulaShowSourceLabel:'查看 LaTeX 源码',formulaShowPreviewLabel:'查看公式预览',
       vialTitle:'当前会话估算',vialTotal:'估算总 Token',vialUser:'提问',vialAssistant:'回复',vialCode:'其中代码',vialCapacity:'参考容量',vialSourceAutoMatched:'自动匹配',vialSourceAutoFallback:'自动兜底',vialSourceUnrecognized:'未识别型号，可在设置中指定',vialSourceManual:'手动指定',vialUncountedAttachments:'未计入附件',vialAttachmentsUnit:'份',vialAttachmentNote:'已检测到可见附件，其真实内容未计入以上数字估算。',vialNote:'仅基于已加载文本粗略估算；不等于服务实际用量或可用额度。',
       translateBtn:'翻译已显示的思考',translating:'翻译中…',retranslateBtn:'重新翻译',toggleViewBtn:'切换译文视图',
       translationError:'翻译失败，请检查服务配置和授权。',translationConsent:'此文本将发送到设置中的服务。',translationDisabled:'请先在扩展设置中启用并授权翻译服务。',
@@ -89,7 +90,7 @@
       cornerStyle:'Corners',cornerSharp:'Sharp',cornerBalanced:'Balanced',cornerSoft:'Soft',languageLabel:'Language',
       previewTitle:'Appearance preview',previewPrompt:'Make complicated ideas feel clear.',previewReply:'Begin with one small question. Then go deeper.',previewInput:'Keep exploring…',previewBadge:'Style preview',
       readingTitle:'Make long conversations easier',readingHint:'Extra controls only appear on supported sites.',
-      stickyCodeHeader:'Sticky code headers',longCodeFold:'Fold long code manually',longCodeFoldHint:'Adds a button at 48 lines; original text stays intact.',
+      stickyCodeHeader:'Sticky code headers',longCodeFold:'Fold long code manually',longCodeFoldHint:'Adds a button at 48 lines; original text stays intact.',formulaPreview:'Formula preview',formulaPreviewHint:'Render LaTeX code blocks locally as native math; switch back to source anytime.',
       railOutline:'Conversation outline',railHint:'Find and jump to a question.',turnJumpShortcuts:'Alt + ↑ / ↓ between questions',shortcutHint:'Never takes over shortcuts while typing.',
       contentWidth:'Content width',contentWidthHint:'Switch between standard, wide, and full reading columns.',widthStandard:'Standard',widthWide:'Wide',widthFull:'Full',widthToggleLabel:'Toggle content width',
       contextVial:'Context estimate',contextHint:'Estimates loaded messages only, not actual usage, quota or model capacity.',contextWindow:'Reference capacity',contextWindowAuto:'Auto (match model)',
@@ -113,6 +114,7 @@
       independentNote:'An independent community project; not affiliated with or endorsed by RMvdesi, OpenAI or Google.',
       privacyNote:'Theme and reading features run locally without analytics. Only explicitly enabled, manually requested translations connect to your authorized service.',
       outlineTitle:'Conversation outline',outlineSearch:'Search questions…',outlineEmpty:'No matching questions',foldCollapse:'Fold long code',foldExpand:'Expand all code',linesUnit:'lines',
+      formulaShowSource:'Source',formulaShowPreview:'Formula',formulaShowSourceLabel:'Show LaTeX source',formulaShowPreviewLabel:'Show formula preview',
       vialTitle:'Current conversation estimate',vialTotal:'Estimated tokens',vialUser:'Questions',vialAssistant:'Replies',vialCode:'Code subset',vialCapacity:'Reference capacity',vialSourceAutoMatched:'Auto-matched',vialSourceAutoFallback:'Auto fallback',vialSourceUnrecognized:'Unrecognized model; choose a capacity in settings',vialSourceManual:'Manual',vialUncountedAttachments:'Uncounted attachments',vialAttachmentsUnit:'files',vialAttachmentNote:'Visible attachments detected; their contents are not counted above.',vialNote:'A rough estimate of loaded text; not actual service usage or remaining quota.',
       translateBtn:'Translate displayed thoughts',translating:'Translating…',retranslateBtn:'Translate again',toggleViewBtn:'Switch translation view',
       translationError:'Translation failed. Check the service configuration and permissions.',translationConsent:'This text will be sent to the service in settings.',translationDisabled:'Enable and authorize a translation service in extension settings first.',
@@ -246,7 +248,7 @@
       'sticky-code':String(cfg.stickyCodeHeader), lang:cfg.language,
       'ambient-style':cfg.ambientStyle, texture:cfg.ambientTexture, 'motion-speed':cfg.motionSpeed,
       'composer-glow':String(cfg.composerGlow), 'sidebar-style':cfg.sidebarStyle,
-      'content-width':cfg.contentWidth
+      'content-width':cfg.contentWidth, 'formula-preview':String(cfg.formulaPreview)
     };
     for (const [key,value] of Object.entries(attributes)) if (root.getAttribute('data-op-'+key) !== value) root.setAttribute('data-op-'+key,value);
     const alpha = (cfg.ambientIntensity/100).toFixed(3);

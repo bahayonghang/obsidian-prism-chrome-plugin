@@ -126,6 +126,40 @@ export async function checkRealActionPopup({ context, worker, options, popupURL,
         measurements.at(-1).persistedAmbientStyle = reopenedStyle;
       }
       await capture.screenshot(path.join(artifacts, `chromium-action-popup-motion-${scheme}.png`));
+      await options.evaluate(() => chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('tab-reading').click());
+      await options.waitForFunction(() => chrome.extension.getViews({ type: 'popup' })[0]?.document.body.dataset.activeTab === 'reading');
+      const reading = await actionLayout(options);
+      measurements.at(-1).reading = reading;
+      assertUsableLayout(reading, `${scheme} action popup reading panel`);
+      if (scheme === 'dark') {
+        const initialFormula = await options.evaluate(() => {
+          const doc = chrome.extension.getViews({ type: 'popup' })[0].document;
+          const input = doc.getElementById('cfg-formulaPreview');
+          return {
+            exists: Boolean(input),
+            checked: input?.checked,
+            label: doc.querySelector('label[for="cfg-formulaPreview"]')?.textContent || ''
+          };
+        });
+        assert.equal(initialFormula.exists, true, 'real action popup Reading tab must expose #cfg-formulaPreview');
+        assert.equal(initialFormula.checked, true, 'real action popup #cfg-formulaPreview must default to checked');
+        assert.ok(initialFormula.label.includes('Formula preview'), `expected Formula preview label, got "${initialFormula.label}"`);
+        await options.evaluate(() => chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('cfg-formulaPreview').click());
+        await options.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).formulaPreview === false && chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('cfg-formulaPreview').checked === false);
+      } else {
+        const reopenedFormula = await options.evaluate(async () => {
+          const doc = chrome.extension.getViews({ type: 'popup' })[0].document;
+          const input = doc.getElementById('cfg-formulaPreview');
+          return {
+            saved: (await ObsidianPrismSchema.loadConfig()).formulaPreview,
+            checked: input?.checked
+          };
+        });
+        assert.deepEqual(reopenedFormula, { saved: false, checked: false }, 'formulaPreview saved from the real action popup survives closing and reopening');
+        measurements.at(-1).persistedFormulaPreview = reopenedFormula;
+        await options.evaluate(() => chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('cfg-formulaPreview').click());
+        await options.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).formulaPreview === true && chrome.extension.getViews({ type: 'popup' })[0].document.getElementById('cfg-formulaPreview').checked === true);
+      }
       await capture.dispose(); capture = null;
       await options.evaluate(() => chrome.extension.getViews({ type: 'popup' })[0].close());
       await options.waitForFunction(() => chrome.extension.getViews({ type: 'popup' }).length === 0);
@@ -139,7 +173,7 @@ export async function checkRealActionPopup({ context, worker, options, popupURL,
     if (capture) await capture.dispose();
     await options.evaluate(() => chrome.extension.getViews({ type: 'popup' }).forEach(win => win.close())).catch(() => {});
     await cdp.detach();
-    await options.evaluate(config => ObsidianPrismSchema.saveConfig({ themeMode: config.themeMode, ambientStyle: config.ambientStyle }), original).catch(() => {});
+    await options.evaluate(config => ObsidianPrismSchema.saveConfig({ themeMode: config.themeMode, ambientStyle: config.ambientStyle, formulaPreview: config.formulaPreview }), original).catch(() => {});
   }
 }
 
@@ -175,6 +209,15 @@ export async function checkPopupIntrinsicSize({ browser, root, engine, fixtureBr
     assert.equal(await frame.locator('#tab-motion').getAttribute('aria-selected'), 'true');
     assert.equal(await frame.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
     await page.locator('#popup-sizer').screenshot({ path: path.join(artifacts, `${engine}-popup-intrinsic-motion.png`) });
+    await frame.locator('#tab-reading').click();
+    await frame.waitForFunction(() => document.body.dataset.activeTab === 'reading');
+    assert.equal(await frame.locator('#tab-reading').getAttribute('aria-selected'), 'true');
+    assert.equal(await frame.locator('#panel-reading').isVisible(), true);
+    assert.equal(await frame.locator('#cfg-formulaPreview').isVisible(), true);
+    assert.equal(await frame.locator('#cfg-formulaPreview').isChecked(), true);
+    const formulaLabel = await frame.locator('label[for="cfg-formulaPreview"]').textContent();
+    assert.ok(formulaLabel && formulaLabel.trim().length > 0, `${engine}: Reading tab formulaPreview switch must have non-empty label`);
+    assert.equal(await frame.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, `${engine}: Reading tab keeps zero horizontal overflow at 440×600`);
     console.log(`PASS ${engine} popup intrinsic sizing from a 25×25 iframe; this check does not install an action popup`);
   } finally { await context.close(); }
 }

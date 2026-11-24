@@ -17,8 +17,9 @@
       editors: ['#prompt-textarea', '[data-testid="prompt-textarea"]', 'textarea[name="prompt-textarea"]', 'main [contenteditable="true"][role="textbox"]', 'main textarea'],
       composers: ['[data-composer-layout]', '#composer-background', '[data-testid="chat-composer"]', '[data-testid="composer"]', '[data-composer-surface]', '.composer-parent'],
       composerBackdrops: '#thread-bottom-container,#thread-bottom,[class*="content-fade"],.content-fade,[class*="fade-mask"],[data-testid="composer-footer"],[data-testid="composer-container"],.thread-bottom-container,.composer-parent',
-      codeSurfaces: '[data-testid="code-block"], .code-block-wrapper',
-      codeHeaders: '.code-header, [data-testid="code-block-header"]',
+      codeSurfaces: '[data-testid="code-block"], .code-block-wrapper, .code-shell',
+      codeHeaders: '.code-header, .code-shell-header, [data-testid="code-block-header"]',
+      codeWells: '',
       modelTriggers: '[data-testid="model-switcher-dropdown-button"], [data-testid="composer-model-switcher"], button[aria-label*="model" i], button[aria-label*="模型"]',
       modelLabels: '[data-testid="model-switcher-dropdown-button"], [data-testid="composer-model-switcher"], .model-label',
       addTriggers: '[data-testid="composer-plus-btn"], button[aria-label*="Add files" i], button[aria-label*="Attach" i], button[aria-label*="上传"], button[aria-label*="添加"]',
@@ -72,6 +73,7 @@
       composerBackdrops: 'input-area-v2,input-area,.input-area-container,[data-test-id="input-area"],[data-test-id="input-area-container"],.input-area-wrapper',
       codeSurfaces: 'code-block, .code-block',
       codeHeaders: '.code-block-decoration, [data-test-id="code-block-header"]',
+      codeWells: '.formatted-code-block-internal-container',
       modelTriggers: 'bard-mode-switcher button, [data-test-id="bard-mode-menu-button"], .input-area-switch',
       modelLabels: 'bard-mode-switcher button, [data-test-id="bard-mode-menu-button"], .input-area-switch, .model-label',
       addTriggers: '[data-test-id="upload-file-button"], button[aria-label*="Add files" i], button[aria-label*="Upload" i], button[aria-label*="上传"], button[aria-label*="添加"]',
@@ -170,7 +172,7 @@
     if (node.children?.length && node.children.some(child => hasVisibleText(child))) return true;
     return Boolean(textOf(node).trim());
   }
-  const TURN_NOISE_SELECTOR = '[data-op-owned],script,style,svg,[hidden],[aria-hidden="true"],.sr-only,button,[role="button"],.turn-actions,[data-testid="turn-actions"],.code-header,.code-block-decoration,[data-testid="code-block-header"],[data-test-id="code-block-header"],[data-testid="citation-pill"],.citation-chip,message-actions';
+  const TURN_NOISE_SELECTOR = '[data-op-owned],script,style,svg,[hidden],[aria-hidden="true"],.sr-only,button,[role="button"],.turn-actions,[data-testid="turn-actions"],.code-header,.code-shell-header,.code-block-decoration,[data-testid="code-block-header"],[data-test-id="code-block-header"],[data-testid="citation-pill"],.citation-chip,message-actions';
   function cleanTurnText(element, options = {}) {
     if (!element) return '';
     const selector = options && options.excludeCode ? `${TURN_NOISE_SELECTOR},pre` : TURN_NOISE_SELECTOR;
@@ -620,15 +622,29 @@
     const scope = messages.length ? messages : [root];
     for (const container of scope) {
       if (spec.codeSurfaces) {
-        for (const node of container.querySelectorAll(spec.codeSurfaces)) add(node);
+        for (const node of container.querySelectorAll(spec.codeSurfaces)) {
+          if ((node.tagName || '').toUpperCase() === 'CODE-BLOCK') {
+            const inner = [...node.querySelectorAll('.code-block')].find(
+              candidate => !isOwned(candidate) && isVisible(candidate) && candidate.querySelector('pre, .code-block-decoration')
+            );
+            if (inner) {
+              add(inner);
+              continue;
+            }
+          }
+          add(node);
+        }
       }
       for (const pre of container.querySelectorAll('pre')) {
         if (isOwned(pre) || !isVisible(pre)) continue;
         if (surfaces.some(surface => surface.contains(pre))) continue;
         const parent = pre.parentElement;
-        if (parent && !isOwned(parent) && !parent.matches(MESSAGE_AREAS) && !parent.matches('.markdown') &&
-            spec.codeHeaders && parent.querySelector(spec.codeHeaders) && parent.querySelectorAll('pre').length === 1) {
-          add(parent);
+        const owner = (parent && !isOwned(parent) && spec.codeWells && parent.matches?.(spec.codeWells))
+          ? parent.parentElement
+          : parent;
+        if (owner && !isOwned(owner) && !owner.matches(MESSAGE_AREAS) && !owner.matches('.markdown') &&
+            spec.codeHeaders && owner.querySelector(spec.codeHeaders) && owner.querySelectorAll('pre').length === 1) {
+          add(owner);
         } else {
           add(pre);
         }
@@ -645,6 +661,57 @@
       }
     }
     return out;
+  }
+  function findCodeSurfaceFor(spec, pre, surfaces) {
+    if (!pre) return null;
+    if (Array.isArray(surfaces)) {
+      const matched = surfaces.find(surface => surface === pre || surface.contains?.(pre));
+      if (matched) return matched;
+    }
+    const closestSurface = spec.codeSurfaces && typeof pre.closest === 'function' ? pre.closest(spec.codeSurfaces) : null;
+    if (closestSurface && !isOwned(closestSurface) && !closestSurface.matches?.(MESSAGE_AREAS) && !closestSurface.matches?.('.markdown')) {
+      if ((closestSurface.tagName || '').toUpperCase() === 'CODE-BLOCK') {
+        const inner = [...(closestSurface.querySelectorAll?.('.code-block') || [])].find(
+          candidate => !isOwned(candidate) && isVisible(candidate) && (candidate.contains?.(pre) || candidate.querySelector?.('pre, .code-block-decoration'))
+        );
+        if (inner) return inner;
+      }
+      return closestSurface;
+    }
+    const parent = pre.parentElement;
+    const owner = (parent && !isOwned(parent) && spec.codeWells && parent.matches?.(spec.codeWells))
+      ? parent.parentElement
+      : parent;
+    if (owner && !isOwned(owner) && !owner.matches?.(MESSAGE_AREAS) && !owner.matches?.('.markdown') &&
+        spec.codeHeaders && owner.querySelectorAll?.('pre').length === 1 && owner.querySelector?.(spec.codeHeaders)) {
+      return owner;
+    }
+    return pre;
+  }
+  function findCodeWellFor(spec, pre) {
+    if (!pre) return null;
+    const parent = pre.parentElement;
+    const isWell = Boolean(
+      spec.codeWells &&
+      parent &&
+      !isOwned(parent) &&
+      parent.matches?.(spec.codeWells) &&
+      parent.querySelectorAll?.('pre').length === 1 &&
+      [...(parent.children || [])].every(child => child === pre || isOwned(child))
+    );
+    return isWell ? parent : pre;
+  }
+  function findCodeHeaderFor(spec, surface, pre, headers) {
+    if (Array.isArray(headers)) {
+      const matched = headers.find(header => surface && surface !== pre && surface.contains?.(header));
+      if (matched) return matched;
+    }
+    if (!spec.codeHeaders) return null;
+    const scope = surface && surface !== pre ? surface : pre?.parentElement;
+    if (!scope || scope.matches?.(MESSAGE_AREAS) || scope.matches?.('.markdown')) return null;
+    if (scope === pre?.parentElement && scope.querySelectorAll?.('pre').length !== 1) return null;
+    const found = scope.querySelector?.(spec.codeHeaders) || null;
+    return found && !isOwned(found) ? found : null;
   }
   function collectAttachments(selector, scopes) {
     if (!selector) return [];
@@ -1363,13 +1430,16 @@
       visibleAttachments: (composer) => findVisibleAttachments(spec, messages(), composer === undefined ? findComposer(spec, root) : composer, root),
       codeSurfaces: () => findCodeSurfaces(spec, messages(), root),
       codeHeaders: () => findCodeHeaders(spec, messages()),
+      codeSurfaceFor: (pre, surfaces) => findCodeSurfaceFor(spec, pre, surfaces),
+      codeHeaderFor: (surface, pre, headers) => findCodeHeaderFor(spec, surface, pre, headers),
+      codeWellFor: (pre) => findCodeWellFor(spec, pre),
       threadTailSpacers: () => findThreadTailSpacers(spec, findPrimary(spec, root), messages()),
       threadColumns: () => findColumnSurfaces(spec.threadColumns, findPrimary(spec, root), messages()[0]),
       composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, findPrimary(spec, root), composer === undefined ? findComposer(spec, root) : composer),
       sidebarSurfaces: () => findSidebars(spec, root),
       sidebarActiveRows: (sidebars) => findSidebarActiveRows(sidebars === undefined ? findSidebars(spec, root) : sidebars),
       cornerFloatingObstacles: (composer) => findCornerFloatingObstacles(root, composer === undefined ? findComposer(spec, root) : composer, spec),
-      codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))],
+      codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))].filter(pre => !isOwned(pre) && !pre.parentElement?.closest?.('pre')),
       thoughtBlocks: () => collect(spec.thoughts),
       isAssistantNode(node) {
         const element = elementOf(node);

@@ -18,7 +18,8 @@ FILES = (
     "docs/ARCHITECTURE.md", "docs/TESTING.md", "docs/IMPLEMENTATION_PLAN.md", "docs/UX_REFRESH_PLAN.md", "docs/REGRESSION_FIX_PLAN.md",
     "icons/icon.svg", "icons/icon-16.png", "icons/icon-48.png", "icons/icon-128.png",
     "styles/prism-tokens.css", "styles/hosts.css",
-    "src/config-schema.js", "src/early-boot.js", "src/adapters.js", "src/content.js", "src/background.js",
+    "vendor/temml/temml.js", "vendor/temml/temml-local.css",
+    "src/config-schema.js", "src/early-boot.js", "src/formula.js", "src/adapters.js", "src/content.js", "src/background.js",
     "popup/popup.html", "popup/popup.css", "popup/popup.js",
 )
 HOSTS = ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://gemini.google.com/*"]
