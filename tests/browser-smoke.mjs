@@ -23,6 +23,8 @@ import { checkLiveComposerScrim } from './live-scrim.mjs';
 import { checkBottomDock } from './bottom-dock.mjs';
 // v0.4.1 #33 Gemini Code Surface nesting/contrast & dual-host Native Math Surface readability/overflow
 import { checkCodeAndNativeMathSurfaces } from './code-math-surface.mjs';
+// v0.4.1 #34 Dual-host offline Temml MathML Formula Preview, toggle, copy preservation, fold coordination & zero-residue restore
+import { checkFormulaPreview } from './formula-preview.mjs';
 import { paragraphWidth } from './measure.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -36,7 +38,8 @@ catch {
   const modules = process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES;
   if (!modules) throw new Error('Install developer dependency playwright before running browser tests.');
   const require = createRequire(import.meta.url);
-  playwright = await import(pathToFileURL(require.resolve('playwright', { paths: [modules] })).href);
+  const mod = await import(pathToFileURL(require.resolve('playwright', { paths: [modules] })).href);
+  playwright = mod[engine] ? mod : mod.default;
 }
 const type = playwright[engine];
 const executable = process.env.PRISM_BROWSER_EXECUTABLE || (existsSync(type.executablePath()) ? undefined : engine === 'chromium' && existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : undefined);
@@ -48,9 +51,9 @@ const fixtureURLs = { chatgpt: 'https://chatgpt.com/prism-offline-fixture', gemi
 // Probe-derived fixtures (see tests/live-fixtures.mjs and .trellis/research/live-host-dom.md).
 const liveFixtures = { chatgpt: await source('tests/fixtures/chatgpt-live.html'), gemini: await source('tests/fixtures/gemini-live.html') };
 const probeSource = await source('tools/structure-probe.js');
-const scriptFiles = ['src/config-schema.js', 'src/early-boot.js', 'src/adapters.js', 'src/content.js'];
+const scriptFiles = ['src/config-schema.js', 'src/early-boot.js', 'vendor/temml/temml.js', 'src/formula.js', 'src/adapters.js', 'src/content.js'];
 const scripts = await Promise.all(scriptFiles.map(source));
-const styles = await Promise.all(['styles/prism-tokens.css', 'styles/hosts.css'].map(source));
+const styles = await Promise.all(['styles/prism-tokens.css', 'styles/hosts.css', 'vendor/temml/temml-local.css'].map(source));
 
 async function interceptFixtures(context) {
   await context.route(/^https?:\/\//, async route => {
@@ -1266,9 +1269,10 @@ async function exerciseFixture(browser, host) {
     assert.equal(stopped.observing, false);
     assert.equal(stopped.pending, false);
     assert.equal(stopped.codeBlocks, 0);
+    assert.equal(stopped.formulaBlocks, 0);
     assert.equal(stopped.thoughtBlocks, 0);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
-    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-composer-dock="true"],[data-op-composer-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"],[data-op-composer-grid="true"],[data-op-composer-header-empty="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-formula-active="true"],[data-op-formula-source-hidden="true"],[data-op-composer-dock="true"],[data-op-composer-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"],[data-op-composer-grid="true"],[data-op-composer-header-empty="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-enabled')), false);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-instance')), false);
@@ -1318,6 +1322,8 @@ try {
     await checkBottomDock(liveSuite);
     // v0.4.1 #33 Gemini Code Surface nesting/contrast & dual-host Native Math Surface readability/overflow
     await checkCodeAndNativeMathSurfaces(liveSuite);
+    // v0.4.1 #34 Dual-host offline Temml MathML Formula Preview
+    await checkFormulaPreview(liveSuite);
   }
   if (!liveOnly && !baselinesOnly) {
     await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
