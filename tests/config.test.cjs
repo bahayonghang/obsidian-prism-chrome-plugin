@@ -176,7 +176,49 @@ test('locale dictionaries cover identical visible setting keys', () => {
   assert.equal(S.I18N['zh-CN'].formulaShowPreview, '公式');
   assert.equal(S.I18N['en-US'].formulaShowSource, 'Source');
   assert.equal(S.I18N['en-US'].formulaShowPreview, 'Formula');
+  for (const key of ['formulaPreview', 'formulaPreviewHint']) {
+    assert.equal(Object.hasOwn(S.I18N['zh-CN'], key), true, `zh-CN missing ${key}`);
+    assert.equal(Object.hasOwn(S.I18N['en-US'], key), true, `en-US missing ${key}`);
+  }
+  assert.equal(S.I18N['zh-CN'].formulaPreview, '自动渲染公式代码块');
+  assert.equal(S.I18N['zh-CN'].formulaPreviewHint, '本地离线将 LaTeX 代码块渲染为原生公式，可随时切回源码。');
+  assert.equal(S.I18N['en-US'].formulaPreview, 'Formula preview');
+  assert.equal(S.I18N['en-US'].formulaPreviewHint, 'Render LaTeX code blocks locally as native math; switch back to source anytime.');
   for (const lang of ['zh-CN', 'en-US']) for (const [key, value] of Object.entries(S.I18N[lang])) assert.equal(typeof value === 'string' && value.length > 0, true, `${lang}.${key}`);
+});
+
+test('formulaPreview defaults to true, enforces strict boolean sanitization, falls back for legacy configs, roundtrips export/import, and syncs data-op-formula-preview', async () => {
+  const h = harness({ background: true });
+  const S = h.schema;
+  assert.equal(S.DEFAULT_CONFIG.formulaPreview, true);
+  assert.deepEqual(plain(S.sanitizePatch({ formulaPreview: true })), { formulaPreview: true });
+  assert.deepEqual(plain(S.sanitizePatch({ formulaPreview: false })), { formulaPreview: false });
+  for (const invalid of ['false', 'true', 0, 1, null, [], {}]) {
+    assert.deepEqual(plain(S.sanitizePatch({ formulaPreview: invalid })), {});
+  }
+
+  // Legacy config without formulaPreview falls back to true
+  h.state.storage[S.STORAGE_KEY] = { enabled: true };
+  const legacy = await S.loadConfig();
+  assert.equal(legacy.formulaPreview, true);
+
+  // Save/import/export roundtrip preserves false and true
+  await S.saveConfig({ formulaPreview: false });
+  const exported = plain(await S.loadConfig());
+  assert.equal(exported.formulaPreview, false);
+  const reimported = plain(S.sanitizeConfig(S.sanitizePatch(exported)));
+  assert.equal(reimported.formulaPreview, false);
+
+  // applyConfigToRoot sets data-op-formula-preview when enabled and removes it cleanly when disabled
+  const root = rootElement();
+  S.applyConfigToRoot({ ...S.DEFAULT_CONFIG, formulaPreview: true }, root);
+  assert.equal(root.getAttribute('data-op-formula-preview'), 'true');
+  S.applyConfigToRoot({ ...S.DEFAULT_CONFIG, formulaPreview: false }, root);
+  assert.equal(root.getAttribute('data-op-formula-preview'), 'false');
+  S.applyConfigToRoot({ ...S.DEFAULT_CONFIG, enabled: false, formulaPreview: false }, root);
+  assert.equal(root.getAttribute('data-op-formula-preview'), null);
+  S.applyConfigToRoot({ ...S.DEFAULT_CONFIG, enableChatGPT: false, formulaPreview: true }, root);
+  assert.equal(root.getAttribute('data-op-formula-preview'), null);
 });
 
 test('a Chrome Promise namespace does not request Firefox data collection permissions', () => {

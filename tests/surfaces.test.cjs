@@ -1787,3 +1787,123 @@ test('v0.4.1 #34: runtime Formula Preview renders MathML, toggles losslessly, sk
   assert.equal(surface.getAttribute('data-op-formula-active'), null);
   assert.equal(code.textContent, '% 更新标题\n\\alpha + \\beta = \\gamma');
 });
+
+test('v0.4.1 #35: toggling formulaPreview false clears previews, toggles, bars, and streaming debounces while restoring Code Surface and 48-line fold bar; re-enabling restores Formula Preview', async () => {
+  let surfacesRef = [];
+  let headersRef = [];
+  const ctx = createRuntimeDom({ language: 'zh-CN', formulaPreview: true }, {
+    host: 'chatgpt',
+    loadFormula: true,
+    codeSurfaces: () => surfacesRef,
+    codeHeaders: () => headersRef,
+    textOf: node => node?.textContent || ''
+  });
+  const e = Object.fromEntries(ctx.elements);
+  const makeNode = ctx.makeEl;
+
+  // 1) Headerless bare <pre> LaTeX block (mounts .op-formula-bar)
+  const bareWrap = makeNode('div', {});
+  const barePre = makeNode('pre');
+  const bareCode = makeNode('code', { class: 'language-latex' });
+  bareCode.textContent = '% Bare formula\nE = mc^2';
+  barePre.append(bareCode);
+  bareWrap.append(barePre);
+  e.assistantTurn.append(bareWrap);
+
+  // 2) 50-line LaTeX block inside a headered code surface
+  const surface = makeNode('div', { class: 'code-shell' });
+  const header = makeNode('div', { class: 'code-shell-header' });
+  header.append(makeNode('span'));
+  header.firstChild.textContent = 'LaTeX';
+  const actions = makeNode('div');
+  const copyBtn = makeNode('button', { 'aria-label': 'Copy' }); copyBtn.textContent = 'Copy';
+  actions.append(copyBtn);
+  header.append(actions);
+  const pre = makeNode('pre');
+  const code = makeNode('code', { class: 'language-latex' });
+  const lines = ['% 1. 长公式', 'a_0 = 1'];
+  for (let i = 1; i <= 48; i++) lines.push(`a_{${i}} = \\frac{1}{${i}}`);
+  code.textContent = lines.join('\n');
+  pre.append(code);
+  surface.append(header, pre);
+  e.assistantTurn.append(surface);
+
+  surfacesRef = [barePre, surface];
+  headersRef = [header];
+  ctx.setCodeBlocks([barePre, pre]);
+
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 20));
+
+  assert.equal(ctx.h.context.document.documentElement.getAttribute('data-op-formula-preview'), 'true');
+  assert.equal(ctx.runtime.diagnostics().formulaBlocks, 2);
+  assert.ok(bareWrap.querySelector('.op-formula-bar'), 'headerless formula block creates .op-formula-bar');
+  assert.ok(bareWrap.querySelector('.op-formula-preview'), 'headerless formula block renders preview');
+  assert.ok(surface.querySelector('.op-formula-preview'), '50-line block renders preview');
+  assert.equal(surface.querySelector('.op-code-fold-bar'), null, '50-line block skips fold bar in preview');
+
+  // Start a streaming debounce on barePre, then turn formulaPreview off mid-debounce
+  ctx.setStreaming(true);
+  bareCode.textContent = '% Updated mid-stream\na^2 + b^2 = c^2';
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 40));
+
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, formulaPreview: false }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+
+  assert.equal(ctx.h.context.document.documentElement.getAttribute('data-op-formula-preview'), 'false');
+  assert.equal(ctx.runtime.diagnostics().formulaBlocks, 0);
+  assert.equal(bareWrap.querySelector('.op-formula-preview'), null);
+  assert.equal(bareWrap.querySelector('.op-formula-toggle'), null);
+  assert.equal(bareWrap.querySelector('.op-formula-bar'), null);
+  assert.equal(barePre.getAttribute('data-op-formula-source-hidden'), null);
+  assert.equal(surface.querySelector('.op-formula-preview'), null);
+  assert.equal(actions.querySelector('.op-formula-toggle'), null);
+  assert.equal(pre.getAttribute('data-op-formula-source-hidden'), null);
+  assert.equal(surface.getAttribute('data-op-formula-active'), null);
+
+  const foldBar = surface.querySelector('.op-code-fold-bar');
+  assert.ok(foldBar, 'turning formulaPreview off restores .op-code-fold-bar on 50-line block');
+  assert.equal(pre.classList.contains('op-code-folded'), false);
+
+  // Waiting past debounce window must NOT resurrect any cancelled streaming preview
+  await new Promise(resolve => setTimeout(resolve, 350));
+  assert.equal(ctx.runtime.diagnostics().formulaBlocks, 0);
+  assert.equal(bareWrap.querySelector('.op-formula-preview'), null);
+  ctx.setStreaming(false);
+
+  // Fold while formulaPreview is false, then re-enable formulaPreview -> clears fold bar & restores Formula Preview
+  foldBar.dispatchEvent({ type: 'click' });
+  assert.equal(pre.classList.contains('op-code-folded'), true);
+
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, formulaPreview: true }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+
+  assert.equal(ctx.h.context.document.documentElement.getAttribute('data-op-formula-preview'), 'true');
+  assert.equal(ctx.runtime.diagnostics().formulaBlocks, 2);
+  assert.ok(bareWrap.querySelector('.op-formula-preview').querySelector('math'));
+  assert.ok(surface.querySelector('.op-formula-preview').querySelector('math'));
+  assert.equal(surface.querySelector('.op-code-fold-bar'), null, 're-enabling formulaPreview removes fold bar');
+  assert.equal(pre.classList.contains('op-code-folded'), false, 're-enabling formulaPreview clears folded clip class');
+
+  // Toggle to Source -> verify remembered fold state is preserved, unfold it, then toggle formulaPreview false -> stays unfolded
+  const toggleBtn = actions.querySelector('.op-formula-toggle');
+  toggleBtn.dispatchEvent({ type: 'click' });
+  assert.equal(pre.classList.contains('op-code-folded'), true);
+  surface.querySelector('.op-code-fold-bar').dispatchEvent({ type: 'click' });
+  assert.equal(pre.classList.contains('op-code-folded'), false);
+  toggleBtn.dispatchEvent({ type: 'click' });
+
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, formulaPreview: false }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(surface.querySelector('.op-code-fold-bar'));
+  assert.equal(pre.classList.contains('op-code-folded'), false, 'no stale fold state after unfolding');
+
+  ctx.runtime.stop();
+});

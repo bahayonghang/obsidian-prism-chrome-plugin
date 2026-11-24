@@ -267,8 +267,46 @@ export async function checkFormulaPreview(suite) {
       assert.equal(hostPaletteSnap.toggleColor, hostPaletteSnap.toggleParentColor, `${engine} ${host}: Native Palette toggle inherits header foreground color`);
       assert.match(hostPaletteSnap.previewBg, /^rgba\(0,\s*0,\s*0,\s*0\)$|^transparent$/);
 
-      // Disable ('enabled: false') and ObsidianPrismRuntime.stop(): zero residue
+      // Disable formulaPreview setting: removes all Formula Preview UI, restores Code Surface & 48-line fold bar; re-enable restores cleanly
       await patchConfig(page, { palette: 'obsidian' }, () => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
+      await patchConfig(page, { formulaPreview: false }, () => document.documentElement.getAttribute('data-op-formula-preview') === 'false' && document.querySelectorAll('.op-formula-preview').length === 0);
+      await settle(page);
+      const disabledFormulaSnap = await page.evaluate(({ cardSel, hideSel }) => ({
+        formulaBlocks: ObsidianPrismRuntime.diagnostics().formulaBlocks,
+        previews: document.querySelectorAll('.op-formula-preview').length,
+        toggles: document.querySelectorAll('.op-formula-toggle').length,
+        bars: document.querySelectorAll('.op-formula-bar').length,
+        hiddenAttrs: document.querySelectorAll('[data-op-formula-source-hidden]').length,
+        activeAttrs: document.querySelectorAll('[data-op-formula-active]').length,
+        allSourcesVisible: [...document.querySelectorAll(`${cardSel} ${hideSel}`)].every(n => getComputedStyle(n).display !== 'none'),
+        nativeIdentitiesIntact: [...document.querySelectorAll(`${cardSel} pre code`)].every((node, i) => node === window.__prismNativeCodes[i]),
+        card5FoldBars: document.querySelectorAll(cardSel)[5].querySelectorAll('.op-code-fold-bar').length
+      }), { cardSel, hideSel });
+      assert.deepEqual(disabledFormulaSnap, {
+        formulaBlocks: 0, previews: 0, toggles: 0, bars: 0, hiddenAttrs: 0, activeAttrs: 0,
+        allSourcesVisible: true, nativeIdentitiesIntact: true, card5FoldBars: 1
+      }, `${engine} ${host}: formulaPreview: false restores original Code Surface and 48-line fold bar with zero residue`);
+
+      // Unfold Card 5 while formulaPreview is false, then re-enable formulaPreview and verify clean restoration
+      if (await card5.locator('pre').evaluate(pre => pre.classList.contains('op-code-folded'))) {
+        await card5.locator('.op-code-fold-bar').click();
+        await page.waitForFunction(({ sel }) => !document.querySelectorAll(sel)[5].querySelector('pre').classList.contains('op-code-folded'), { sel: cardSel });
+      }
+      await patchConfig(page, { formulaPreview: true }, () => document.documentElement.getAttribute('data-op-formula-preview') === 'true' && document.querySelectorAll('.op-formula-preview').length === 4);
+      await settle(page);
+      const restoredFormulaSnap = await page.evaluate(sel => ({
+        formulaBlocks: ObsidianPrismRuntime.diagnostics().formulaBlocks,
+        previews: document.querySelectorAll('.op-formula-preview').length,
+        toggles: document.querySelectorAll('.op-formula-toggle').length,
+        mathCards: [...document.querySelectorAll(sel)].filter(c => Boolean(c.querySelector('.op-formula-preview math'))).length,
+        card5FoldBars: document.querySelectorAll(sel)[5].querySelectorAll('.op-code-fold-bar').length,
+        card5Folded: document.querySelectorAll(sel)[5].querySelector('pre').classList.contains('op-code-folded')
+      }), cardSel);
+      assert.deepEqual(restoredFormulaSnap, {
+        formulaBlocks: 4, previews: 4, toggles: 4, mathCards: 4, card5FoldBars: 0, card5Folded: false
+      }, `${engine} ${host}: formulaPreview: true restores Formula Preview and removes fold bar cleanly`);
+
+      // Disable ('enabled: false') and ObsidianPrismRuntime.stop(): zero residue
       await patchConfig(page, { enabled: false }, () => !document.documentElement.hasAttribute('data-op-enabled'));
       await settle(page);
       for (const label of ['disabled']) {

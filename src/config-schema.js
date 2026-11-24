@@ -16,7 +16,7 @@
     motionSpeed: 'slow', composerGlow: true, sidebarStyle: 'glass',
     motionLevel: 'subtle', streamChoreography: true,
     semanticAura: true, composerRestyle: true, sidebarCompact: false,
-    stickyCodeHeader: true, longCodeFold: true, railOutline: true,
+    stickyCodeHeader: true, longCodeFold: true, formulaPreview: true, railOutline: true,
     turnJumpShortcuts: true, contentWidth: 'standard', contextVial: true, contextWindowTokens: 'auto',
     thoughtTranslate: false, thoughtView: 'bilingual',
     thoughtEndpoint: '', thoughtModel: ''
@@ -49,7 +49,7 @@
       cornerStyle:'圆角',cornerSharp:'利落',cornerBalanced:'均衡',cornerSoft:'柔和',languageLabel:'界面语言',
       previewTitle:'外观预览',previewPrompt:'让复杂的想法变得清楚。',previewReply:'从一个小问题开始，再慢慢深入。',previewInput:'继续探索…',previewBadge:'样式预览',
       readingTitle:'把长对话读得轻松一点',readingHint:'增强控件仅作用于支持的网站。',
-      stickyCodeHeader:'固定代码标题栏',longCodeFold:'手动折叠长代码',longCodeFoldHint:'48 行起显示折叠按钮，原文保持完整。',
+      stickyCodeHeader:'固定代码标题栏',longCodeFold:'手动折叠长代码',longCodeFoldHint:'48 行起显示折叠按钮，原文保持完整。',formulaPreview:'自动渲染公式代码块',formulaPreviewHint:'本地离线将 LaTeX 代码块渲染为原生公式，可随时切回源码。',
       railOutline:'会话大纲',railHint:'按提问查找与跳转。',turnJumpShortcuts:'Alt + ↑ / ↓ 跳转提问',shortcutHint:'输入文字时不会抢占按键。',
       contentWidth:'内容宽度',contentWidthHint:'切换标准、加宽与全栏阅读列。',widthStandard:'标准',widthWide:'加宽',widthFull:'全栏',widthToggleLabel:'切换内容宽度',
       contextVial:'上下文估算',contextHint:'仅估算已加载的对话，不代表实际用量、额度或模型容量。',contextWindow:'参考容量',contextWindowAuto:'自动匹配模型',
@@ -90,7 +90,7 @@
       cornerStyle:'Corners',cornerSharp:'Sharp',cornerBalanced:'Balanced',cornerSoft:'Soft',languageLabel:'Language',
       previewTitle:'Appearance preview',previewPrompt:'Make complicated ideas feel clear.',previewReply:'Begin with one small question. Then go deeper.',previewInput:'Keep exploring…',previewBadge:'Style preview',
       readingTitle:'Make long conversations easier',readingHint:'Extra controls only appear on supported sites.',
-      stickyCodeHeader:'Sticky code headers',longCodeFold:'Fold long code manually',longCodeFoldHint:'Adds a button at 48 lines; original text stays intact.',
+      stickyCodeHeader:'Sticky code headers',longCodeFold:'Fold long code manually',longCodeFoldHint:'Adds a button at 48 lines; original text stays intact.',formulaPreview:'Formula preview',formulaPreviewHint:'Render LaTeX code blocks locally as native math; switch back to source anytime.',
       railOutline:'Conversation outline',railHint:'Find and jump to a question.',turnJumpShortcuts:'Alt + ↑ / ↓ between questions',shortcutHint:'Never takes over shortcuts while typing.',
       contentWidth:'Content width',contentWidthHint:'Switch between standard, wide, and full reading columns.',widthStandard:'Standard',widthWide:'Wide',widthFull:'Full',widthToggleLabel:'Toggle content width',
       contextVial:'Context estimate',contextHint:'Estimates loaded messages only, not actual usage, quota or model capacity.',contextWindow:'Reference capacity',contextWindowAuto:'Auto (match model)',
@@ -248,7 +248,7 @@
       'sticky-code':String(cfg.stickyCodeHeader), lang:cfg.language,
       'ambient-style':cfg.ambientStyle, texture:cfg.ambientTexture, 'motion-speed':cfg.motionSpeed,
       'composer-glow':String(cfg.composerGlow), 'sidebar-style':cfg.sidebarStyle,
-      'content-width':cfg.contentWidth
+      'content-width':cfg.contentWidth, 'formula-preview':String(cfg.formulaPreview)
     };
     for (const [key,value] of Object.entries(attributes)) if (root.getAttribute('data-op-'+key) !== value) root.setAttribute('data-op-'+key,value);
     const alpha = (cfg.ambientIntensity/100).toFixed(3);
