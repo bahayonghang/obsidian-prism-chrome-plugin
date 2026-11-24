@@ -591,7 +591,7 @@
    * no visible text; `data-uniform` only widens the tolerance) and `'row'` otherwise. When the host
    * repeats the active state on a whole row and its inner link, the outermost single-line row owns it.
    */
-  function findSidebarActiveRows(sidebars) {
+  function findSidebarActiveTargets(sidebars) {
     const rows = new Set();
     for (const sidebar of sidebars) {
       const isRow = node => {
@@ -1557,7 +1557,7 @@
       threadColumns: () => findColumnSurfaces(spec.threadColumns, findPrimary(spec, root), messages()[0]),
       composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, findPrimary(spec, root), composer === undefined ? findComposer(spec, root) : composer),
       sidebarSurfaces: () => findSidebars(spec, root),
-      sidebarActiveRows: (sidebars) => findSidebarActiveRows(sidebars === undefined ? findSidebars(spec, root) : sidebars),
+      sidebarActiveTargets: (sidebars) => findSidebarActiveTargets(sidebars === undefined ? findSidebars(spec, root) : sidebars),
       cornerFloatingObstacles: (composer) => findCornerFloatingObstacles(root, composer === undefined ? findComposer(spec, root) : composer, spec),
       codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))].filter(pre => !isOwned(pre) && !pre.parentElement?.closest?.('pre')),
       thoughtBlocks: () => collect(spec.thoughts),

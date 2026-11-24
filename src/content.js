@@ -1077,7 +1077,7 @@
       const sidebars = adapter.sidebarSurfaces?.() || [];
       for (const element of sidebars) add(element,'data-op-sidebar-surface');
       // v0.4.3 #42: one highlight per active item; its shape (row / icon tile) selects the style.
-      for (const { element, shape } of adapter.sidebarActiveRows?.(sidebars) || []) {
+      for (const { element, shape } of adapter.sidebarActiveTargets?.(sidebars) || []) {
         add(element,'data-op-sidebar-active');
         if (shape === 'tile') add(element,'data-op-sidebar-active-tile');
       }

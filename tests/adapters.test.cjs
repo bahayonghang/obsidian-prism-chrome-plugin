@@ -579,7 +579,7 @@ function chatgptSidebar() {
   fake.body.append(sidebar);
   return { ...fake, sidebar, nav };
 }
-const activeTargets = adapter => [...adapter.sidebarActiveRows()].map(target => ({ element: target.element, shape: target.shape }));
+const activeTargets = adapter => [...adapter.sidebarActiveTargets()].map(target => ({ element: target.element, shape: target.shape }));
 
 test('sidebar active state duplicated on the whole row and its inner link highlights the whole row', () => {
   const A = adapters();
