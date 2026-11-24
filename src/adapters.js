@@ -620,7 +620,18 @@
     const scope = messages.length ? messages : [root];
     for (const container of scope) {
       if (spec.codeSurfaces) {
-        for (const node of container.querySelectorAll(spec.codeSurfaces)) add(node);
+        for (const node of container.querySelectorAll(spec.codeSurfaces)) {
+          if ((node.tagName || '').toUpperCase() === 'CODE-BLOCK') {
+            const inner = [...node.querySelectorAll('.code-block')].find(
+              candidate => !isOwned(candidate) && isVisible(candidate) && candidate.querySelector('pre, .code-block-decoration')
+            );
+            if (inner) {
+              add(inner);
+              continue;
+            }
+          }
+          add(node);
+        }
       }
       for (const pre of container.querySelectorAll('pre')) {
         if (isOwned(pre) || !isVisible(pre)) continue;

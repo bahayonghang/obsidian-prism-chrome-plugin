@@ -59,6 +59,8 @@
     'data-op-composer-column',
     'data-op-code-surface',
     'data-op-code-header',
+    'data-op-code-icon-fill',
+    'data-op-code-icon-stroke',
     'data-op-composer-dock',
     'data-op-composer-overlaid',
     'data-op-composer-scrim',
@@ -726,6 +728,27 @@
     surfaceObserver?.disconnect();surfaceObserver=null;primarySurface=null;
     dockObserver?.disconnect();dockObserver=null;observedDock=null;
   }
+  const CODE_ICON_TAGS = new Set(['svg', 'path', 'rect', 'circle', 'polygon', 'line', 'polyline', 'g']);
+  function isPaintedSvgPaint(value) {
+    const normalized = String(value || '').trim();
+    return Boolean(normalized) && !/^(?:none|transparent|rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)|url\()/i.test(normalized);
+  }
+  function markCodeHeaderSvgIcons(header, add) {
+    if (typeof getComputedStyle !== 'function') return;
+    const visit = node => {
+      if (!node || Adapters.isOwned(node)) return;
+      const tag = (node.localName || node.tagName || '').toLowerCase();
+      if (CODE_ICON_TAGS.has(tag)) {
+        const style = getComputedStyle(node);
+        if (style) {
+          if (isPaintedSvgPaint(style.fill)) add(node, 'data-op-code-icon-fill');
+          if (isPaintedSvgPaint(style.stroke)) add(node, 'data-op-code-icon-stroke');
+        }
+      }
+      for (const child of node.children || []) visit(child);
+    };
+    for (const svg of header.querySelectorAll?.('svg') || []) visit(svg);
+  }
   function syncSurfaces() {
     const targets = new Map();
     const add = (element, attribute) => {
@@ -743,7 +766,10 @@
     for (const element of adapter.composerColumns?.(composer) || []) add(element,'data-op-composer-column');
     if (!isNativePalette) {
       for (const element of adapter.codeSurfaces?.() || []) add(element,'data-op-code-surface');
-      for (const element of adapter.codeHeaders?.() || []) add(element,'data-op-code-header');
+      for (const element of adapter.codeHeaders?.() || []) {
+        add(element,'data-op-code-header');
+        markCodeHeaderSvgIcons(element, add);
+      }
       if (!isHome) {
         dockHost = adapter.composerScrimSurface?.(composer) || null;
         add(dockHost, 'data-op-composer-dock');

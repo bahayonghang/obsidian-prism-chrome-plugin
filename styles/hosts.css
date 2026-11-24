@@ -688,44 +688,82 @@ html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palett
 }
 
 /* === Code Surface Readability (v0.3.0) === */
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) code-block:has(.code-block) {
+  display: block !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block:not(:has(.code-block)), code-block .code-block, [data-testid="code-block"], .code-block-wrapper) {
+  display: block !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) code-block:has(.code-block) > .code-block {
+  margin: 0 !important;
+  max-width: 100% !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], code-block:not(:has(.code-block)), code-block .code-block, [data-testid="code-block"], .code-block-wrapper) {
   background: var(--op-code-surface) !important;
   border: 1px solid var(--op-border-strong) !important;
   border-radius: var(--op-radius-md) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"], code-block, [data-testid="code-block"], .code-block-wrapper) :is(.formatted-code-block-internal-container, pre, pre code),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"], code-block:not(:has(.code-block)), code-block .code-block, [data-testid="code-block"], .code-block-wrapper) :is(.formatted-code-block-internal-container, pre, pre code),
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"],
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code {
   background: var(--op-code-well) !important;
   color: var(--op-code-fg) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) :is(.formatted-code-block-internal-container, pre) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block:not(:has(.code-block)), code-block .code-block, [data-testid="code-block"], .code-block-wrapper) :is(.formatted-code-block-internal-container, pre) {
+  margin: 0 !important;
   border: 0 !important;
-  border-radius: 0 0 var(--op-radius-md) var(--op-radius-md) !important;
+  border-radius: 0 0 calc(var(--op-radius-md) - 1px) calc(var(--op-radius-md) - 1px) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block:not(:has(.code-block)), code-block .code-block, [data-testid="code-block"], .code-block-wrapper) > :is(.formatted-code-block-internal-container, pre):first-child,
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block:not(:has(.code-block)), code-block .code-block, [data-testid="code-block"], .code-block-wrapper) > .formatted-code-block-internal-container:first-child > pre {
+  border-radius: calc(var(--op-radius-md) - 1px) !important;
 }
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) {
   background: var(--op-code-header) !important;
   color: var(--op-code-header-fg) !important;
+  --mat-icon-color: var(--op-code-header-icon) !important;
+  --mdc-icon-button-icon-color: var(--op-code-header-icon) !important;
+  --mat-icon-button-icon-color: var(--op-code-header-icon) !important;
+  --mat-standard-button-toggle-text-color: var(--op-code-header-icon) !important;
+  --gem-sys-color--on-surface: var(--op-code-header-fg) !important;
+  --gem-sys-color--on-surface-variant: var(--op-code-header-icon) !important;
+  margin: 0 !important;
   border-bottom: 1px solid var(--op-border) !important;
-  border-radius: var(--op-radius-md) var(--op-radius-md) 0 0;
+  border-radius: calc(var(--op-radius-md) - 1px) calc(var(--op-radius-md) - 1px) 0 0 !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(span, p, label, strong) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(span, p, label, strong):not(.mat-icon, .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .google-symbols) {
   color: var(--op-code-header-fg) !important;
 }
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a) span {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a) span,
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(mat-icon, .mat-icon, .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .google-symbols, [fonticon]) {
   color: var(--op-code-header-icon) !important;
+  --mat-icon-color: var(--op-code-header-icon) !important;
   border-color: var(--op-border-strong) !important;
 }
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg {
   color: var(--op-code-header-icon) !important;
 }
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg :is(path, rect, circle, polygon, line, polyline)[stroke]:not([stroke="none"]),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[stroke]:not([stroke="none"]) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[stroke]:not([stroke="none"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg :is(path, rect, circle, polygon, line, polyline, g)[data-op-code-icon-stroke="true"]:not([stroke="none"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[data-op-code-icon-stroke="true"]:not([stroke="none"]) {
+  color: var(--op-code-header-icon) !important;
   stroke: currentColor !important;
 }
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg :is(path, rect, circle, polygon)[fill]:not([fill="none"]):not([fill="transparent"]),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[fill]:not([fill="none"]):not([fill="transparent"]) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[fill]:not([fill="none"]):not([fill="transparent"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg :is(path, rect, circle, polygon, g)[data-op-code-icon-fill="true"]:not([fill="none"]):not([fill="transparent"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[data-op-code-icon-fill="true"]:not([fill="none"]):not([fill="transparent"]) {
+  color: var(--op-code-header-icon) !important;
   fill: currentColor !important;
 }
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code span,
@@ -1120,3 +1158,23 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-m
 html[data-op-enabled="true"] h1 { --op-heading-weight: 700; }
 html[data-op-enabled="true"] h2 { --op-heading-weight: 650; }
 html[data-op-enabled="true"] :is(h3,h4) { --op-heading-weight: 600; }
+
+/* === Native Math Surface Readability & Overflow (v0.4.1 #33) === */
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-turn-key], [data-content-search-unit-key$=":user"], [data-content-search-unit-key$=":assistant"], [data-markdown-text-style="assistant-message"], [data-user-message-bubble="true"], [data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response) :is(.math-block, .math-inline, .katex-display, .katex, .katex-html, .katex-mathml, mjx-container):not([data-op-owned], [data-op-owned] *, pre, pre *) {
+  color: var(--op-fg) !important;
+  background-color: transparent !important;
+  background-image: none !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-turn-key], [data-content-search-unit-key$=":user"], [data-content-search-unit-key$=":assistant"], [data-markdown-text-style="assistant-message"], [data-user-message-bubble="true"], [data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response) :is(.math-block, .math-inline, .katex-display, .katex, mjx-container):not([data-op-owned], [data-op-owned] *, pre, pre *) *:not([data-op-owned], [data-op-owned] *, pre, pre *) {
+  color: var(--op-fg) !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-turn-key], [data-content-search-unit-key$=":user"], [data-content-search-unit-key$=":assistant"], [data-markdown-text-style="assistant-message"], [data-user-message-bubble="true"], [data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response) :is(.math-block, .katex-display, mjx-container[display="true"]):not([data-op-owned], [data-op-owned] *, pre, pre *) {
+  display: block !important;
+  width: auto !important;
+  min-width: 0 !important;
+  overflow-x: auto !important;
+  overflow-y: hidden !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-turn-key], [data-content-search-unit-key$=":user"], [data-content-search-unit-key$=":assistant"], [data-markdown-text-style="assistant-message"], [data-user-message-bubble="true"], [data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response) :is(.katex-display, mjx-container[display="true"]):not(.md-content > *):not([data-op-owned], [data-op-owned] *, pre, pre *) {
+  max-width: 100% !important;
+}
