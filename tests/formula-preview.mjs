@@ -267,8 +267,93 @@ export async function checkFormulaPreview(suite) {
       assert.equal(hostPaletteSnap.toggleColor, hostPaletteSnap.toggleParentColor, `${engine} ${host}: Native Palette toggle inherits header foreground color`);
       assert.match(hostPaletteSnap.previewBg, /^rgba\(0,\s*0,\s*0,\s*0\)$|^transparent$/);
 
-      // Disable formulaPreview setting: removes all Formula Preview UI, restores Code Surface & 48-line fold bar; re-enable restores cleanly
       await patchConfig(page, { palette: 'obsidian' }, () => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
+      await settle(page);
+
+      // Hover feedback on .op-formula-toggle must not be overridden by header button !important border-color
+      const toggleLocator = page.locator(cardSel).nth(1).locator('.op-formula-toggle');
+      const baseBorder = await toggleLocator.evaluate(btn => getComputedStyle(btn).borderTopColor);
+      await toggleLocator.hover();
+      await page.waitForTimeout(180);
+      const hoverBorder = await toggleLocator.evaluate(btn => getComputedStyle(btn).borderTopColor);
+      assert.notEqual(hoverBorder, baseBorder, `${engine} ${host}: .op-formula-toggle:hover updates border-color instead of being overridden`);
+
+      // User source mode survives transient incomplete-brace streaming updates without snapping back to preview
+      await toggleLocator.click();
+      await page.waitForFunction(sel => document.querySelectorAll(sel)[1].querySelector('.op-formula-toggle')?.getAttribute('data-formula-mode') === 'source', cardSel);
+      await page.evaluate(({ cardSel, host }) => {
+        if (host === 'chatgpt') document.querySelector('.assistant-turn')?.setAttribute('data-is-streaming', 'true');
+        else {
+          const stopBtn = document.createElement('button');
+          stopBtn.id = 'prism-test-stop-btn';
+          stopBtn.setAttribute('data-test-id', 'stop-button');
+          document.querySelector('chat-window')?.append(stopBtn);
+        }
+        document.querySelectorAll(cardSel)[1].querySelector('pre code').textContent = '\\frac{1}{';
+      }, { cardSel, host });
+      await page.waitForTimeout(360);
+      await page.evaluate(({ cardSel, host }) => {
+        document.querySelectorAll(cardSel)[1].querySelector('pre code').textContent = '\\frac{1}{2} + \\sqrt{x}';
+        if (host === 'chatgpt') document.querySelector('.assistant-turn')?.removeAttribute('data-is-streaming');
+        else document.getElementById('prism-test-stop-btn')?.remove();
+      }, { cardSel, host });
+      await page.waitForFunction(sel => document.querySelectorAll(sel)[1].querySelector('.op-formula-toggle')?.getAttribute('data-formula-mode') === 'source' && Boolean(document.querySelectorAll(sel)[1].querySelector('.op-formula-preview math')), cardSel, { timeout: 4000 });
+      const preservedMode = await page.evaluate(({ cardSel, hideSel }) => {
+        const card = document.querySelectorAll(cardSel)[1];
+        return {
+          mode: card.querySelector('.op-formula-toggle')?.getAttribute('data-formula-mode'),
+          sourceHidden: card.querySelector(hideSel)?.getAttribute('data-op-formula-source-hidden'),
+          previewHidden: card.querySelector('.op-formula-preview')?.hidden
+        };
+      }, { cardSel, hideSel });
+      assert.deepEqual(preservedMode, { mode: 'source', sourceHidden: null, previewHidden: true }, `${engine} ${host}: user source mode survives transient streaming syntax error`);
+      await page.evaluate(({ cardSel, text }) => {
+        document.querySelectorAll(cardSel)[1].querySelector('pre code').textContent = text;
+      }, { cardSel, text: nativeTexts[1] });
+      await page.waitForFunction(sel => document.querySelectorAll(sel)[1].querySelectorAll('.op-formula-preview math').length >= 2, cardSel, { timeout: 4000 });
+      await toggleLocator.click();
+      await page.waitForFunction(sel => document.querySelectorAll(sel)[1].querySelector('.op-formula-toggle')?.getAttribute('data-formula-mode') === 'preview', cardSel);
+
+      // Headerless bare <pre> gets framed .op-formula-bar + .op-formula-preview borders
+      await page.evaluate(sel => {
+        const container = document.querySelector(sel);
+        const pre = document.createElement('pre');
+        pre.id = 'prism-temp-bare-pre';
+        const code = document.createElement('code');
+        code.className = 'language-latex';
+        code.textContent = 'E = mc^2';
+        pre.append(code);
+        container.append(pre);
+      }, LIVE_SELECTORS[host].assistant);
+      await page.waitForSelector('.op-formula-bar[data-op-formula-bare="true"]');
+      const bareFrame = await page.evaluate(() => {
+        const bar = document.querySelector('.op-formula-bar[data-op-formula-bare="true"]');
+        const preview = document.querySelector('.op-formula-preview[data-op-formula-bare="true"]');
+        const barStyle = getComputedStyle(bar);
+        const prevStyle = getComputedStyle(preview);
+        return {
+          barTopBorder: barStyle.borderTopWidth,
+          barLeftBorder: barStyle.borderLeftWidth,
+          prevLeftBorder: prevStyle.borderLeftWidth,
+          prevBottomBorder: prevStyle.borderBottomWidth,
+          prevTopBorder: prevStyle.borderTopWidth
+        };
+      });
+      assert.deepEqual(bareFrame, {
+        barTopBorder: '1px',
+        barLeftBorder: '1px',
+        prevLeftBorder: '1px',
+        prevBottomBorder: '1px',
+        prevTopBorder: '0px'
+      }, `${engine} ${host}: bare headerless <pre> gets unified card border framing`);
+      await page.evaluate(() => {
+        document.querySelector('.op-formula-bar[data-op-formula-bare="true"]')?.remove();
+        document.querySelector('.op-formula-preview[data-op-formula-bare="true"]')?.remove();
+        document.getElementById('prism-temp-bare-pre')?.remove();
+      });
+      await page.waitForFunction(() => !document.querySelector('[data-op-formula-bare]') && ObsidianPrismRuntime.diagnostics().formulaBlocks === 4);
+
+      // Disable formulaPreview setting: removes all Formula Preview UI, restores Code Surface & 48-line fold bar; re-enable restores cleanly
       await patchConfig(page, { formulaPreview: false }, () => document.documentElement.getAttribute('data-op-formula-preview') === 'false' && document.querySelectorAll('.op-formula-preview').length === 0);
       await settle(page);
       const disabledFormulaSnap = await page.evaluate(({ cardSel, hideSel }) => ({
@@ -277,13 +362,12 @@ export async function checkFormulaPreview(suite) {
         toggles: document.querySelectorAll('.op-formula-toggle').length,
         bars: document.querySelectorAll('.op-formula-bar').length,
         hiddenAttrs: document.querySelectorAll('[data-op-formula-source-hidden]').length,
-        activeAttrs: document.querySelectorAll('[data-op-formula-active]').length,
         allSourcesVisible: [...document.querySelectorAll(`${cardSel} ${hideSel}`)].every(n => getComputedStyle(n).display !== 'none'),
         nativeIdentitiesIntact: [...document.querySelectorAll(`${cardSel} pre code`)].every((node, i) => node === window.__prismNativeCodes[i]),
         card5FoldBars: document.querySelectorAll(cardSel)[5].querySelectorAll('.op-code-fold-bar').length
       }), { cardSel, hideSel });
       assert.deepEqual(disabledFormulaSnap, {
-        formulaBlocks: 0, previews: 0, toggles: 0, bars: 0, hiddenAttrs: 0, activeAttrs: 0,
+        formulaBlocks: 0, previews: 0, toggles: 0, bars: 0, hiddenAttrs: 0,
         allSourcesVisible: true, nativeIdentitiesIntact: true, card5FoldBars: 1
       }, `${engine} ${host}: formulaPreview: false restores original Code Surface and 48-line fold bar with zero residue`);
 
@@ -316,10 +400,9 @@ export async function checkFormulaPreview(suite) {
           toggles: document.querySelectorAll('.op-formula-toggle').length,
           bars: document.querySelectorAll('.op-formula-bar').length,
           hiddenAttrs: document.querySelectorAll('[data-op-formula-source-hidden]').length,
-          activeAttrs: document.querySelectorAll('[data-op-formula-active]').length,
           allSourcesVisible: [...document.querySelectorAll(`${cardSel} ${hideSel}`)].every(n => getComputedStyle(n).display !== 'none')
         }), { cardSel, hideSel });
-        assert.deepEqual(clean, { owned: 0, previews: 0, toggles: 0, bars: 0, hiddenAttrs: 0, activeAttrs: 0, allSourcesVisible: true }, `${engine} ${host}: ${label} leaves zero Formula Preview residue`);
+        assert.deepEqual(clean, { owned: 0, previews: 0, toggles: 0, bars: 0, hiddenAttrs: 0, allSourcesVisible: true }, `${engine} ${host}: ${label} leaves zero Formula Preview residue`);
       }
 
       await patchConfig(page, { enabled: true }, () => document.querySelectorAll('.op-formula-preview').length === 4);
@@ -332,12 +415,11 @@ export async function checkFormulaPreview(suite) {
         toggles: document.querySelectorAll('.op-formula-toggle').length,
         bars: document.querySelectorAll('.op-formula-bar').length,
         hiddenAttrs: document.querySelectorAll('[data-op-formula-source-hidden]').length,
-        activeAttrs: document.querySelectorAll('[data-op-formula-active]').length,
         allSourcesVisible: [...document.querySelectorAll(`${cardSel} ${hideSel}`)].every(n => getComputedStyle(n).display !== 'none'),
         nativeIdentitiesIntact: [...document.querySelectorAll(`${cardSel} pre code`)].every((node, i) => node === window.__prismNativeCodes[i])
       }), { cardSel, hideSel });
       assert.deepEqual(stoppedClean, {
-        formulaBlocks: 0, owned: 0, previews: 0, toggles: 0, bars: 0, hiddenAttrs: 0, activeAttrs: 0,
+        formulaBlocks: 0, owned: 0, previews: 0, toggles: 0, bars: 0, hiddenAttrs: 0,
         allSourcesVisible: true, nativeIdentitiesIntact: true
       }, `${engine} ${host}: stop() leaves zero Formula Preview residue`);
 

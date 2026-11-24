@@ -5,8 +5,7 @@
   'use strict';
 
   const EXPLICIT_MATH_HINTS = new Set(['latex', 'tex', 'math', 'katex', 'latex-math', 'mathjax']);
-  const GENERIC_HINTS = new Set(['', 'code snippet', 'snippet', 'text', 'plain text', 'plaintext', 'txt', 'code']);
-  const HEADER_SELECTOR = '.code-block-decoration, .code-header, .code-shell-header, [data-testid="code-block-header"], [data-test-id="code-block-header"], [data-op-code-header="true"]';
+  const GENERIC_HINTS = new Set(['', 'code snippet', 'snippet', 'text', 'plain text', 'plaintext', 'txt', 'code', '代码段', '代码片段', '代码', '纯文本', '文本']);
   const LANG_CLASS_RE = /\b(?:language|lang)-([a-z0-9_+-]+)\b/i;
   const PREAMBLE_RE = /(?:^|\n)\s*\\(?:documentclass|usepackage)\b|\\begin\{document\}/;
   const MATH_ENV_RE = /\\begin\{(?:aligned|align\*?|equation\*?|gather\*?|multline\*?|cases|dcases|rcases|matrix|pmatrix|bmatrix|Bmatrix|vmatrix|Vmatrix|smallmatrix|split|array|subequations)\}/;
@@ -51,7 +50,30 @@
     return walk(header).replace(/\s+/g, ' ').trim();
   }
 
-  function extractLanguageHint(surface, pre, code) {
+  function containsNode(root, target) {
+    for (let cur = target; cur; cur = cur.parentElement) {
+      if (cur === root) return true;
+    }
+    return false;
+  }
+
+  function findGenericHeader(surface, pre) {
+    if (!surface || surface === pre) return null;
+    for (const child of surface.children || []) {
+      if (child === pre || containsNode(child, pre) || child.hasAttribute?.('data-op-owned')) continue;
+      if (child.getAttribute?.('data-op-code-header') === 'true') return child;
+    }
+    for (const child of surface.children || []) {
+      if (child === pre || containsNode(child, pre)) break;
+      if (child.hasAttribute?.('data-op-owned')) continue;
+      const tag = (child.localName || child.tagName || '').toLowerCase();
+      if (tag === 'button' || tag === 'svg' || child.getAttribute?.('role') === 'button') continue;
+      if (headerLabelText(child)) return child;
+    }
+    return null;
+  }
+
+  function extractLanguageHint(surface, pre, code, header = null) {
     const nodes = [code, pre, surface].filter(Boolean);
     for (const node of nodes) {
       const cls = node.getAttribute?.('class') || node.className || '';
@@ -62,8 +84,9 @@
       const attr = node.getAttribute?.('data-language') || node.getAttribute?.('data-lang');
       if (attr && String(attr).trim()) return String(attr).trim().toLowerCase();
     }
-    const header = surface?.querySelector?.(HEADER_SELECTOR) || pre?.parentElement?.querySelector?.(HEADER_SELECTOR);
-    return headerLabelText(header).toLowerCase();
+    if (typeof header === 'string') return header.trim().toLowerCase();
+    const resolvedHeader = header || findGenericHeader(surface, pre);
+    return headerLabelText(resolvedHeader).toLowerCase();
   }
 
   function isLikelyLatex(source, languageHint = '') {
@@ -153,10 +176,12 @@
     const segments = [];
     let pendingComments = [];
     let mathLines = [];
+    let activeDisplayDelimiter = null;
     const state = { braceDepth: 0, envDepth: 0, inDollarDisplay: false, bracketDepth: 0 };
     const atDepthZero = () => state.braceDepth === 0 && state.envDepth === 0 && !state.inDollarDisplay && state.bracketDepth === 0;
 
     const flush = () => {
+      activeDisplayDelimiter = null;
       if (!mathLines.length) return;
       const raw = mathLines.join('\n').trim();
       mathLines = [];
@@ -168,7 +193,8 @@
     };
 
     for (const line of lines) {
-      const blank = !line.trim();
+      const trimmed = line.trim();
+      const blank = !trimmed;
       if (atDepthZero()) {
         if (blank) {
           flush();
@@ -180,9 +206,19 @@
           if (caption) pendingComments.push(caption);
           continue;
         }
+        if (mathLines.length > 0 && (trimmed.startsWith('$$') || trimmed.startsWith('\\['))) {
+          flush();
+        }
+      }
+      if (mathLines.length === 0 && atDepthZero()) {
+        if (trimmed.startsWith('$$')) activeDisplayDelimiter = '$$';
+        else if (trimmed.startsWith('\\[')) activeDisplayDelimiter = '\\[';
       }
       mathLines.push(line);
       updateDelimiters(line, state);
+      if (activeDisplayDelimiter && atDepthZero()) {
+        flush();
+      }
     }
     flush();
     return segments;

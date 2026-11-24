@@ -196,7 +196,7 @@ html[data-op-enabled="true"] .op-formula-preview .tml-shift-left { margin-left:-
     position: relative;
     padding: 0.5ex 0ex;
   }
-  
+
     html[data-op-enabled="true"] .op-formula-preview .tml-overline {
     padding: 0.1em 0 0 0;
     border-top: 0.065em solid;
@@ -248,7 +248,7 @@ html[data-op-enabled="true"] .op-formula-preview .tml-shift-left { margin-left:-
     text-align: left;
     position: relative;
   }
-  
+
   html[data-op-enabled="true"] .op-formula-preview .phasor-bottom {
     border-bottom: 0.067em solid;
     padding: 0.2em 0.2em 0.1em 0.6em;
@@ -312,7 +312,7 @@ html[data-op-enabled="true"] .op-formula-preview .tml-shift-left { margin-left:-
   html[data-op-enabled="true"] .op-formula-preview .tml-hat-4 {
     transform: scale(7.8, 1.0)
   }
-  
+
   /* set array cell justification */
   html[data-op-enabled="true"] .op-formula-preview .tml-right {
     text-align: -webkit-right;

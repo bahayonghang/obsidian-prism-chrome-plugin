@@ -93,13 +93,83 @@ const temmlCss = read('vendor/temml/temml-local.css');
 const temmlCssCode = temmlCss.replace(/\/\*[\s\S]*?\*\//g, '');
 assert(!/@font-face\b|@import\b|\.woff2?\b|url\(\s*['"]?https?:/i.test(temmlCssCode), 'vendor/temml/temml-local.css: forbidden webfont, @import, or remote url');
 assert(!/^\s*(?:body|math)(?![\w-])/m.test(temmlCssCode), 'vendor/temml/temml-local.css: unscoped body or math rule');
-for (const match of temmlCssCode.matchAll(/([^{}]+)\{/g)) {
-  const header = match[1].replace(/^[^{}]*\}/, '').trim();
-  if (!header || header.startsWith('@')) continue;
-  for (const sel of header.split(',').map(s => s.trim()).filter(Boolean)) {
-    assert(sel.startsWith('html[data-op-enabled="true"] .op-formula-preview'), `vendor/temml/temml-local.css: unscoped selector "${sel}"`);
+
+function splitTopLevelSelectors(selectorText) {
+  const parts = [];
+  let parenDepth = 0;
+  let bracketDepth = 0;
+  let quote = '';
+  let start = 0;
+  for (let i = 0; i < selectorText.length; i++) {
+    const ch = selectorText[i];
+    if (quote) {
+      if (ch === '\\') i++;
+      else if (ch === quote) quote = '';
+      continue;
+    }
+    if (ch === '"' || ch === "'") { quote = ch; continue; }
+    if (ch === '(') parenDepth++;
+    else if (ch === ')') parenDepth = Math.max(0, parenDepth - 1);
+    else if (ch === '[') bracketDepth++;
+    else if (ch === ']') bracketDepth = Math.max(0, bracketDepth - 1);
+    else if (ch === ',' && parenDepth === 0 && bracketDepth === 0) {
+      const part = selectorText.slice(start, i).trim();
+      if (part) parts.push(part);
+      start = i + 1;
+    }
+  }
+  const tail = selectorText.slice(start).trim();
+  if (tail) parts.push(tail);
+  return parts;
+}
+
+function parseCssRules(css) {
+  const rules = [];
+  let i = 0;
+  while (i < css.length) {
+    const open = css.indexOf('{', i);
+    if (open === -1) break;
+    const selector = css.slice(i, open).trim();
+    let depth = 1;
+    let quote = '';
+    let j = open + 1;
+    while (j < css.length && depth > 0) {
+      const ch = css[j];
+      if (quote) {
+        if (ch === '\\') j++;
+        else if (ch === quote) quote = '';
+      } else if (ch === '"' || ch === "'") {
+        quote = ch;
+      } else if (ch === '{') {
+        depth++;
+      } else if (ch === '}') {
+        depth--;
+      }
+      j++;
+    }
+    const body = css.slice(open + 1, j - 1).trim();
+    if (selector.startsWith('@')) {
+      rules.push({ selector, body, isAtRule: true, nested: parseCssRules(body) });
+    } else if (selector) {
+      rules.push({ selector, body, isAtRule: false });
+    }
+    i = j;
+  }
+  return rules;
+}
+
+function validateTemmlSelectors(rules) {
+  for (const rule of rules) {
+    if (rule.isAtRule) {
+      if (!/^@keyframes\b/i.test(rule.selector)) validateTemmlSelectors(rule.nested);
+      continue;
+    }
+    for (const sel of splitTopLevelSelectors(rule.selector)) {
+      assert(sel.startsWith('html[data-op-enabled="true"] .op-formula-preview'), `vendor/temml/temml-local.css: unscoped selector "${sel}"`);
+    }
   }
 }
+validateTemmlSelectors(parseCssRules(temmlCssCode));
 const html = read('popup/popup.html');
 assert(!/\son[a-z]+\s*=/i.test(html), 'Popup cannot use inline event handlers');
 for (const script of html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/gi)) {

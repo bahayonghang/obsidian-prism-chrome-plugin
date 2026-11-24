@@ -182,6 +182,31 @@ test('extractLanguageHint reads language-* classes, data-language, and header la
   pre4.append(code4);
   surface4.append(header4, pre4);
   assert.equal(Formula.extractLanguageHint(surface4, pre4, code4), 'code snippet');
+
+  // Explicit adapter-resolved header element or string takes precedence without host selectors
+  const customWrap = makeNode('div');
+  const customHeader = makeNode('div'); customHeader.className = 'custom-host-header';
+  const customSpan = makeNode('span'); customSpan.textContent = '代码段';
+  const customBtn = makeNode('button'); customBtn.textContent = '复制';
+  customHeader.append(customSpan, customBtn);
+  const customPre = makeNode('pre');
+  const customCode = makeNode('code');
+  customPre.append(customCode);
+  customWrap.append(customHeader, customPre);
+  assert.equal(Formula.extractLanguageHint(customWrap, customPre, customCode, customHeader), '代码段');
+  assert.equal(Formula.extractLanguageHint(customWrap, customPre, customCode, 'LaTeX'), 'latex');
+
+  // Bare <pre> (surface === pre) must not read sibling header labels from parent prose container
+  const mdParent = makeNode('div'); mdParent.className = 'markdown';
+  const siblingShell = makeNode('div');
+  const siblingHdr = makeNode('div'); siblingHdr.className = 'code-shell-header';
+  siblingHdr.textContent = 'Python';
+  siblingShell.append(siblingHdr);
+  const barePre = makeNode('pre');
+  const bareCode = makeNode('code');
+  barePre.append(bareCode);
+  mdParent.append(siblingShell, barePre);
+  assert.equal(Formula.extractLanguageHint(barePre, barePre, bareCode), '');
 });
 
 test('isLikelyLatex matches explicit math labels and conservative unlabeled LaTeX while rejecting non-math code', () => {
@@ -210,6 +235,10 @@ test('isLikelyLatex matches explicit math labels and conservative unlabeled LaTe
   assert.equal(Formula.isLikelyLatex('$$\\int_0^1 x^2 \\, dx = \\frac{1}{3}$$', 'text'), true);
   assert.equal(Formula.isLikelyLatex('\\[\\nabla \\cdot E = \\frac{\\rho}{\\varepsilon_0}\\]', 'snippet'), true);
   assert.equal(Formula.isLikelyLatex('\\alpha + \\beta = \\gamma', ''), true);
+  assert.equal(Formula.isLikelyLatex('% 目标函数\n\\frac{a}{b} = c', '代码段'), true);
+  assert.equal(Formula.isLikelyLatex('\\begin{aligned}\na &= b\n\\end{aligned}', '代码片段'), true);
+  assert.equal(Formula.isLikelyLatex('\\alpha + \\beta = \\gamma', '代码'), true);
+  assert.equal(Formula.isLikelyLatex('const x = 1;\nconsole.log(x);', '代码段'), false);
 
   // Generic / unlabeled programming & preamble negatives
   const negatives = [
@@ -263,6 +292,15 @@ test('segmentLatex splits depth-0 blank lines, preserves multi-line environments
   assert.deepEqual(segments[2].comments, ['3. 紧邻注释开启新段']);
   assert.equal(segments[2].math, 'E = mc^2');
   assert.equal(segments[2].raw, '\\[E = mc^2\\]');
+
+  const adjacentSingle = JSON.parse(JSON.stringify(Formula.segmentLatex('$$a = 1$$\n$$b = 2$$\n\\[c = 3\\]\n\\[d = 4\\]')));
+  assert.deepEqual(adjacentSingle.map(s => s.math), ['a = 1', 'b = 2', 'c = 3', 'd = 4']);
+
+  const adjacentMulti = JSON.parse(JSON.stringify(Formula.segmentLatex('$$\na = 1\n$$\n$$\nb = 2\n$$\n\\[\nc = 3\n\\]\n\\[\nd = 4\n\\]')));
+  assert.deepEqual(adjacentMulti.map(s => s.math), ['a = 1', 'b = 2', 'c = 3', 'd = 4']);
+
+  const bareThenDelimited = JSON.parse(JSON.stringify(Formula.segmentLatex('a = 1\n$$b = 2$$')));
+  assert.deepEqual(bareThenDelimited.map(s => s.math), ['a = 1', 'b = 2']);
 });
 
 test('renderFormulaPreview renders MathML via Temml, degrades single failing segments, and rejects all-invalid blocks', () => {

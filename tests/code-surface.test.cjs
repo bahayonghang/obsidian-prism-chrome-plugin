@@ -294,4 +294,11 @@ test('v0.4.1 #34: hosts.css scopes Formula Preview rules, hides source cleanly, 
   assert.match(section, /\.op-formula-math[\s\S]*?overflow-x\s*:\s*auto/i);
   assert.match(section, /\[data-op-effective-palette="host"\]\s+\.op-formula-preview\[data-op-owned\][\s\S]*?color\s*:\s*inherit/i);
   assert.match(section, /\[data-op-effective-palette="host"\]\s+\.op-formula-toggle\[data-op-owned\][\s\S]*?color\s*:\s*inherit/i);
+
+  assert.equal(HOSTS_CSS.includes('--op-font-code'), false, 'hosts.css must use --op-code-font-family rather than nonexistent --op-font-code');
+  assert.match(section, /\.op-formula-fallback[\s\S]*?var\(--op-code-font-family\)/);
+  assert.match(HOSTS_CSS, /:is\(button,\s*\[role="button"\],\s*a\):not\(\.op-formula-toggle\)[\s\S]*?border-color:\s*var\(--op-border-strong\)\s*!important/);
+  assert.match(section, /\.op-formula-bar\[data-op-owned\]\[data-op-formula-bare="true"\][\s\S]*?border:\s*1px\s+solid/i);
+  assert.match(section, /\.op-formula-preview\[data-op-owned\]\[data-op-formula-bare="true"\][\s\S]*?border:\s*1px\s+solid/i);
+  assert.match(section, /\.op-formula-bar\[data-op-owned\]\[data-op-formula-bare="true"\]\s*\+\s*pre:not\(\[data-op-formula-source-hidden="true"\]\)/);
 });

@@ -742,8 +742,8 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-o
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(span, p, label, strong):not(.mat-icon, .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .google-symbols) {
   color: var(--op-code-header-fg) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a) span,
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a):not(.op-formula-toggle),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a):not(.op-formula-toggle) span,
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(mat-icon, .mat-icon, .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .google-symbols, [fonticon]) {
   color: var(--op-code-header-icon) !important;
   --mat-icon-color: var(--op-code-header-icon) !important;
@@ -1197,9 +1197,19 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) .op-formula
   background: var(--op-code-well);
   color: var(--op-code-fg);
 }
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) .op-formula-preview[data-op-owned][data-op-formula-bare="true"] {
+  border: 1px solid var(--op-border-strong);
+  border-top: 0;
+  border-radius: 0 0 var(--op-radius-md) var(--op-radius-md);
+}
 html[data-op-enabled="true"][data-op-effective-palette="host"] .op-formula-preview[data-op-owned] {
   color: inherit;
   background: transparent;
+}
+html[data-op-enabled="true"][data-op-effective-palette="host"] .op-formula-preview[data-op-owned][data-op-formula-bare="true"] {
+  border: 1px solid color-mix(in srgb, currentColor 18%, transparent);
+  border-top: 0;
+  border-radius: 0 0 var(--op-radius-md) var(--op-radius-md);
 }
 html[data-op-enabled="true"] .op-formula-preview[data-op-owned] .op-formula-segment {
   display: block;
@@ -1236,7 +1246,7 @@ html[data-op-enabled="true"] .op-formula-preview[data-op-owned] .op-formula-fall
   margin: 0;
   padding: 10px 12px;
   border-radius: var(--op-radius-sm);
-  font-family: var(--op-font-code, ui-monospace, SFMono-Regular, Menlo, Consolas, monospace);
+  font-family: var(--op-code-font-family);
   font-size: 13px;
   line-height: 1.55;
   white-space: pre-wrap;
@@ -1261,10 +1271,28 @@ html[data-op-enabled="true"] .op-formula-bar[data-op-owned] {
   color: var(--op-code-header-fg);
   border-radius: calc(var(--op-radius-md) - 1px) calc(var(--op-radius-md) - 1px) 0 0;
 }
+html[data-op-enabled="true"] .op-formula-bar[data-op-owned][data-op-formula-bare="true"] {
+  border: 1px solid var(--op-border-strong);
+  border-bottom: 1px solid var(--op-border);
+  border-radius: var(--op-radius-md) var(--op-radius-md) 0 0;
+}
+html[data-op-enabled="true"] .op-formula-bar[data-op-owned][data-op-formula-bare="true"] + pre:not([data-op-formula-source-hidden="true"]) {
+  margin-top: 0 !important;
+  border-top-left-radius: 0 !important;
+  border-top-right-radius: 0 !important;
+}
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) .op-formula-bar[data-op-owned][data-op-formula-bare="true"] + pre:not([data-op-formula-source-hidden="true"]) {
+  border-top: 0 !important;
+}
 html[data-op-enabled="true"][data-op-effective-palette="host"] .op-formula-bar[data-op-owned] {
   color: inherit;
   background: transparent;
   border-bottom-color: color-mix(in srgb, currentColor 16%, transparent);
+}
+html[data-op-enabled="true"][data-op-effective-palette="host"] .op-formula-bar[data-op-owned][data-op-formula-bare="true"] {
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  border-color: color-mix(in srgb, currentColor 18%, transparent);
+  border-bottom-color: color-mix(in srgb, currentColor 14%, transparent);
 }
 html[data-op-enabled="true"] .op-formula-toggle[data-op-owned] {
   display: inline-flex;
@@ -1284,7 +1312,8 @@ html[data-op-enabled="true"] .op-formula-toggle[data-op-owned] {
   color: var(--op-code-header-icon);
   transition: background 140ms ease, border-color 140ms ease;
 }
-html[data-op-enabled="true"] .op-formula-toggle[data-op-owned]:hover {
+html[data-op-enabled="true"] .op-formula-toggle[data-op-owned]:hover,
+html[data-op-enabled="true"] .op-formula-toggle[data-op-owned]:focus-visible {
   background: color-mix(in srgb, var(--op-accent) 16%, transparent);
   border-color: var(--op-accent);
 }
@@ -1299,6 +1328,8 @@ html[data-op-enabled="true"][data-op-effective-palette="host"] .op-formula-toggl
   background: color-mix(in srgb, currentColor 8%, transparent);
   border-color: color-mix(in srgb, currentColor 20%, transparent);
 }
-html[data-op-enabled="true"][data-op-effective-palette="host"] .op-formula-toggle[data-op-owned]:hover {
+html[data-op-enabled="true"][data-op-effective-palette="host"] .op-formula-toggle[data-op-owned]:hover,
+html[data-op-enabled="true"][data-op-effective-palette="host"] .op-formula-toggle[data-op-owned]:focus-visible {
   background: color-mix(in srgb, currentColor 14%, transparent);
+  border-color: color-mix(in srgb, currentColor 36%, transparent);
 }

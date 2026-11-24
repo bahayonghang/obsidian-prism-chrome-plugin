@@ -10,7 +10,6 @@
   const host = Schema?.detectHost();
   const adapter = Adapters?.forHost(host);
   if (!Schema || !adapter) return;
-  const FORMULA_HEADER_SELECTOR = '.code-block-decoration, .code-header, .code-shell-header, [data-testid="code-block-header"], [data-test-id="code-block-header"], [data-op-code-header="true"]';
   const FORMULA_DEBOUNCE_MS = 280;
 
   let cfg = Schema.DEFAULT_CONFIG;
@@ -193,7 +192,6 @@
     const keepToggles = new Set([...formulas.values()].filter(e => e.renderedOk).map(e => e.toggleBtn));
     const keepBars = new Set([...formulas.values()].filter(e => e.renderedOk && e.barEl).map(e => e.barEl));
     const keepHiddenTargets = new Set([...formulas.values()].filter(e => e.renderedOk && e.mode === 'preview').map(e => e.hideTarget));
-    const keepActiveSurfaces = new Set([...formulas.values()].filter(e => e.renderedOk && e.mode === 'preview' && e.surface && e.surface !== e.pre).map(e => e.surface));
     for (const node of queryAllNodes('#op-bottom-dock, .op-dock[data-op-owned]')) if (node !== dock) node.remove();
     for (const node of queryAllNodes('#op-rail-root, .op-rail[data-op-owned]')) if (node !== rail) node.remove();
     for (const node of queryAllNodes('#op-ambient-stage, .op-ambient[data-op-owned]')) if (node !== ambient) node.remove();
@@ -203,7 +201,6 @@
     for (const node of queryAllNodes('.op-formula-toggle[data-op-owned]')) if (!keepToggles.has(node)) node.remove();
     for (const node of queryAllNodes('.op-formula-bar[data-op-owned]')) if (!keepBars.has(node)) node.remove();
     for (const node of queryAllNodes('[data-op-formula-source-hidden="true"]')) if (!keepHiddenTargets.has(node)) node.removeAttribute('data-op-formula-source-hidden');
-    for (const node of queryAllNodes('[data-op-formula-active="true"]')) if (!keepActiveSurfaces.has(node)) node.removeAttribute('data-op-formula-active');
   }
 
   const t = key => Schema.t(cfg, key);
@@ -232,7 +229,6 @@
     clearTimeout(entry.debounceTimer);
     entry.debounceTimer = null;
     entry.hideTarget?.removeAttribute('data-op-formula-source-hidden');
-    if (entry.surface && entry.surface !== pre) entry.surface.removeAttribute('data-op-formula-active');
     entry.previewEl?.remove();
     entry.toggleBtn?.remove();
     entry.barEl?.remove();
@@ -348,38 +344,22 @@
     return Boolean(entry && entry.renderedOk && entry.mode === 'preview');
   }
   function resolveFormulaSurface(pre, hostSurfaces) {
-    const matched = hostSurfaces.find(surface => surface === pre || surface.contains?.(pre));
-    if (matched) return matched;
-    const closestSurface = pre.closest?.('.code-block, [data-testid="code-block"], .code-block-wrapper, .code-shell');
-    if (closestSurface) return closestSurface;
-    const parent = pre.parentElement;
-    if (parent?.classList?.contains('formatted-code-block-internal-container')) {
-      return parent.parentElement || parent;
-    }
-    if (parent && !Adapters.isOwned(parent) && parent.querySelectorAll?.('pre').length === 1 && parent.querySelector?.(FORMULA_HEADER_SELECTOR)) {
-      return parent;
-    }
+    if (typeof adapter.codeSurfaceFor === 'function') return adapter.codeSurfaceFor(pre, hostSurfaces) || pre;
+    return hostSurfaces.find(surface => surface === pre || surface.contains?.(pre)) || pre;
+  }
+  function resolveFormulaHideTarget(pre, surface) {
+    if (typeof adapter.codeWellFor === 'function') return adapter.codeWellFor(pre, surface) || pre;
     return pre;
   }
-  function resolveFormulaHideTarget(pre) {
-    const parent = pre.parentElement;
-    const isInternal = Boolean(
-      parent &&
-      !Adapters.isOwned(parent) &&
-      parent.classList?.contains('formatted-code-block-internal-container') &&
-      parent.querySelectorAll?.('pre').length === 1 &&
-      [...(parent.children || [])].every(child => child === pre || Adapters.isOwned(child))
-    );
-    return isInternal ? parent : pre;
-  }
   function resolveFormulaHeader(surface, pre, hostHeaders) {
-    const matched = hostHeaders.find(header => surface && surface !== pre && surface.contains?.(header));
-    if (matched) return matched;
-    const scope = surface && surface !== pre ? surface : pre.parentElement;
-    return scope?.querySelector?.(FORMULA_HEADER_SELECTOR) || null;
+    if (typeof adapter.codeHeaderFor === 'function') return adapter.codeHeaderFor(surface, pre, hostHeaders) || null;
+    return hostHeaders.find(header => surface && surface !== pre && surface.contains?.(header)) || null;
   }
   function mountFormulaToggle(entry) {
     const { header, toggleBtn, hideTarget } = entry;
+    const isBare = !header && entry.surface === entry.pre;
+    if (isBare) entry.previewEl.setAttribute('data-op-formula-bare', 'true');
+    else entry.previewEl.removeAttribute('data-op-formula-bare');
     if (header) {
       const actionBox = [...(header.children || [])].find(child =>
         !Adapters.isOwned(child) &&
@@ -410,6 +390,8 @@
     }
     toggleBtn.removeAttribute('data-op-formula-header-direct');
     if (!entry.barEl) entry.barEl = own(make('div', 'op-formula-bar'));
+    if (isBare) entry.barEl.setAttribute('data-op-formula-bare', 'true');
+    else entry.barEl.removeAttribute('data-op-formula-bare');
     if (toggleBtn.parentElement !== entry.barEl) entry.barEl.append(toggleBtn);
     if (entry.barEl.nextElementSibling !== hideTarget) {
       if (typeof hideTarget.before === 'function') hideTarget.before(entry.barEl);
@@ -428,15 +410,16 @@
     const showPreview = Boolean(entry.renderedOk && entry.mode === 'preview');
     if (showPreview) {
       entry.hideTarget.setAttribute('data-op-formula-source-hidden', 'true');
-      if (entry.surface && entry.surface !== entry.pre) entry.surface.setAttribute('data-op-formula-active', 'true');
       entry.previewEl.hidden = false;
       if (entry.hideTarget.nextElementSibling !== entry.previewEl) {
         entry.hideTarget.insertAdjacentElement('afterend', entry.previewEl);
       }
     } else {
       entry.hideTarget.removeAttribute('data-op-formula-source-hidden');
-      if (entry.surface && entry.surface !== entry.pre) entry.surface.removeAttribute('data-op-formula-active');
       entry.previewEl.hidden = true;
+      if (entry.renderedOk && entry.hideTarget.nextElementSibling !== entry.previewEl) {
+        entry.hideTarget.insertAdjacentElement('afterend', entry.previewEl);
+      }
     }
     mountFormulaToggle(entry);
     updateFormulaToggleLabel(entry);
@@ -449,7 +432,7 @@
     }
     const code = entry.pre.querySelector('code') || entry.pre;
     const source = Adapters.textOf(code);
-    const hint = Formula.extractLanguageHint(entry.surface, entry.pre, code);
+    const hint = Formula.extractLanguageHint(entry.surface, entry.pre, code, entry.header);
     entry.code = code;
     entry.lastSource = source;
     entry.lastHint = hint;
@@ -460,6 +443,18 @@
     }
     const rendered = Formula.renderFormulaPreview(document, global.temml, source);
     if (!rendered.ok || !rendered.fragment) {
+      if (entry.mode === 'source') {
+        entry.renderedOk = false;
+        entry.hideTarget?.removeAttribute('data-op-formula-source-hidden');
+        entry.previewEl.replaceChildren();
+        entry.previewEl.hidden = true;
+        entry.previewEl.remove();
+        entry.toggleBtn.remove();
+        entry.barEl?.remove();
+        entry.barEl = null;
+        syncCodes();
+        return;
+      }
       cleanupFormula(entry.pre, entry);
       syncCodes();
       return;
@@ -487,9 +482,9 @@
       const code = pre.querySelector('code') || pre;
       const source = Adapters.textOf(code);
       const surface = resolveFormulaSurface(pre, hostSurfaces);
-      const hideTarget = resolveFormulaHideTarget(pre);
+      const hideTarget = resolveFormulaHideTarget(pre, surface);
       const header = resolveFormulaHeader(surface, pre, hostHeaders);
-      const hint = Formula.extractLanguageHint(surface, pre, code);
+      const hint = Formula.extractLanguageHint(surface, pre, code, header);
       let entry = formulas.get(pre);
       if (entry) {
         entry.code = code;

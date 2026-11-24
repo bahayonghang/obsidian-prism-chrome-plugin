@@ -75,6 +75,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
         if (pos === 'afterend') {
           if (node.parentElement) node.remove();
           node.parentElement = this.parentElement;
+          node.isConnected = this.parentElement.isConnected;
           const cIdx = this.parentElement.children.indexOf(this);
           this.parentElement.children.splice(cIdx + 1, 0, node);
           const cnIdx = this.parentElement.childNodes.indexOf(this);
@@ -89,6 +90,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
           if (!node || typeof node !== 'object') continue;
           if (node.parentElement) node.remove();
           node.parentElement = this.parentElement;
+          node.isConnected = this.parentElement.isConnected;
           const cIdx = this.parentElement.children.indexOf(this);
           this.parentElement.children.splice(cIdx, 0, node);
           const cnIdx = this.parentElement.childNodes.indexOf(this);
@@ -103,6 +105,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
               this.append(...n.children);
             } else {
               n.parentElement = this;
+              n.isConnected = this.isConnected;
               this.childNodes.push(n);
               if (n.nodeType !== 3) this.children.push(n);
             }
@@ -117,7 +120,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
             else added.push(n);
           }
         }
-        for (const n of added) n.parentElement = this;
+        for (const n of added) { n.parentElement = this; n.isConnected = this.isConnected; }
         this.childNodes.unshift(...added);
         this.children.unshift(...added.filter(n => n.nodeType !== 3));
       },
@@ -234,6 +237,9 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     composerChips: () => [chip],
     codeSurfaces: () => options.codeSurfaces ? options.codeSurfaces() : [codeSurface],
     codeHeaders: () => options.codeHeaders ? options.codeHeaders() : [codeHeader],
+    codeSurfaceFor: options.codeSurfaceFor || ((pre, surfaces = []) => surfaces.find(s => s === pre || s.contains?.(pre)) || pre),
+    codeHeaderFor: options.codeHeaderFor || ((surface, pre, headers = []) => headers.find(h => surface && surface !== pre && surface.contains?.(h)) || null),
+    codeWellFor: options.codeWellFor || (pre => (host === 'gemini' && pre.parentElement?.classList?.contains('formatted-code-block-internal-container') ? pre.parentElement : pre)),
     threadTailSpacers: () => [spacer],
     threadColumns: () => [threadCol],
     composerColumns: () => [composerCol],
@@ -1185,7 +1191,8 @@ test('v0.4.0 handover: same-realm double-injection keeps active marks flicker-fr
 
   const SURFACE_ATTRS = [
     'data-op-main-surface', 'data-op-thread-column', 'data-op-composer-column', 'data-op-code-surface',
-    'data-op-code-header', 'data-op-composer-dock', 'data-op-composer-overlaid', 'data-op-composer-scrim', 'data-op-thread-scroller', 'data-op-scroller-fade',
+    'data-op-code-header', 'data-op-code-icon-fill', 'data-op-code-icon-stroke',
+    'data-op-composer-dock', 'data-op-composer-overlaid', 'data-op-composer-scrim', 'data-op-thread-scroller', 'data-op-scroller-fade',
     'data-op-composer-empty-sibling', 'data-op-composer-disclaimer', 'data-op-thread-spacer',
     'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-header-empty', 'data-op-composer-leading', 'data-op-composer-primary',
     'data-op-composer-trailing', 'data-op-composer-toolbar', 'data-op-composer-add', 'data-op-model-capsule',
@@ -1716,7 +1723,6 @@ test('v0.4.1 #34: runtime Formula Preview renders MathML, toggles losslessly, sk
   await new Promise(resolve => setTimeout(resolve, 20));
 
   assert.equal(ctx.runtime.diagnostics().formulaBlocks, 1);
-  assert.equal(surface.getAttribute('data-op-formula-active'), 'true');
   assert.equal(internalWrap.getAttribute('data-op-formula-source-hidden'), 'true');
   assert.equal(internalWrap.getAttribute('hidden'), null);
   assert.equal(internalWrap.getAttribute('aria-hidden'), null);
@@ -1743,7 +1749,6 @@ test('v0.4.1 #34: runtime Formula Preview renders MathML, toggles losslessly, sk
   // Toggle to Source -> fold bar attaches; fold it -> toggle back to Formula -> unclipped; toggle back to Source -> fold state restored
   toggleBtn.dispatchEvent({ type: 'click' });
   assert.equal(internalWrap.getAttribute('data-op-formula-source-hidden'), null);
-  assert.equal(surface.getAttribute('data-op-formula-active'), null);
   assert.equal(preview.hidden, true);
   assert.equal(toggleBtn.textContent, '公式');
 
@@ -1784,7 +1789,6 @@ test('v0.4.1 #34: runtime Formula Preview renders MathML, toggles losslessly, sk
   assert.equal(surface.querySelector('.op-formula-preview'), null);
   assert.equal(actions.querySelector('.op-formula-toggle'), null);
   assert.equal(internalWrap.getAttribute('data-op-formula-source-hidden'), null);
-  assert.equal(surface.getAttribute('data-op-formula-active'), null);
   assert.equal(code.textContent, '% 更新标题\n\\alpha + \\beta = \\gamma');
 });
 
@@ -1838,8 +1842,11 @@ test('v0.4.1 #35: toggling formulaPreview false clears previews, toggles, bars, 
   assert.equal(ctx.h.context.document.documentElement.getAttribute('data-op-formula-preview'), 'true');
   assert.equal(ctx.runtime.diagnostics().formulaBlocks, 2);
   assert.ok(bareWrap.querySelector('.op-formula-bar'), 'headerless formula block creates .op-formula-bar');
+  assert.equal(bareWrap.querySelector('.op-formula-bar').getAttribute('data-op-formula-bare'), 'true');
   assert.ok(bareWrap.querySelector('.op-formula-preview'), 'headerless formula block renders preview');
+  assert.equal(bareWrap.querySelector('.op-formula-preview').getAttribute('data-op-formula-bare'), 'true');
   assert.ok(surface.querySelector('.op-formula-preview'), '50-line block renders preview');
+  assert.equal(surface.querySelector('.op-formula-preview').getAttribute('data-op-formula-bare'), null);
   assert.equal(surface.querySelector('.op-code-fold-bar'), null, '50-line block skips fold bar in preview');
 
   // Start a streaming debounce on barePre, then turn formulaPreview off mid-debounce
@@ -1862,7 +1869,6 @@ test('v0.4.1 #35: toggling formulaPreview false clears previews, toggles, bars, 
   assert.equal(surface.querySelector('.op-formula-preview'), null);
   assert.equal(actions.querySelector('.op-formula-toggle'), null);
   assert.equal(pre.getAttribute('data-op-formula-source-hidden'), null);
-  assert.equal(surface.getAttribute('data-op-formula-active'), null);
 
   const foldBar = surface.querySelector('.op-code-fold-bar');
   assert.ok(foldBar, 'turning formulaPreview off restores .op-code-fold-bar on 50-line block');
@@ -1904,6 +1910,77 @@ test('v0.4.1 #35: toggling formulaPreview false clears previews, toggles, bars, 
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.ok(surface.querySelector('.op-code-fold-bar'));
   assert.equal(pre.classList.contains('op-code-folded'), false, 'no stale fold state after unfolding');
+
+  ctx.runtime.stop();
+});
+
+test('v0.4.1 review: user source mode survives transient incomplete-brace streaming updates without snapping back to formula', async () => {
+  let surfacesRef = [];
+  let headersRef = [];
+  const ctx = createRuntimeDom({ language: 'zh-CN', formulaPreview: true }, {
+    host: 'chatgpt',
+    loadFormula: true,
+    codeSurfaces: () => surfacesRef,
+    codeHeaders: () => headersRef,
+    textOf: node => node?.textContent || ''
+  });
+  const e = Object.fromEntries(ctx.elements);
+  const makeNode = ctx.makeEl;
+
+  const surface = makeNode('div', { class: 'code-shell' });
+  const header = makeNode('div', { class: 'code-shell-header' });
+  const label = makeNode('span'); label.textContent = 'LaTeX';
+  const actions = makeNode('div');
+  const copyBtn = makeNode('button', { 'aria-label': 'Copy' }); copyBtn.textContent = 'Copy';
+  actions.append(copyBtn);
+  header.append(label, actions);
+  const pre = makeNode('pre');
+  const code = makeNode('code', { class: 'language-latex' });
+  code.textContent = '\\frac{1}{2}';
+  pre.append(code);
+  surface.append(header, pre);
+  e.assistantTurn.append(surface);
+
+  surfacesRef = [surface];
+  headersRef = [header];
+  ctx.setCodeBlocks([pre]);
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 20));
+
+  const toggleBtn = actions.querySelector('.op-formula-toggle');
+  assert.ok(toggleBtn);
+  toggleBtn.dispatchEvent({ type: 'click' });
+  assert.equal(pre.getAttribute('data-op-formula-source-hidden'), null);
+  assert.equal(toggleBtn.getAttribute('data-formula-mode'), 'source');
+
+  // Stream a transient syntax error past debounce window
+  ctx.setStreaming(true);
+  code.textContent = '\\frac{1}{2} + \\frac{3}{';
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 340));
+  assert.equal(pre.getAttribute('data-op-formula-source-hidden'), null, 'source stays visible during transient syntax error');
+
+  // Complete the closing brace past debounce window -> must stay in source mode!
+  code.textContent = '\\frac{1}{2} + \\frac{3}{4}';
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 340));
+  ctx.setStreaming(false);
+
+  const recoveredToggle = actions.querySelector('.op-formula-toggle');
+  const recoveredPreview = surface.querySelector('.op-formula-preview');
+  assert.ok(recoveredToggle, 'toggle button re-attaches after valid syntax recovers');
+  assert.equal(recoveredToggle.getAttribute('data-formula-mode'), 'source', 'user source mode must not snap back to preview');
+  assert.equal(recoveredToggle.textContent, '公式');
+  assert.equal(pre.getAttribute('data-op-formula-source-hidden'), null, 'source remains visible after recovery');
+  assert.ok(recoveredPreview, 'preview remains mounted (hidden) for instant toggle back');
+  assert.equal(recoveredPreview.hidden, true);
+  assert.ok(recoveredPreview.querySelector('math'), 'recovered preview contains updated MathML');
+
+  // Clicking toggle now switches back to updated Formula Preview cleanly
+  recoveredToggle.dispatchEvent({ type: 'click' });
+  assert.equal(recoveredToggle.getAttribute('data-formula-mode'), 'preview');
+  assert.equal(pre.getAttribute('data-op-formula-source-hidden'), 'true');
+  assert.equal(recoveredPreview.hidden, false);
 
   ctx.runtime.stop();
 });
