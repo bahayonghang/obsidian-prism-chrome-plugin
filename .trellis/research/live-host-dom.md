@@ -93,20 +93,28 @@ v0.3.0 的夹具是按推测的结构手写的，浏览器测试量的是扩展�
 - **侧栏激活态**：图标栏激活按钮是 `button[data-uniform][data-selected][aria-current="page"]`，36×36，宿主用 `::before` 画 10% 白色蒙层；扩展的行高亮（11% 强调色底 + 左侧 2px 边）叠在其上。会话激活行的 `aria-current="page"` 同时在整行 `div[role="group"]`（262×36，背景 `rgba(255,255,255,.1)`）和行内 `a`（243×20）上，扩展的 `data-op-sidebar-active` 落在行内 `a`，形成两层高亮。
 - 宿主类名带哈希后缀（如 `footer-A8ZvKV`），不能作选择器；可依赖的是上述 `data-*` 标记和结构关系。
 
-### spec #40 的方案（已约定，未实现；助手起草，用户 2026-11-24 确认"都按推荐走"）
+### spec #40 的方案（助手起草，用户 2026-11-24 确认"都按推荐走"；v0.4.3 已实现，见「已实现（v0.4.3，#40–#43）」）
 
 - 版本取 `0.4.3`；spec 与 tickets 按已发布的内容和拆分执行。
 
 - 底栏识别以 `[data-thread-scroll-footer="true"]`、`[data-thread-composer-backdrop="true"]` 为主，祖先遍历兜底且 `display: contents` 不计层数；只清绘制，不改定位，不新增遮罩或正文淡出。
-- 激活高亮按形状分两种：图标瓷片（强调色填充 + 1px 内描边 + 强调色图标，无左边条）和整行单层高亮。#42 已在离线 live 夹具上实现并双引擎验证（浅色配色的图标色为 75% 强调色混前景色以保证 3:1）；`未在真实登录会话验证`。
+- 激活高亮按形状分两种：图标瓷片（强调色填充 + 1px 内描边 + 强调色图标，无左边条）和整行单层高亮。
 - 本次不加正文淡出（用户已确认）。清掉黑带后滚动中的正文会从输入框两侧经过，是否可接受留到 #43 线上复看时由所有者判断，不可接受则另开 issue。底栏是滚动容器的子节点，给滚动容器加遮罩会连输入框一起淡化。
 
 ### 取证方法备注
 
 - ego-browser 截图前先执行 `Page.bringToFront`，否则 `Page.captureScreenshot` 会超时；需要固定视口时用 `Emulation.setDeviceMetricsOverride`，结束后清除。
 
+## 已实现（v0.4.3，#40–#43）
+
+- **ChatGPT 底栏黑带（#41，`fe20878` / `4906e2a` / `a8c57ac` / `9629a4a` / `142ab4d`，集成合并 `7e55286`）**：ChatGPT 适配器新增 `threadFooters`（`[data-thread-scroll-footer="true"]`、`[data-thread-composer-backdrop="true"]`），`findThreadFooter` 不设层数上限，取这两个标记加上滚动容器内直接包着它们的那一层；祖先遍历保留 14 层兜底，`display: contents` 不计层数；无标记时仅把"滚动容器的绝对/固定定位子节点"认作底栏。沿用 `data-op-composer-backdrop` 与现有清除规则，只清底栏及其 `::before`/`::after` 的绘制；底栏不作 dock 宿主，定位、`z-index`、锚点保持宿主原样；Home State（滚动容器内无消息）不标记。探针新增 `composerFooter`（表单 / 卡片 / 编辑器到绘制底栏的层数、不生成盒的层数、两个标记的位置、伪元素绘制与锚点属性）。夹具变体 `applyChatGPTThreadFooter` 复现 21 层（18 层 `display: contents`）与不透明 `#0e0e0e` 伪元素黑带；底栏下方 16px 内边距与 `[data-composer-body]` 所在节点为推断值。
+- **侧栏激活高亮（#42，`4511d14` / `7e8b9ac` / `92a4e32` / `de2d85f` / `b66350d`，集成合并 `bd526dd`）**：`Adapters.sidebarActiveRows` 返回 `{ element, shape }`；接近正方形、最长边 ≤ 64px、无可见文字的按钮为图标瓷片（几何优先，`data-uniform` 只放宽比例容差），其余为行；宿主在整行与行内链接重复激活态时，取带激活态、高度 ≤ 96px、只含一个且垂直居中链接的最外层行。瓷片打 `data-op-sidebar-active-tile`。浅色配色的图标墨色取 75% 强调色混前景色，以保证 3:1。
+- **版本与文档（#43，`106af55` 等）**：三处版本号为 `0.4.3`；架构、测试、README、修改记录与本笔记同步。
+- 以上均在离线 live 夹具上双引擎验证；线上复看结果见 `docs/TESTING.md` 的 v0.4.3 记录。
+- 本次取证推翻的旧结论：v0.4.1 的"ChatGPT 独立消息滚动容器挂 `data-op-scroller-fade` 淡出正文"在线上未生效（标记数 0），且现在底栏是滚动容器的子节点，不能再用滚动容器遮罩；v0.4.3 有意不加正文淡出，清掉黑带后正文会从输入框两侧经过。
+
 ## 仍是推断值或未在线上验证
 
 - 2026-11-24 实测已推翻：ChatGPT 的 `#thread-bottom-container` / `#thread-bottom` 在线上已不存在，下面凡以它们为前提的输入列条目都需按上一节的结构重新取证。
 - 推断选择器与数值：ChatGPT `#thread-bottom [class*="--thread-content-max-width"]` 与中间包装层/直属 `form[data-chatgpt-composer]` 结构、嵌套用户气泡外/内限宽包裹层（`userTurnTargets` 覆盖链）、ChatGPT 两行输入框的 area 名 `leading`/`primary`/`trailing`（有结构槽位兜底）、输入框附件头行、h1/h4、线上真实角落浮件形态（`cornerFloatingObstacles`）；Gemini 网格列宽、`.response-footer` 宽度、h1/h4、User Turn 中间包裹容器链、滚动区 150px 底部留白及是否动态调白。
-- 未在线上验证：仓库内含 v0.4.0/v0.4.1/v0.4.2 扩展的 `tools/structure-probe.js` 尚未在真实登录页面上运行，需所有者授权后人工执行；本页实测事实仍来自 2026-11-22 更早一次只读探针，所有 v0.4.0/v0.4.1/v0.4.2 浏览器验证均运行于离线探针夹具（`未在真实登录会话验证`），线上 ChatGPT/Gemini 的 User Turn 多层祖先限宽、输入列结构、A/B 底栏模式、两行输入框真实网格、外层占位真实结构及角落浮件避让仍需登录实测验收。
+- 未在线上验证：仓库内含 v0.4.0–v0.4.3 扩展的 `tools/structure-probe.js` 尚未在真实登录页面上运行，需所有者授权后人工执行；本页 ChatGPT 底栏与侧栏激活态的事实来自 2026-11-24 的临时只读脚本，其余实测事实仍来自 2026-11-22 更早一次只读探针，所有 v0.4.0/v0.4.1/v0.4.2 浏览器验证均运行于离线探针夹具（`未在真实登录会话验证`），线上 ChatGPT/Gemini 的 User Turn 多层祖先限宽、输入列结构、A/B 底栏模式、两行输入框真实网格、外层占位真实结构及角落浮件避让仍需登录实测验收。
