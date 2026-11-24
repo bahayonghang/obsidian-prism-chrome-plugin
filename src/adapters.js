@@ -299,10 +299,13 @@
     }
     return result(128000, 'fallback');
   }
+  // A node whose computed overflow-y lets it scroll (it need not overflow right now).
+  function isScrollContainer(node, view) {
+    return Boolean(node && /(auto|scroll)/.test(view?.getComputedStyle?.(node)?.overflowY || ''));
+  }
   function scrollContainer(element) {
     for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
-      const style = parent.ownerDocument?.defaultView?.getComputedStyle?.(parent);
-      if (style && /(auto|scroll)/.test(style.overflowY) && parent.scrollHeight > parent.clientHeight + 1) return parent;
+      if (isScrollContainer(parent, parent.ownerDocument?.defaultView) && parent.scrollHeight > parent.clientHeight + 1) return parent;
     }
     return element?.ownerDocument?.scrollingElement || global.document?.scrollingElement || null;
   }
@@ -388,10 +391,11 @@
     // A genuine form with controls is safer than styling an arbitrary ancestor.
     return fallback;
   }
-  const isScrollContainer = (node, view) => Boolean(node && /(auto|scroll)/.test(view.getComputedStyle(node)?.overflowY || ''));
   /* v0.4.3 #41: the live ChatGPT footer (2026-11-24) is an absolutely positioned layer directly inside the
    * conversation scroll container; its ::before/::after paint the band. The host markers identify it without an
-   * ancestor budget. A marker-less layer is recognized structurally (absolute/fixed child of a scroll container). */
+   * ancestor budget (findThreadFooter); without markers the bounded ancestor walk in findComposerBackdrops is the
+   * fallback. This structural test (marker, or absolute/fixed child of a scroll container) only keeps a Home State
+   * footer native and stops the footer from becoming the dock host. */
   function isThreadFooterLayer(spec, node, view) {
     if (!spec.threadFooters || !node?.parentElement) return false;
     if (node.matches?.(spec.threadFooters)) return true;
@@ -403,6 +407,8 @@
     while (scope && !isScrollContainer(scope, view)) scope = scope.parentElement;
     return Boolean((scope || node?.ownerDocument)?.querySelector?.(MESSAGE_AREAS));
   }
+  // A thread footer layer in a scroll container without messages (Home State) stays native.
+  const isHomeThreadFooter = (spec, node, view) => isThreadFooterLayer(spec, node, view) && !inConversationScroller(node, view);
   function findThreadFooter(spec, composer, view) {
     if (!spec.threadFooters) return [];
     const markers = [];
@@ -450,8 +456,7 @@
         rect.bottom >= Math.min(viewportHeight - 96, composerRect.bottom - 4);
       const nearBottomInFlowDock = rect.bottom >= Math.min(viewportHeight - 120, composerRect.bottom - 4) &&
         Boolean(node.parentElement && (node.parentElement.querySelector(MESSAGE_AREAS) || node.parentElement.matches('.composer-parent,main,[role="main"]')));
-      const homeThreadFooter = isThreadFooterLayer(spec, node, view) && !inConversationScroller(node, view);
-      if (smallRegion && !homeThreadFooter && (node.matches(spec.composerBackdrops) || bottomDock || nearBottomInFlowDock)) boundary = path.length - 1;
+      if (smallRegion && !isHomeThreadFooter(spec, node, view) && (node.matches(spec.composerBackdrops) || bottomDock || nearBottomInFlowDock)) boundary = path.length - 1;
     }
     const threadFooter = findThreadFooter(spec, composer, view);
     const surfaces = boundary < 0 ? [] : path.slice(0, boundary + 1);
@@ -486,8 +491,7 @@
     };
     const isAdjacentDisclaimerShell = (node, maxHeight) => {
       if (isProtectedBackdrop(node) || isExcludedTrailingNode(node, composer) || hasExcludedInnerControl(node) || node.matches?.(INTERACTIVE_CONTROL_SELF)) return false;
-      const sStyle = view.getComputedStyle(node);
-      if (sStyle && (sStyle.display === 'none' || /(auto|scroll)/.test(sStyle.overflowY || ''))) return false;
+      if (view.getComputedStyle(node)?.display === 'none' || isScrollContainer(node, view)) return false;
       const sRect = node.getBoundingClientRect();
       if (sRect.height > maxHeight) return false;
       const txt = textOf(node).trim();
@@ -520,8 +524,7 @@
       const outerMaxHeight = Math.max(outerBounds.height + 160, viewportHeight * 0.48);
       for (const sib of [...(outerDock.parentElement.children || [])]) {
         if (sib === outerDock || isProtectedBackdrop(sib) || sib.contains?.(composer)) continue;
-        const sibStyle = view.getComputedStyle(sib);
-        if (sibStyle && /(auto|scroll)/.test(sibStyle.overflowY || '')) continue;
+        if (isScrollContainer(sib, view)) continue;
         if (sib.querySelector?.(MESSAGE_AREAS) || sib.querySelector?.(OVERLAY_EXCLUDED)) continue;
         if (isContainerFadeLayer(sib, outerMaxHeight) || isAdjacentDisclaimerShell(sib, outerMaxHeight)) {
           surfaces.push(sib);
@@ -532,8 +535,7 @@
         }
       }
     }
-    return [...new Set([...surfaces, ...threadFooter])].filter(node => !isProtectedBackdrop(node) &&
-      !(isThreadFooterLayer(spec, node, view) && !inConversationScroller(node, view)));
+    return [...new Set([...surfaces, ...threadFooter])].filter(node => !isProtectedBackdrop(node) && !isHomeThreadFooter(spec, node, view));
   }
   function findSidebars(spec, root) {
     const result = [];
@@ -585,6 +587,12 @@
   const NAV_ROW = 'a[href],button,[role="link"],[role="button"],[role="option"]';
   const NAV_LINK = 'a[href],[role="link"]';
   const SIDEBAR_ROW_MAX_HEIGHT = 96;
+  // An icon tile is at most this many px on its longer side, with a longer/shorter side ratio within the tolerance;
+  // host `data-uniform` buttons get the wider tolerance. The label scan visits at most ICON_TILE_SCAN_NODES nodes.
+  const ICON_TILE_MAX_SIDE = 64;
+  const ICON_TILE_RATIO = 1.25;
+  const ICON_TILE_UNIFORM_RATIO = 1.5;
+  const ICON_TILE_SCAN_NODES = 40;
   /**
    * v0.4.3 #42: active sidebar targets and their shape. Returns `{ element, shape }` per active item,
    * where `shape` is `'tile'` for an equal-width icon-only button (decided by geometry: near-square and
@@ -642,15 +650,16 @@
   function isIconTile(node) {
     const rect = node.getBoundingClientRect();
     const longer = Math.max(rect.width, rect.height), shorter = Math.min(rect.width, rect.height);
-    if (!(shorter > 0) || longer > 64) return false;
-    const tolerance = node.hasAttribute?.('data-uniform') ? 1.5 : 1.25;
+    if (!(shorter > 0) || longer > ICON_TILE_MAX_SIDE) return false;
+    const tolerance = node.hasAttribute?.('data-uniform') ? ICON_TILE_UNIFORM_RATIO : ICON_TILE_RATIO;
     return longer / shorter <= tolerance && !hasRenderedLabel(node);
   }
   // Text clipped to a 1px screen-reader box is not visible text.
   function hasRenderedLabel(node) {
     const nodes = [node];
-    for (let index = 0; index < nodes.length && nodes.length < 40; index++) nodes.push(...(nodes[index].children || []));
-    return nodes.slice(0, 40).some(element => {
+    for (let index = 0; index < nodes.length && nodes.length < ICON_TILE_SCAN_NODES; index++) nodes.push(...(nodes[index].children || []));
+    return nodes.slice(0, ICON_TILE_SCAN_NODES).some(element => {
+      // The textContent fallback serves DOM stand-ins without childNodes (the unit-test mock DOM).
       const own = element.childNodes
         ? [...element.childNodes].filter(child => child.nodeType === 3).map(child => child.data).join('')
         : (element.children?.length ? '' : element.textContent || '');
