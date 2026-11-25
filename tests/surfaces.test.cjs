@@ -214,8 +214,9 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
   let streamingNow = Boolean(options.isStreaming);
   const fakeAdapter = {
     host,
-    usesOverlayScrim: host === 'gemini',
+    usesOverlayScrim: false,
     usesScrollerAlphaFade: host === 'chatgpt',
+    conversationOnlyBackdrops: host === 'gemini',
     contentWidth: { native: 768, targets: [], composerTargets: [] },
     userTurns: () => (homeMode ? [] : [userTurn]),
     assistantTurns: () => (homeMode ? [] : [assistantTurn]),
@@ -341,6 +342,7 @@ test('runtime marks all v0.3.0 surfaces reversibly, respects host palette and co
   await new Promise(resolve => setTimeout(resolve, 10));
   assert.equal(e.codeSurface.getAttribute('data-op-code-surface'), null);
   assert.equal(e.codeHeader.getAttribute('data-op-code-header'), null);
+  assert.equal(e.scrim.getAttribute('data-op-composer-backdrop'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(e.addBtn.getAttribute('data-op-composer-add'), null);
@@ -672,13 +674,13 @@ test('ADR-0002: runtime never reparents composer/model controls, never mutates n
   }
 });
 
-test('runtime suppresses composer scrim and tail spacer in Home State and clears them when returning home', async () => {
+test('runtime suppresses Gemini dock/backdrop/overlaid marks and tail spacer in Home State and clears them when returning home', async () => {
   const ctx = createRuntimeDom({ themeMode: 'dark', palette: 'obsidian', composerRestyle: true }, { host: 'gemini', isHome: true });
   await new Promise(resolve => setTimeout(resolve, 20));
   const e = Object.fromEntries(ctx.elements);
 
   assert.equal(e.docEl.getAttribute('data-op-home'), 'true');
-  assert.equal(e.scrim.getAttribute('data-op-composer-backdrop'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-backdrop'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-dock'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
@@ -691,9 +693,10 @@ test('runtime suppresses composer scrim and tail spacer in Home State and clears
   });
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(e.docEl.getAttribute('data-op-home'), 'false');
+  assert.equal(e.scrim.getAttribute('data-op-composer-backdrop'), 'true');
   assert.equal(e.scrim.getAttribute('data-op-composer-dock'), 'true');
   assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), 'true');
-  assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(e.spacer.getAttribute('data-op-thread-spacer'), 'true');
 
   ctx.setHome(true);
@@ -702,6 +705,7 @@ test('runtime suppresses composer scrim and tail spacer in Home State and clears
   });
   await new Promise(resolve => setTimeout(resolve, 15));
   assert.equal(e.docEl.getAttribute('data-op-home'), 'true');
+  assert.equal(e.scrim.getAttribute('data-op-composer-backdrop'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-dock'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), null);
   assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null);
@@ -825,7 +829,7 @@ test('runtime distinguishes in-flow composer dock from overlaid composer scrim, 
   assert.equal(e.emptySibling.getAttribute('data-op-composer-empty-sibling'), null);
   assert.equal(e.disclaimerSibling.getAttribute('data-op-composer-disclaimer'), null);
 
-  // Overlaid dock (Gemini style): receives both data-op-composer-dock and data-op-composer-scrim + clearance.
+  // Overlaid dock (Gemini style): receives backdrop, dock, overlaid + clearance, NEVER data-op-composer-scrim.
   const overlaidStyles = new Map();
   const overlaidScroller = {
     ...scroller,
@@ -844,12 +848,16 @@ test('runtime distinguishes in-flow composer dock from overlaid composer scrim, 
   overlaid.runtime.refresh();
   await new Promise(resolve => setTimeout(resolve, 190));
 
+  assert.equal(oe.scrim.getAttribute('data-op-composer-backdrop'), 'true');
   assert.equal(oe.scrim.getAttribute('data-op-composer-dock'), 'true');
-  assert.equal(oe.scrim.getAttribute('data-op-composer-scrim'), 'true');
+  assert.equal(oe.scrim.getAttribute('data-op-composer-overlaid'), 'true');
+  assert.equal(oe.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(overlaidScroller.getAttribute('data-op-thread-scroller'), 'true');
   assert.notEqual(oe.docEl.style.getPropertyValue('--op-dock-clearance'), '');
   overlaid.runtime.stop();
+  assert.equal(oe.scrim.getAttribute('data-op-composer-backdrop'), null);
   assert.equal(oe.scrim.getAttribute('data-op-composer-dock'), null);
+  assert.equal(oe.scrim.getAttribute('data-op-composer-overlaid'), null);
   assert.equal(oe.scrim.getAttribute('data-op-composer-scrim'), null);
   assert.equal(overlaidScroller.getAttribute('data-op-thread-scroller'), null);
   assert.equal(oe.docEl.style.getPropertyValue('--op-dock-clearance'), '');
@@ -1494,7 +1502,7 @@ test('v0.4.1 #30: ChatGPT skips data-op-composer-scrim, sets safe Alpha fade onl
     assert.equal(e.docEl.getAttribute('style'), null);
   }
 
-  // 4) Gemini overlaid dock: gets BOTH data-op-composer-overlaid and data-op-composer-scrim, never data-op-scroller-fade.
+  // 4) Gemini overlaid dock: unified pure transparent dock — gets backdrop, overlaid, and clearance, NEVER data-op-composer-scrim or data-op-scroller-fade.
   {
     const styles = new Map();
     const scroller = makeScroller({ left: 0, top: 64, right: 1280, bottom: 900, width: 1280, height: 836 });
@@ -1505,14 +1513,30 @@ test('v0.4.1 #30: ChatGPT skips data-op-composer-scrim, sets safe Alpha fade onl
       getComputedStyle: el => styles.get(el) || { position: 'absolute', paddingBottom: '24px' }
     });
     const e = Object.fromEntries(ctx.elements);
+    reflectInlineStyle(e.docEl);
     e.scrim.getBoundingClientRect = () => ({ left: 0, top: 760, right: 1280, bottom: 900, width: 1280, height: 140 });
     ctx.runtime.refresh();
     await new Promise(resolve => setTimeout(resolve, 190));
 
+    assert.equal(e.scrim.getAttribute('data-op-composer-backdrop'), 'true');
+    assert.equal(e.scrim.getAttribute('data-op-composer-dock'), 'true');
     assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), 'true');
-    assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), 'true');
+    assert.equal(e.scrim.getAttribute('data-op-composer-scrim'), null, 'Gemini overlaid dock never gets data-op-composer-scrim');
+    assert.equal(scroller.getAttribute('data-op-thread-scroller'), 'true');
     assert.equal(scroller.getAttribute('data-op-scroller-fade'), null, 'Gemini never gets data-op-scroller-fade');
+    assert.notEqual(e.docEl.style.getPropertyValue('--op-dock-clearance'), '');
+
+    // Native Palette clears Gemini backdrop, dock, overlaid, scroller marks & clearance.
+    await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'host', themeMode: 'dark' } });
+    await new Promise(resolve => setTimeout(resolve, 15));
+    assert.equal(e.scrim.getAttribute('data-op-composer-backdrop'), null);
+    assert.equal(e.scrim.getAttribute('data-op-composer-dock'), null);
+    assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), null);
+    assert.equal(scroller.getAttribute('data-op-thread-scroller'), null);
+    assert.equal(e.docEl.style.getPropertyValue('--op-dock-clearance'), '');
+
     ctx.runtime.stop();
+    assert.equal(e.docEl.getAttribute('style'), null);
   }
 });
 

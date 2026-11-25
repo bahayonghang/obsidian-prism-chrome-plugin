@@ -1066,13 +1066,16 @@
         for (const element of adapter.composerAttachments?.(composer) || []) add(element,'data-op-composer-attachment');
         for (const element of adapter.composerChips?.(composer) || []) add(element,'data-op-composer-chip');
       }
+      // Backdrops belong to the page canvas, not the input card. Keep their
+      // reversible bridge independent of the optional composer restyling,
+      // while leaving conversation-only docks native in Home State and Native Palette.
+      if (!isHome || !adapter.conversationOnlyBackdrops) {
+        for (const element of adapter.composerBackdropSurfaces?.(composer) || []) {
+          add(element,'data-op-composer-backdrop');
+        }
+      }
     }
     nextObservedDock = nextScrim || dockHost || composer || null;
-    // Backdrops belong to the page canvas, not the input card. Keep their
-    // reversible bridge independent of the optional composer restyling.
-    for (const element of adapter.composerBackdropSurfaces?.(composer) || []) {
-      add(element,'data-op-composer-backdrop');
-    }
     if (cfg.sidebarStyle !== 'native') {
       const sidebars = adapter.sidebarSurfaces?.() || [];
       for (const element of sidebars) add(element,'data-op-sidebar-surface');

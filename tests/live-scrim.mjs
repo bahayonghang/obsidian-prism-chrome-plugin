@@ -1,23 +1,24 @@
 /**
- * v0.4.0 #25: Dual-mode Composer Scrim & ChatGPT bottom-spacing checks on probe-derived live fixtures.
+ * v0.4.0 #25 / v0.4.4 #45: Unified transparent bottom dock & scroll-end clearance checks on probe-derived live fixtures.
  * Measured in rendered pixels, hit tests and bounding boxes:
  * - ChatGPT in-flow across all 4 palettes (obsidian, warm, crystal, alabaster): continuous glow from above
  *   composer down to innerHeight - 6, zero occlusion/blur, collapsed empty spacer, tight bottom gap,
  *   clickable crisp disclaimer, and exact native restoration.
  * - ChatGPT sticky-overlay variant: moving #thread-bottom-container inside the scroller with sticky
- *   positioning activates the top-feathered blur Composer Scrim.
- * - Gemini overlay across all 4 palettes + no-backdrop-filter fallback: dark ~44% / light ~26% canvas tint,
- *   blurred behind-scrim text, crisp clickable controls and message-actions above the composer, and exact
- *   native restoration.
+ *   positioning keeps zero scrim/blur, opaque Composer Surface, and preserved scroll clearance.
+ * - Gemini overlay across all 4 palettes × all 3 Content Width Presets (standard, wide, full): pure
+ *   transparent bottom bar matching Ambient Stage/canvas seamlessly on left/right wings and below the
+ *   composer with zero dark rectangular luminance step and zero backdrop-filter blur, opaque Composer
+ *   Surface, clickable last Assistant Turn message-actions scrolled above composer, and 100% clean
+ *   native restoration on composerRestyle: false, Native Palette, Home State, site/extension disable, and stop().
  */
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { onLiveFixture, injectExtension as injectRuntime, patchConfig, settle as frames, applyChatGPTBottomVariants, LIVE_SELECTORS } from './live-fixtures.mjs';
-import { capturePixels, regionStats } from './measure.mjs';
+import { capturePixels, regionStats, channelGap } from './measure.mjs';
 import { checkChatGPTThreadFooter } from './live-footer.mjs';
 
-/** The @supports condition that switches the scrim from the fallback gradient to the blur. */
-export const SCRIM_BLUR_SUPPORTS = '@supports ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px)))';
+const WIDTHS = ['standard', 'wide', 'full'];
 
 const PALETTES = [
   { name: 'obsidian', scheme: 'dark', patch: { themeMode: 'dark', palette: 'obsidian' }, hostPatch: { palette: 'host' } },
@@ -39,14 +40,16 @@ async function injectExtension(page, suite) {
 }
 
 async function applyPalette(page, pal, extraSelector = '', extraPatch = {}) {
-  await patchConfig(page, { ...pal.patch, ambientStyle: 'aurora', ...extraPatch });
-  await page.waitForFunction(([name, scheme, sel, tex]) =>
+  const ambientStyle = extraPatch.ambientStyle ?? 'aurora';
+  await patchConfig(page, { ...pal.patch, ambientStyle, ...extraPatch });
+  await page.waitForFunction(([name, scheme, sel, tex, amb, width]) =>
     document.documentElement.getAttribute('data-op-effective-palette') === name &&
     document.documentElement.getAttribute('data-op-scheme') === scheme &&
-    document.documentElement.getAttribute('data-op-ambient-style') === 'aurora' &&
+    document.documentElement.getAttribute('data-op-ambient-style') === amb &&
     (!tex || document.documentElement.getAttribute('data-op-texture') === tex) &&
+    (!width || document.documentElement.getAttribute('data-op-content-width') === width) &&
     (!sel || Boolean(document.querySelector(sel))),
-    [pal.name, pal.scheme, extraSelector, extraPatch.ambientTexture || '']
+    [pal.name, pal.scheme, extraSelector, extraPatch.ambientTexture || '', ambientStyle, extraPatch.contentWidth || '']
   );
   await frames(page);
 }
@@ -75,31 +78,43 @@ async function composerBox(page, host) {
   });
 }
 
-/** Sample points around the Composer Surface (and up to the viewport bottom for in-flow docks). */
+/** Sample points around the Composer Surface (clamped inside main surface across standard/wide/full widths). */
 async function glowPoints(page, host, { includeInFlowBands = false } = {}) {
   const box = await composerBox(page, host);
   const vh = page.viewportSize().height;
-  const dockRect = await page.evaluate(() => {
-    const d = document.querySelector('#op-bottom-dock');
-    if (!d) return null;
-    const r = d.getBoundingClientRect();
-    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
-  });
-  const scrollBtnRect = await page.evaluate(() => {
-    const b = document.querySelector('.scroll-to-bottom-btn');
-    if (!b) return null;
-    const r = b.getBoundingClientRect();
-    return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
-  });
-  let right = { x: box.right + 40, y: box.centerY };
-  if (dockRect && right.x >= dockRect.left - 4 && right.x <= dockRect.right + 4 && right.y >= dockRect.top - 4 && right.y <= dockRect.bottom + 4) {
-    if (dockRect.left - box.right >= 16) right.x = Math.round((box.right + dockRect.left) / 2);
-    else right.y = Math.max(box.top + 8, dockRect.top - 10);
+  const { mainRect, dockRect, helpRect, railRect, scrollBtnRect } = await page.evaluate(mainSel => {
+    const pick = el => {
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { left: r.left, right: r.right, top: r.top, bottom: r.bottom };
+    };
+    return {
+      mainRect: pick(document.querySelector(mainSel)),
+      dockRect: pick(document.querySelector('#op-bottom-dock')),
+      helpRect: pick(document.querySelector('.host-corner-help')),
+      railRect: pick(document.querySelector('#op-rail-root')),
+      scrollBtnRect: pick(document.querySelector('.scroll-to-bottom-btn'))
+    };
+  }, LIVE_SELECTORS[host].main);
+  const leftGap = box.left - mainRect.left;
+  const rightGap = mainRect.right - box.right;
+  const leftX = leftGap >= 56 ? Math.round(box.left - 40) : Math.round(mainRect.left + Math.max(4, leftGap / 2));
+  let right = {
+    x: rightGap >= 56 ? Math.round(box.right + 40) : Math.round(box.right + Math.max(4, rightGap / 2)),
+    y: box.centerY
+  };
+  const obstacles = [dockRect, helpRect, railRect].filter(Boolean);
+  const hits = (pt, obs) => obs && pt.x >= obs.left - 12 && pt.x <= obs.right + 12 && pt.y >= obs.top - 12 && pt.y <= obs.bottom + 12;
+  if (obstacles.some(obs => hits(right, obs))) {
+    const blocking = obstacles.find(obs => hits(right, obs));
+    if (blocking && blocking.left - box.right >= 20) right.x = Math.round((box.right + blocking.left) / 2);
+    else if (blocking && blocking.bottom < box.bottom - 14) right.y = Math.round(Math.min(box.bottom - 8, Math.max(box.centerY, blocking.bottom + 16)));
+    else if (blocking) right.y = Math.max(box.top + 8, blocking.top - 14);
   }
   const belowY = Math.min(vh - 2, Math.ceil(box.bottom) + 2);
   const points = {
     below: { x: box.left + 8, y: belowY },
-    left: { x: box.left - 40, y: box.centerY },
+    left: { x: leftX, y: box.centerY },
     right
   };
   if (includeInFlowBands) {
@@ -107,9 +122,9 @@ async function glowPoints(page, host, { includeInFlowBands = false } = {}) {
     if (scrollBtnRect && aboveCenter.x >= scrollBtnRect.left - 4 && aboveCenter.x <= scrollBtnRect.right + 4 && aboveCenter.y >= scrollBtnRect.top - 4 && aboveCenter.y <= scrollBtnRect.bottom + 4) {
       aboveCenter = { x: Math.max(box.left + 32, Math.round(scrollBtnRect.left - 24)), y: box.top - 12 };
     }
-    points.above = { x: box.left - 40, y: box.top - 24 };
+    points.above = { x: leftX, y: box.top - 24 };
     points.aboveCenter = aboveCenter;
-    points.viewportBottomSide = { x: box.left - 40, y: vh - 6 };
+    points.viewportBottomSide = { x: leftX, y: vh - 6 };
     points.viewportBottom = { x: box.left + 8, y: Math.min(vh - 1, Math.max(belowY, vh - 2)) };
   }
   return points;
@@ -138,8 +153,31 @@ async function assertGlowContinuous(page, host, label, canvas, options = {}) {
  * Inserts a flat block behind the composer dock (prepended to main outside the masked scroller, z-index:0)
  * and estimates how opaque the canvas paint over it is across a column from above the composer to the viewport bottom.
  */
-async function occlusionColumn(page, host, canvas) {
+async function occlusionColumn(page, host, canvas, { side = 'left' } = {}) {
   const box = await composerBox(page, host);
+  const geom = await page.evaluate(({ mainSel, boxLeft, boxRight, side }) => {
+    const main = document.querySelector(mainSel).getBoundingClientRect();
+    const obstacles = ['#op-bottom-dock', '.host-corner-help', '#op-rail-root']
+      .map(sel => document.querySelector(sel)?.getBoundingClientRect())
+      .filter(Boolean)
+      .map(r => ({ left: r.left, right: r.right, top: r.top, bottom: r.bottom }));
+    let x;
+    if (side === 'right') {
+      const rightGap = main.right - boxRight;
+      x = rightGap >= 56 ? Math.round(boxRight + 40) : Math.round(boxRight + Math.max(4, rightGap / 2));
+      const blocking = obstacles.find(obs => x >= obs.left - 14 && x <= obs.right + 14);
+      if (blocking && blocking.left - boxRight >= 24) {
+        x = Math.round((boxRight + blocking.left) / 2);
+      }
+    } else {
+      const leftGap = boxLeft - main.left;
+      x = leftGap >= 56 ? Math.round(boxLeft - 40) : Math.round(main.left + Math.max(4, leftGap / 2));
+    }
+    const skipRanges = obstacles
+      .filter(obs => x >= obs.left - 14 && x <= obs.right + 14)
+      .map(obs => [Math.floor(obs.top - 14), Math.ceil(obs.bottom + 14)]);
+    return { x, height: window.innerHeight, skipRanges };
+  }, { mainSel: LIVE_SELECTORS[host].main, boxLeft: box.left, boxRight: box.right, side });
   const backdrop = (canvas.r + canvas.g + canvas.b) / 3 > 128 ? { r: 0, g: 0, b: 0 } : { r: 255, g: 255, b: 255 };
   const top = box.top - 70;
   await page.locator(LIVE_SELECTORS[host].main).evaluate((main, { top, color }) => {
@@ -149,26 +187,37 @@ async function occlusionColumn(page, host, canvas) {
     main.prepend(block);
   }, { top, color: fmt(backdrop) });
   let image;
+  const clipY = Math.round(top + 20);
   try {
     await frames(page);
-    const x = Math.round(box.left - 40);
-    const height = page.viewportSize().height;
-    image = await capturePixels(page, { x, y: top + 20, width: 1, height: height - (top + 20) - 2 });
+    const clipHeight = Math.max(20, geom.height - clipY - 2);
+    image = await capturePixels(page, { x: geom.x, y: clipY, width: 1, height: clipHeight });
   } finally {
     await page.evaluate(() => document.getElementById('prism-test-occlusion-block')?.remove());
     await frames(page);
   }
   const span = { r: canvas.r - backdrop.r, g: canvas.g - backdrop.g, b: canvas.b - backdrop.b };
   const norm = span.r ** 2 + span.g ** 2 + span.b ** 2;
+  const isSkipped = y => geom.skipRanges.some(([lo, hi]) => y >= lo && y <= hi);
   const alphas = [];
+  const validRows = [];
   for (let y = 0; y < image.height; y++) {
+    const pageY = clipY + y;
     const p = image.at(0, y);
-    alphas.push(Math.max(0, Math.min(1, ((p.r - backdrop.r) * span.r + (p.g - backdrop.g) * span.g + (p.b - backdrop.b) * span.b) / norm)));
+    const alpha = Math.max(0, Math.min(1, ((p.r - backdrop.r) * span.r + (p.g - backdrop.g) * span.g + (p.b - backdrop.b) * span.b) / norm));
+    alphas.push(alpha);
+    if (!isSkipped(pageY)) validRows.push({ y, alpha });
   }
-  const atCenter = alphas[Math.round(box.centerY - (top + 20))];
+  const sampled = validRows.length ? validRows : alphas.map((alpha, y) => ({ y, alpha }));
+  const centerIdx = Math.min(alphas.length - 1, Math.max(0, Math.round(box.centerY - clipY)));
+  const atCenter = !isSkipped(clipY + centerIdx) ? alphas[centerIdx] : sampled[sampled.length - 1].alpha;
   let maxStep = 0;
-  for (let i = 2; i < alphas.length; i += 2) maxStep = Math.max(maxStep, Math.abs(alphas[i] - alphas[i - 2]));
-  return { alphas, max: Math.max(...alphas), atCenter, maxStep };
+  for (let i = 1; i < sampled.length; i++) {
+    if (sampled[i].y - sampled[i - 1].y <= 2) {
+      maxStep = Math.max(maxStep, Math.abs(sampled[i].alpha - sampled[i - 1].alpha));
+    }
+  }
+  return { alphas: sampled.map(r => r.alpha), max: Math.max(...sampled.map(r => r.alpha)), atCenter, maxStep };
 }
 
 /** Edge contrast of a region: the steepest neighbouring luminance step relative to its luminance range. */
@@ -185,24 +234,6 @@ async function sharpness(page, clip) {
     }
   }
   return { ratio: max - min > 0 ? step / (max - min) : 0, range: max - min };
-}
-
-async function rendersBackdropBlur(page) {
-  await page.evaluate(() => {
-    const word = document.createElement('div');
-    word.id = 'prism-test-blur-calibration';
-    word.style.cssText = 'position:fixed;left:0;top:0;width:160px;height:40px;z-index:2147483646;background:#000;color:#fff;font:700 18px/40px Arial,sans-serif';
-    word.textContent = 'MWMW WMWM MWMW';
-    const glass = document.createElement('div');
-    glass.style.cssText = 'position:absolute;inset:0;-webkit-backdrop-filter:blur(8px);backdrop-filter:blur(8px)';
-    word.append(glass);
-    document.body.append(word);
-  });
-  await frames(page);
-  const edge = await sharpness(page, { x: 4, y: 4, width: 150, height: 32 });
-  await page.evaluate(() => document.getElementById('prism-test-blur-calibration')?.remove());
-  await frames(page);
-  return edge.ratio < 0.5;
 }
 
 async function scrimBackdropFilter(page, host) {
@@ -414,7 +445,9 @@ async function assertRestoredState(page, host, label, native, hostPatch, restore
   } else if (native.layout) {
     near(await composerBottomGap(page, host), native.bottomGap, 0.5, `${label}: composerRestyle: false restores Gemini bottom gap`);
     assert.deepEqual(await gemiInputLayout(page), native.layout, `${label}: composerRestyle: false restores Gemini input layout`);
-    assert.equal(await page.locator('[data-op-composer-scrim="true"]').count(), 1, `${label}: composerRestyle: false preserves Gemini scrim`);
+    assert.equal(await page.locator('[data-op-composer-backdrop="true"]').count() >= 1, true, `${label}: composerRestyle: false keeps Gemini backdrop cleared`);
+    assert.equal(await page.locator('[data-op-composer-overlaid="true"]').count(), 1, `${label}: composerRestyle: false keeps Gemini overlaid clearance`);
+    assert.equal(await page.locator('[data-op-composer-scrim="true"]').count(), 0, `${label}: composerRestyle: false never mounts Gemini scrim`);
   }
   await patchConfig(page, { composerRestyle: true }, () => document.documentElement.getAttribute('data-op-composer') === 'true');
 
@@ -437,6 +470,8 @@ async function assertRestoredState(page, host, label, native, hostPatch, restore
   } else if (native.layout) {
     near(await composerBottomGap(page, host), native.bottomGap, 0.5, `${label}: Native Palette restores Gemini bottom gap`);
     assert.deepEqual(await gemiInputLayout(page), native.layout, `${label}: Native Palette restores Gemini input layout`);
+    assert.equal(await page.locator('[data-op-composer-backdrop="true"],[data-op-composer-dock="true"],[data-op-composer-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"]').count(), 0, `${label}: Native Palette leaves zero Gemini dock/backdrop/scroller marks`);
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-clearance')), '', `${label}: Native Palette clears --op-dock-clearance`);
   }
   await patchConfig(page, restorePatch, () => document.documentElement.getAttribute('data-op-effective-palette') !== 'host');
 }
@@ -593,41 +628,47 @@ async function checkChatGPTInFlow(suite) {
   });
 }
 
-/** Assert overlay blur Composer Scrim behavior (shared by Gemini overlay and ChatGPT sticky-overlay). */
-async function assertOverlayScrimActive(page, host, scheme, label, { checkFallbackMode = false } = {}) {
-  const canvas = await canvasColor(page);
-  await assertGlowContinuous(page, host, label, canvas);
-  const occlusion = await occlusionColumn(page, host, canvas);
-  const declared = await scrimBackdropFilter(page, host);
-  assert.ok(declared.supported, `${label}: engine supports backdrop-filter`);
-
-  if (checkFallbackMode) {
-    assert.equal(declared.value, 'none', `${label}: simulated browser applies no backdrop blur`);
-    const maxCap = scheme === 'light' ? 0.42 : 0.62;
-    const minCenter = scheme === 'light' ? 0.12 : 0.2;
-    assert.ok(occlusion.max <= maxCap, `${label}: fallback gradient stays <= ${(maxCap * 100).toFixed(0)}% canvas (got ${occlusion.max.toFixed(2)})`);
-    assert.ok(occlusion.atCenter >= minCenter, `${label}: fallback softens composer region (${occlusion.atCenter.toFixed(2)})`);
-    assert.ok(occlusion.maxStep <= 0.12, `${label}: fallback has no hard edge (${occlusion.maxStep.toFixed(2)})`);
-  } else {
-    assert.match(declared.value, /blur\(/, `${label}: scrim layer applies backdrop-filter blur`);
-    const [minCenter, maxCenter] = scheme === 'light' ? [0.18, 0.38] : [0.32, 0.58];
-    const maxCap = scheme === 'light' ? 0.45 : 0.6;
-    assert.ok(occlusion.max <= maxCap, `${label}: scrim never exceeds ${(maxCap * 100).toFixed(0)}% canvas (got ${occlusion.max.toFixed(2)})`);
-    assert.ok(occlusion.atCenter >= minCenter && occlusion.atCenter <= maxCenter, `${label}: ${scheme} scrim tint is in [${minCenter}, ${maxCenter}] (got ${occlusion.atCenter.toFixed(2)})`);
-    assert.ok(occlusion.maxStep <= 0.12, `${label}: scrim top is feathered (${occlusion.maxStep.toFixed(2)})`);
-
-    const open = await textBlockStats(page, host, 'open');
-    const behind = await textBlockStats(page, host, 'behind');
-    const blurs = await rendersBackdropBlur(page);
-    const maxVarianceFactor = blurs ? 0.15 : Math.min(0.65, (1 - occlusion.atCenter) ** 2 + 0.08);
-    assert.ok(behind.variance <= open.variance * maxVarianceFactor, `${label}: text behind scrim loses detail (${behind.variance.toFixed(0)} vs ${open.variance.toFixed(0)}, ratio ${(behind.variance / open.variance).toFixed(2)} <= ${maxVarianceFactor.toFixed(2)})`);
-    if (blurs) {
-      assert.ok(behind.sharpness < open.sharpness * 0.6, `${label}: text behind scrim is blurred (${behind.sharpness.toFixed(2)} vs ${open.sharpness.toFixed(2)})`);
+/** Gemini wing & interior regions for flat-canvas continuity and composer opacity checks across all Content Width Presets. */
+async function geminiWingRegions(page) {
+  return page.evaluate(({ mainSel, inputSel, composerSel, editorSel }) => {
+    const main = document.querySelector(mainSel).getBoundingClientRect();
+    const dock = document.querySelector(inputSel).getBoundingClientRect();
+    const card = document.querySelector(composerSel).getBoundingClientRect();
+    const editor = document.querySelector(editorSel).getBoundingClientRect();
+    const obstacles = ['#op-bottom-dock', '.host-corner-help', '#op-rail-root']
+      .map(sel => document.querySelector(sel)?.getBoundingClientRect())
+      .filter(Boolean);
+    const leftGap = card.left - main.left;
+    const rightGap = main.right - card.right;
+    const leftW = Math.max(4, Math.min(16, Math.floor(leftGap - 8)));
+    const leftX = leftGap >= 56 ? Math.round(card.left - 44) : Math.round(main.left + Math.max(2, (leftGap - leftW) / 2));
+    const rightW = Math.max(4, Math.min(16, Math.floor(rightGap - 8)));
+    let rightX = rightGap >= 56 ? Math.round(card.right + 36) : Math.round(card.right + Math.max(2, (rightGap - rightW) / 2));
+    let rightY = Math.round(card.top + card.height / 2 - 4);
+    const hits = (x, y, w, h, obs) => obs && x < obs.right + 6 && x + w > obs.left - 6 && y < obs.bottom + 6 && y + h > obs.top - 6;
+    const hitsAny = (x, y, w, h) => obstacles.some(obs => hits(x, y, w, h, obs));
+    if (hitsAny(rightX, rightY, rightW, 8)) {
+      const blocking = obstacles.find(obs => hits(rightX, rightY, rightW, 8, obs));
+      if (blocking && blocking.left - card.right >= 16) rightX = Math.round(card.right + Math.max(4, (blocking.left - card.right - rightW) / 2));
+      else if (blocking) rightY = Math.round(Math.max(dock.top + 8, Math.min(card.top + 8, blocking.top - 16)));
     }
-  }
-  assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-op-composer')), 'true', `${label}: composerRestyle on`);
-  await assertCrispAndClickable(page, host, label);
-  return occlusion;
+    const clearAboveY = (x, w) => {
+      for (let y = Math.round(dock.top - 28); y >= Math.round(main.top + 80); y -= 16) {
+        if (hitsAny(x, y, w, 8)) continue;
+        const el = document.elementFromPoint(x + w / 2, y + 4);
+        if (el && el.closest('#op-bottom-dock,#op-rail-root,.host-corner-help,code-block,.code-block,user-query,.user-query-bubble-with-background,.math-block,.katex,table,blockquote,message-actions')) continue;
+        return y;
+      }
+      return Math.round(dock.top - 28);
+    };
+    return {
+      left: { x: leftX, y: Math.round(card.top + card.height / 2 - 4), width: leftW, height: 8 },
+      aboveLeft: { x: leftX, y: clearAboveY(leftX, leftW), width: leftW, height: 8 },
+      right: { x: rightX, y: rightY, width: rightW, height: 8 },
+      aboveRight: { x: rightX, y: clearAboveY(rightX, rightW), width: rightW, height: 8 },
+      interior: { x: Math.round(card.left + card.width * 0.7), y: Math.round(editor.top + editor.height / 2 - 2), width: 8, height: 4 }
+    };
+  }, { mainSel: LIVE_SELECTORS.gemini.main, inputSel: LIVE_SELECTORS.gemini.inputGradient, composerSel: LIVE_SELECTORS.gemini.composer, editorSel: LIVE_SELECTORS.gemini.editor });
 }
 
 /**
@@ -986,11 +1027,12 @@ async function checkChatGPTStickyOverlay(suite) {
   });
 }
 
-/** Gemini overlay across dark and light palettes, plus restoration. */
+/** Gemini pure transparent bottom bar across all 4 palettes × 3 Content Width Presets, overlaid scroll clearance, and full restoration. */
 async function checkGeminiOverlay(suite) {
   const { engine, artifacts } = suite;
   const host = 'gemini';
-  const initial = { ...PALETTES[0].patch, ambientStyle: 'aurora', ambientTexture: 'off', motionLevel: 'off' };
+  const initial = { ...PALETTES[0].patch, ambientStyle: 'aurora', ambientTexture: 'off', motionLevel: 'off', contentWidth: 'standard' };
+  const isTransparent = v => v === 'transparent' || /^rgba\(\s*0,\s*0,\s*0,\s*0\s*\)$/.test(v);
   await onLiveFixture(suite, host, { failure: 'gemini-overlay-live-scrim-failure', colorScheme: 'dark', initial }, async ({ page, errors }) => {
     await scrollToEnd(page, host);
     const native = {
@@ -1001,89 +1043,211 @@ async function checkGeminiOverlay(suite) {
       layout: await gemiInputLayout(page),
       bottomGap: await composerBottomGap(page, host)
     };
-    native.occlusion = await occlusionColumn(page, host, native.canvas);
-    assert.ok(native.occlusion.max >= 0.95, `${engine} gemini native: input gradient is opaque (alpha ${native.occlusion.max.toFixed(2)})`);
+    native.occlusion = await occlusionColumn(page, host, native.canvas, { side: 'left' });
+    native.rightOcclusion = await occlusionColumn(page, host, native.canvas, { side: 'right' });
+    assert.ok(native.occlusion.max >= 0.95, `${engine} gemini native: left wing gradient is opaque (alpha ${native.occlusion.max.toFixed(2)})`);
+    assert.ok(native.rightOcclusion.max >= 0.95, `${engine} gemini native: right wing gradient is opaque (alpha ${native.rightOcclusion.max.toFixed(2)})`);
 
     await injectExtension(page, suite);
     for (const pal of PALETTES) {
-      const label = `${engine} gemini overlay ${pal.name}`;
-      await applyPalette(page, pal);
-      await scrollToEnd(page, host);
-      const occlusion = await assertOverlayScrimActive(page, host, pal.scheme, label);
-      const activeLayout = await gemiInputLayout(page);
-      assert.equal(activeLayout.position, native.layout.position, `${label}: Gemini dock keeps native positioning`);
-      assert.equal(activeLayout.left, native.layout.left);
-      assert.equal(activeLayout.right, native.layout.right);
-      assert.equal(activeLayout.bottom, native.layout.bottom);
-      assert.equal(activeLayout.minHeight, '0px', `${label}: Gemini dock drops 133px min-height`);
-      assert.equal(activeLayout.paddingTop, '16px', `${label}: Gemini dock tightens top fade padding to 16px`);
-      const cardMetrics = await assertCardUnclippedAndCompactGap(page, host, label);
-      assert.ok(await page.locator(LIVE_SELECTORS.gemini.attachment).isVisible(), `${label}: attachment preview visible`);
-      await page.locator(`${LIVE_SELECTORS.gemini.attachment} button`).click({ trial: true });
-      const disclaimerHeight = await page.locator(LIVE_SELECTORS.gemini.disclaimer).evaluate(el => Math.round(el.getBoundingClientRect().height * 10) / 10);
-      assert.equal(disclaimerHeight, 0, `${label}: Gemini disclaimer is hidden (0px)`);
-      assert.deepEqual(await domOrderSnapshot(page, host), native.domOrder, `${label}: Gemini active DOM parent/child/sibling order intact`);
+      for (const width of WIDTHS) {
+        const label = `${engine} gemini transparent-dock ${pal.name} ${width}`;
+        await applyPalette(page, pal, 'input-container[data-op-composer-overlaid="true"]', { contentWidth: width, ambientStyle: 'none' });
+        await scrollToEnd(page, host);
+        assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-op-home')), 'false', `${label}: active conversation`);
 
-      for (let i = 0; i < 2; i++) {
-        await page.evaluate(() => ObsidianPrismRuntime.refresh());
-        await page.waitForTimeout(180);
-        await frames(page);
-      }
-      const rescanDisclaimerHeight = await page.locator(LIVE_SELECTORS.gemini.disclaimer).evaluate(el => Math.round(el.getBoundingClientRect().height * 10) / 10);
-      assert.equal(rescanDisclaimerHeight, 0, `${label}: Gemini disclaimer stays 0px across rescans`);
-      await assertCardUnclippedAndCompactGap(page, host, `${label} rescan`);
+        const state = await page.evaluate(() => {
+          const input = document.querySelector('input-container.input-gradient');
+          const scroller = document.querySelector('[data-prism-test-scroller]');
+          const composer = document.querySelector('[data-op-composer-surface="true"]') || document.querySelector('input-area-v2');
+          const compStyle = getComputedStyle(composer);
+          const scrollerRect = scroller.getBoundingClientRect();
+          const dockRect = input.getBoundingClientRect();
+          const scrollerPadBottom = parseFloat(getComputedStyle(scroller).paddingBottom) || 0;
+          const clearancePx = parseFloat(document.documentElement.style.getPropertyValue('--op-dock-clearance')) || 0;
+          return {
+            backdrop: input.getAttribute('data-op-composer-backdrop'),
+            dock: input.getAttribute('data-op-composer-dock'),
+            overlaid: input.getAttribute('data-op-composer-overlaid'),
+            scrim: input.getAttribute('data-op-composer-scrim'),
+            threadScroller: scroller.getAttribute('data-op-thread-scroller'),
+            scrollerFade: scroller.getAttribute('data-op-scroller-fade'),
+            clearance: document.documentElement.style.getPropertyValue('--op-dock-clearance'),
+            clearancePx,
+            scrollerPadBottom,
+            overlap: Math.max(0, Math.ceil(scrollerRect.bottom - dockRect.top)),
+            composerOpacity: compStyle.opacity,
+            composerBg: compStyle.backgroundColor
+          };
+        });
+        assert.equal(state.backdrop, 'true', `${label}: input-container marked data-op-composer-backdrop`);
+        assert.equal(state.dock, 'true', `${label}: input-container marked data-op-composer-dock`);
+        assert.equal(state.overlaid, 'true', `${label}: input-container marked data-op-composer-overlaid`);
+        assert.equal(state.scrim, null, `${label}: Gemini dock NEVER receives data-op-composer-scrim`);
+        assert.equal(state.threadScroller, 'true', `${label}: overlaid scroller marked data-op-thread-scroller`);
+        assert.equal(state.scrollerFade, null, `${label}: Gemini skips data-op-scroller-fade`);
+        assert.ok(state.scrollerPadBottom + state.clearancePx >= state.overlap + 7, `${label}: total scroll-end clearance (${state.scrollerPadBottom} + ${state.clearancePx}) covers dock overlap (${state.overlap})`);
+        assert.equal(state.composerOpacity, '1', `${label}: Composer Surface remains 100% opaque`);
+        assert.ok(!isTransparent(state.composerBg), `${label}: Composer Surface keeps opaque card fill (${state.composerBg})`);
 
-      await patchConfig(page, { ambientStyle: 'aurora' }, () => document.documentElement.getAttribute('data-op-ambient-style') === 'aurora');
-      if (pal.name === 'obsidian' || pal.name === 'crystal') {
-        await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-${pal.name}-live-scrim.png`) });
-        if (pal.name === 'obsidian') {
-          const emptyDockH = await page.evaluate(() => {
-            const hdr = document.querySelector('.file-preview-container');
-            const saved = [...hdr.childNodes];
-            hdr.replaceChildren();
-            ObsidianPrismRuntime.refresh();
-            return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => {
-              const h = document.querySelector('input-container.input-gradient').getBoundingClientRect().height;
-              hdr.replaceChildren(...saved);
-              ObsidianPrismRuntime.refresh();
-              requestAnimationFrame(() => requestAnimationFrame(() => r(Math.round(h * 10) / 10)));
-            })));
-          });
-          assert.ok(emptyDockH <= 116, `${label}: empty-header Gemini overlaid dock <= 116px (got ${emptyDockH}px)`);
+        const declared = await scrimBackdropFilter(page, host);
+        assert.equal(declared.value, 'none', `${label}: Gemini dock applies NO extension backdrop-filter blur`);
+        const layers = await dockPaint(page, host);
+        for (const layer of layers) {
+          assert.ok(isTransparent(layer.background) && layer.image === 'none' && layer.mask === 'none' && layer.boxShadow === 'none' && layer.backdrop === 'none', `${label}: ${layer.tag} paint cleared (${JSON.stringify(layer)})`);
+          assert.ok(isTransparent(layer.before.background) && layer.before.image === 'none' && layer.before.mask === 'none' && layer.before.backdrop === 'none', `${label}: ${layer.tag}::before paint cleared (${JSON.stringify(layer.before)})`);
+          assert.ok(isTransparent(layer.after.background) && layer.after.image === 'none' && layer.after.mask === 'none' && layer.after.backdrop === 'none' && layer.after.boxShadow === 'none', `${label}: ${layer.tag}::after paint cleared (${JSON.stringify(layer.after)})`);
         }
-        await assertRestoredState(page, host, label, native, pal.hostPatch, pal.patch);
+
+        // Flat-canvas wing continuity + opaque Composer Surface check.
+        const regions = await geminiWingRegions(page);
+        const flatLeft = (await regionStats(page, regions.left)).mean;
+        const flatAboveLeft = (await regionStats(page, regions.aboveLeft)).mean;
+        const flatRight = (await regionStats(page, regions.right)).mean;
+        const flatAboveRight = (await regionStats(page, regions.aboveRight)).mean;
+        const flatInterior = (await regionStats(page, regions.interior)).mean;
+        assert.ok(channelGap(flatLeft, flatAboveLeft) <= 3, `${label}: left wing ${fmt(flatLeft)} matches canvas above ${fmt(flatAboveLeft)} (no dark box)`);
+        assert.ok(channelGap(flatRight, flatAboveRight) <= 3, `${label}: right wing ${fmt(flatRight)} matches canvas above ${fmt(flatAboveRight)} (no dark box)`);
+
+        // Aurora continuity & zero luminance step on both left and right wings.
+        await applyPalette(page, pal, 'input-container[data-op-composer-overlaid="true"]', { contentWidth: width, ambientStyle: 'aurora' });
+        const litInterior = (await regionStats(page, regions.interior)).mean;
+        assert.ok(channelGap(litInterior, flatInterior) <= 2, `${label}: Composer Surface interior stays opaque across ambient toggle (${fmt(flatInterior)} -> ${fmt(litInterior)})`);
+
+        const canvas = await canvasColor(page);
+        const leftOcc = await occlusionColumn(page, host, canvas, { side: 'left' });
+        const rightOcc = await occlusionColumn(page, host, canvas, { side: 'right' });
+        assert.ok(leftOcc.max <= 0.08 && leftOcc.maxStep <= 0.08, `${label}: left wing has zero dark rectangular luminance step (max ${leftOcc.max.toFixed(2)}, step ${leftOcc.maxStep.toFixed(2)})`);
+        assert.ok(rightOcc.max <= 0.08 && rightOcc.maxStep <= 0.08, `${label}: right wing has zero dark rectangular luminance step (max ${rightOcc.max.toFixed(2)}, step ${rightOcc.maxStep.toFixed(2)})`);
+        await assertGlowContinuous(page, host, label, canvas);
+        await assertCrispAndClickable(page, host, label);
+        await applyPalette(page, pal, '', { contentWidth: width, ambientStyle: 'aurora' });
+
+        if (width === 'standard') {
+          const open = await textBlockStats(page, host, 'open');
+          const behind = await textBlockStats(page, host, 'behind');
+          assert.ok(behind.sharpness >= open.sharpness * 0.8, `${label}: wing area behind dock stays unblurred (${behind.sharpness.toFixed(2)} vs ${open.sharpness.toFixed(2)})`);
+          const activeLayout = await gemiInputLayout(page);
+          assert.equal(activeLayout.position, native.layout.position, `${label}: Gemini dock keeps native positioning`);
+          assert.equal(activeLayout.left, native.layout.left);
+          assert.equal(activeLayout.right, native.layout.right);
+          assert.equal(activeLayout.bottom, native.layout.bottom);
+          assert.equal(activeLayout.minHeight, '0px', `${label}: Gemini dock drops 133px min-height`);
+          assert.equal(activeLayout.paddingTop, '16px', `${label}: Gemini dock tightens top fade padding to 16px`);
+          const cardMetrics = await assertCardUnclippedAndCompactGap(page, host, label);
+          assert.ok(await page.locator(LIVE_SELECTORS.gemini.attachment).isVisible(), `${label}: attachment preview visible`);
+          await page.locator(`${LIVE_SELECTORS.gemini.attachment} button`).click({ trial: true });
+          const disclaimerHeight = await page.locator(LIVE_SELECTORS.gemini.disclaimer).evaluate(el => Math.round(el.getBoundingClientRect().height * 10) / 10);
+          assert.equal(disclaimerHeight, 0, `${label}: Gemini disclaimer is hidden (0px)`);
+          assert.deepEqual(await domOrderSnapshot(page, host), native.domOrder, `${label}: Gemini active DOM parent/child/sibling order intact`);
+
+          for (let i = 0; i < 2; i++) {
+            await page.evaluate(() => ObsidianPrismRuntime.refresh());
+            await page.waitForTimeout(180);
+            await frames(page);
+          }
+          const rescanDisclaimerHeight = await page.locator(LIVE_SELECTORS.gemini.disclaimer).evaluate(el => Math.round(el.getBoundingClientRect().height * 10) / 10);
+          assert.equal(rescanDisclaimerHeight, 0, `${label}: Gemini disclaimer stays 0px across rescans`);
+          await assertCardUnclippedAndCompactGap(page, host, `${label} rescan`);
+
+          if (pal.name === 'obsidian' || pal.name === 'crystal') {
+            await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-${pal.name}-live-scrim.png`) });
+            if (pal.name === 'obsidian') {
+              // Prove dynamic --op-dock-clearance activates when scroller padding is smaller than the overlaid dock,
+              // keeping the last Assistant Turn and message-actions above Composer Surface and clickable.
+              await page.evaluate(() => {
+                document.querySelector('[data-prism-test-scroller]').style.paddingBottom = '24px';
+                ObsidianPrismRuntime.refresh();
+              });
+              await page.waitForFunction(() => parseFloat(document.documentElement.style.getPropertyValue('--op-dock-clearance')) >= 80);
+              await scrollToEnd(page, host);
+              const dynClearance = await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-clearance'));
+              assert.ok(parseFloat(dynClearance) >= 80, `${label}: tight-padding scroller receives dynamic --op-dock-clearance (${dynClearance})`);
+              await assertCrispAndClickable(page, host, `${label} tight-scroller-clearance`);
+              await page.evaluate(() => {
+                const scroller = document.querySelector('[data-prism-test-scroller]');
+                scroller.style.removeProperty('padding-bottom');
+                if (!scroller.getAttribute('style')?.trim()) scroller.removeAttribute('style');
+                ObsidianPrismRuntime.refresh();
+              });
+              await scrollToEnd(page, host);
+
+              const emptyDockH = await page.evaluate(() => {
+                const hdr = document.querySelector('.file-preview-container');
+                const saved = [...hdr.childNodes];
+                hdr.replaceChildren();
+                ObsidianPrismRuntime.refresh();
+                return new Promise(r => requestAnimationFrame(() => requestAnimationFrame(() => {
+                  const h = document.querySelector('input-container.input-gradient').getBoundingClientRect().height;
+                  hdr.replaceChildren(...saved);
+                  ObsidianPrismRuntime.refresh();
+                  requestAnimationFrame(() => requestAnimationFrame(() => r(Math.round(h * 10) / 10)));
+                })));
+              });
+              assert.ok(emptyDockH <= 116, `${label}: empty-header Gemini overlaid dock <= 116px (got ${emptyDockH}px)`);
+            }
+            await assertRestoredState(page, host, label, native, pal.hostPatch, pal.patch);
+          }
+          console.log(`PASS ${label}: pure transparent dock (left/right alpha ${leftOcc.max.toFixed(2)}/${rightOcc.max.toFixed(2)}, clearance ${state.clearance || '0px'}+${state.scrollerPadBottom}px, bottomGap ${cardMetrics.cardGap}px)`);
+        }
       }
-      console.log(`PASS ${label}: blur Composer Scrim active (alpha ${occlusion.atCenter.toFixed(2)}, disclaimer 0px, bottomGap ${cardMetrics.cardGap}px)`);
+      console.log(`PASS ${engine} gemini transparent-dock ${pal.name}: verified standard/wide/full widths, zero blur/dark box, clickable last message-actions`);
     }
 
-    await patchConfig(page, { ...PALETTES[0].patch, ambientStyle: 'aurora' }, () => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
-    await assertDisabledAndHomeRestore(page, host, `${engine} gemini overlay`, native, PALETTES[0].patch);
-    assert.deepEqual(errors, []);
-  });
-}
-
-/** No backdrop-filter support: the @supports block is disabled and the fallback gradient must stay translucent. */
-async function checkFallback(suite, host, pal, { stickyOverlay = false } = {}) {
-  const { engine, styles } = suite;
-  const label = `${engine} ${host}${stickyOverlay ? ' sticky-overlay' : ''} ${pal.name} no-backdrop-filter`;
-  const patched = styles.map(css => css.split(SCRIM_BLUR_SUPPORTS).join('@supports (prism-unsupported-property: none)'));
-  assert.notDeepEqual(patched, styles, 'the scrim blur is gated by the expected @supports condition');
-  const initial = { ...pal.patch, ambientStyle: 'aurora', ambientTexture: 'off', motionLevel: 'off' };
-  await onLiveFixture(suite, host, { failure: `${host}-${pal.name}-scrim-fallback-failure`, colorScheme: pal.scheme, initial }, async ({ page, errors }) => {
-    if (stickyOverlay) {
-      await page.evaluate(() => {
-        const scroller = document.querySelector('[data-prism-test-scroller]');
-        const dock = document.querySelector('#thread-bottom-container');
-        dock.style.position = 'sticky';
-        dock.style.bottom = '0px';
-        scroller.append(dock);
-      });
+    // Verify site disable (enableGemini: false) and extension disable (enabled: false) restore native paint & zero residue.
+    await applyPalette(page, PALETTES[0], '', { contentWidth: 'standard', ambientStyle: 'aurora' });
+    for (const off of [{ enableGemini: false }, { enabled: false }]) {
+      const modeLabel = `${engine} gemini ${Object.keys(off)[0]}=false`;
+      await patchConfig(page, off, () => !document.documentElement.hasAttribute('data-op-enabled'));
+      await scrollToEnd(page, host);
+      assert.deepEqual(await attributeSnapshot(page, host), native.attributes, `${modeLabel}: restores every attribute`);
+      assert.deepEqual(await domOrderSnapshot(page, host), native.domOrder, `${modeLabel}: preserves DOM order`);
+      assert.deepEqual(await dockPaint(page, host), native.paint, `${modeLabel}: restores native gradient paint`);
+      near((await occlusionColumn(page, host, native.canvas)).max, native.occlusion.max, 0.05, `${modeLabel}: restores native gradient occlusion`);
+      near(await composerBottomGap(page, host), native.bottomGap, 0.5, `${modeLabel}: restores native bottom gap`);
+      assert.deepEqual(await gemiInputLayout(page), native.layout, `${modeLabel}: restores native input layout`);
+      assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-clearance')), '', `${modeLabel}: clears --op-dock-clearance`);
+      await patchConfig(page, { enabled: true, enableGemini: true, ...PALETTES[0].patch, ambientStyle: 'aurora' }, () => document.documentElement.getAttribute('data-op-enabled') === 'true');
     }
-    await injectExtension(page, { ...suite, styles: patched });
+
+    // Verify Home State restores native Gemini bottom gradient paint and clears all dock/backdrop/scroller marks & --op-dock-clearance.
+    const removedTurns = await page.evaluate(() => {
+      const nodes = [...document.querySelectorAll('user-query,model-response')];
+      window.__prismGeminiHomeTurns = nodes.map(node => ({ parent: node.parentElement, node }));
+      for (const node of nodes) node.remove();
+      return nodes.length;
+    });
+    assert.ok(removedTurns > 0, `${engine} gemini Home State: fixture has turns to remove`);
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-home') === 'true');
+    await frames(page);
+    assert.deepEqual(await dockPaint(page, host), native.paint, `${engine} gemini Home State: restores native gradient paint`);
+    near((await occlusionColumn(page, host, native.canvas)).max, native.occlusion.max, 0.05, `${engine} gemini Home State: restores native gradient occlusion`);
+    near(await composerBottomGap(page, host), native.bottomGap, 0.5, `${engine} gemini Home State: restores native bottom gap`);
+    assert.deepEqual(await gemiInputLayout(page), native.layout, `${engine} gemini Home State: restores native input layout`);
+    assert.equal(await page.locator('[data-op-composer-backdrop="true"],[data-op-composer-dock="true"],[data-op-composer-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"]').count(), 0, `${engine} gemini Home State: leaves zero dock/backdrop/scrim/scroller marks`);
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-clearance')), '', `${engine} gemini Home State: clears --op-dock-clearance`);
+
+    // Restore turns, re-verify active transparent bar, then test runtime stop().
+    await page.evaluate(() => {
+      for (const { parent, node } of window.__prismGeminiHomeTurns) parent.append(node);
+      delete window.__prismGeminiHomeTurns;
+      ObsidianPrismRuntime.refresh();
+    });
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-home') === 'false' && document.querySelector('input-container')?.getAttribute('data-op-composer-overlaid') === 'true');
+    await frames(page);
+
+    await page.evaluate(() => ObsidianPrismRuntime.stop());
+    await frames(page);
     await scrollToEnd(page, host);
-    const occlusion = await assertOverlayScrimActive(page, host, pal.scheme, label, { checkFallbackMode: true });
+    assert.deepEqual(await attributeSnapshot(page, host), native.attributes, `${engine} gemini stop(): restores every attribute`);
+    assert.deepEqual(await domOrderSnapshot(page, host), native.domOrder, `${engine} gemini stop(): preserves DOM order`);
+    assert.deepEqual(await dockPaint(page, host), native.paint, `${engine} gemini stop(): restores native gradient paint`);
+    near((await occlusionColumn(page, host, native.canvas)).max, native.occlusion.max, 0.05, `${engine} gemini stop(): restores native gradient occlusion`);
+    near(await composerBottomGap(page, host), native.bottomGap, 0.5, `${engine} gemini stop(): restores native bottom gap`);
+    assert.deepEqual(await gemiInputLayout(page), native.layout, `${engine} gemini stop(): restores native input layout`);
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-clearance')), '', `${engine} gemini stop(): clears --op-dock-clearance`);
     assert.deepEqual(errors, []);
-    console.log(`PASS ${label}: fallback gradient peaks at ${(occlusion.max * 100).toFixed(0)}% canvas with no solid block`);
+    console.log(`PASS ${engine} gemini transparent-dock restoration: Native Palette, Home State, site/extension disable and stop() restore native gradient with zero residue`);
   });
 }
 
@@ -1092,8 +1256,6 @@ export async function checkLiveComposerScrim(options) {
   await checkChatGPTBottomVariants(options);
   await checkChatGPTStickyOverlay(options);
   await checkGeminiOverlay(options);
-  await checkFallback(options, 'gemini', PALETTES[0]);
-  await checkFallback(options, 'gemini', PALETTES[2]);
   // v0.4.3 #41 live ChatGPT thread footer (2026-11-24 facts)
   await checkChatGPTThreadFooter(options);
 }

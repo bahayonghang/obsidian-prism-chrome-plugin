@@ -73,7 +73,8 @@
       thoughts: '[data-testid="reasoning-content"], [data-testid="thoughts-content"], [data-testid="thinking-content"]',
       streaming: '[data-testid="stop-button"], [data-is-streaming="true"]',
       usesOverlayScrim: false,
-      usesScrollerAlphaFade: true
+      usesScrollerAlphaFade: true,
+      conversationOnlyBackdrops: false
     },
     gemini: {
       users: 'user-query, [data-test-id="user-query"], .user-query-container',
@@ -84,7 +85,7 @@
       editors: ['input-area-v2 .ql-editor[contenteditable="true"]', 'rich-textarea .ql-editor', 'input-area-v2 [contenteditable="true"]', 'rich-textarea [contenteditable="true"]', 'textarea[aria-label]', 'main [contenteditable="true"][role="textbox"]'],
       composers: ['input-area-v2 .text-input-field', 'input-area-v2 .input-area-container', '.input-area-container', '[data-test-id="input-area"]', 'input-area-v2', 'input-area'],
       composerCard: 'input-area-v2',
-      composerBackdrops: 'input-area-v2,input-area,.input-area-container,[data-test-id="input-area"],[data-test-id="input-area-container"],.input-area-wrapper',
+      composerBackdrops: 'input-container,.input-gradient,input-area-v2,input-area,.input-area-container,[data-test-id="input-area"],[data-test-id="input-area-container"],.input-area-wrapper',
       codeSurfaces: 'code-block, .code-block',
       codeHeaders: '.code-block-decoration, [data-test-id="code-block-header"]',
       codeWells: '.formatted-code-block-internal-container',
@@ -129,8 +130,9 @@
       sidebarLinks: 'a[href^="/app/"]',
       thoughts: 'model-thoughts .thoughts-content, model-thoughts .thought-content, model-thoughts .markdown, [data-test-id="thoughts-content"], [data-test-id="thinking-content"]',
       streaming: '[data-test-id="stop-button"], [data-test-id="stop-response-button"], .stop-button',
-      usesOverlayScrim: true,
-      usesScrollerAlphaFade: false
+      usesOverlayScrim: false,
+      usesScrollerAlphaFade: false,
+      conversationOnlyBackdrops: true
     }
   });
 
@@ -1508,6 +1510,7 @@
       host,
       usesOverlayScrim: Boolean(spec.usesOverlayScrim),
       usesScrollerAlphaFade: Boolean(spec.usesScrollerAlphaFade),
+      conversationOnlyBackdrops: Boolean(spec.conversationOnlyBackdrops),
       contentWidth: Object.freeze({
         native: spec.contentWidth.native,
         targets: Object.freeze([...spec.contentWidth.targets]),

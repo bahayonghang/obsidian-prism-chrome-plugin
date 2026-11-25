@@ -1473,7 +1473,7 @@ test('v0.4.1 #30: findComposerBackdrops covers depth<=14, fade-mask, container f
   {
     const g = makeDoc('gemini');
     const gMain = g.el('chat-window');
-    const inputContainer = g.el('input-container', { class: 'input-gradient' }, { rect: { left: 0, right: 1280, top: 760, bottom: 900, width: 1280, height: 140 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'absolute' } });
+    const inputContainer = g.el('input-container', { class: 'input-gradient input-gradient-overlay edge-to-edge' }, { rect: { left: 0, right: 1280, top: 760, bottom: 900, width: 1280, height: 140 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'absolute' } });
     const areaContainer = g.el('div', { class: 'input-area-container' }, { rect: { left: 310, right: 970, top: 780, bottom: 880, width: 660, height: 100 } });
     const inputAreaCard = g.el('input-area-v2', {}, { rect: { left: 310, right: 970, top: 780, bottom: 880, width: 660, height: 100 } });
     const textInputField = g.el('div', { class: 'text-input-field' }, { rect: { left: 322, right: 958, top: 788, bottom: 872, width: 636, height: 84 } });
@@ -1488,6 +1488,7 @@ test('v0.4.1 #30: findComposerBackdrops covers depth<=14, fade-mask, container f
     const gemBackdrops = gemAdapter.composerBackdropSurfaces(textInputField);
     assert.equal(gemBackdrops.includes(inputAreaCard), false, 'never returns composerCard (input-area-v2) as backdrop');
     assert.equal(gemBackdrops.includes(textInputField), false, 'never returns composer (.text-input-field) as backdrop');
+    assert.equal(gemBackdrops.includes(areaContainer), true, 'collects inner .input-area-container dock wrapper');
     assert.equal(gemBackdrops.includes(inputContainer), true, 'still collects outer input-container');
     assert.equal(gemAdapter.composerScrimSurface(textInputField), inputContainer, 'composerScrimSurface still resolves outer input-container');
   }
@@ -1868,14 +1869,16 @@ test('v0.4.1 #28: composerBelowSiblings collapses hidden-content shells (hidden 
   assert.deepEqual([...res.disclaimers], []);
 });
 
-test('v0.4.1 review: adapters expose per-host scrim and scroller Alpha fade capability flags', () => {
+test('v0.4.4 #45: adapters unify both hosts on transparent docks (usesOverlayScrim: false) and scope Gemini backdrops to active conversations', () => {
   const A = adapters();
   const chatgpt = A.forHost('chatgpt', {});
   const gemini = A.forHost('gemini', {});
   assert.equal(chatgpt.usesOverlayScrim, false);
   assert.equal(chatgpt.usesScrollerAlphaFade, true);
-  assert.equal(gemini.usesOverlayScrim, true);
+  assert.equal(chatgpt.conversationOnlyBackdrops, false);
+  assert.equal(gemini.usesOverlayScrim, false);
   assert.equal(gemini.usesScrollerAlphaFade, false);
+  assert.equal(gemini.conversationOnlyBackdrops, true);
 });
 
 test('v0.4.1 review: adapters own ChatGPT .code-shell and Gemini well/header/surface resolution without sibling leakage', () => {
