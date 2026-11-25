@@ -94,6 +94,7 @@ test('hosts.css tightens ChatGPT active conversation bottom spacer, thread colum
     for (const sel of block.selectors) {
       if (
         sel.includes('[data-op-composer-dock="true"]') ||
+        sel.includes('[data-op-thread-footer="true"]') ||
         sel.includes('[data-op-composer-empty-sibling="true"]') ||
         sel.includes('[data-op-composer-disclaimer="true"]') ||
         sel.includes('hallucination-disclaimer')
@@ -101,6 +102,15 @@ test('hosts.css tightens ChatGPT active conversation bottom spacer, thread colum
         assert.ok(sel.includes('[data-op-composer="true"]'), `bottom pinning / disclaimer / empty-sibling rule must gate on [data-op-composer="true"]: ${sel}`);
       }
     }
+  }
+
+  const threadFooterBlocks = blocks.filter(b => b.selectors.some(s => s.includes('[data-op-thread-footer="true"]')));
+  assert.ok(threadFooterBlocks.length >= 2, 'must define ChatGPT active conversation rules for [data-op-thread-footer="true"]');
+  for (const block of threadFooterBlocks) {
+    for (const sel of block.selectors) {
+      assert.ok(sel.startsWith(chatgptComposerPrefix), `Thread Footer spacing rule must gate on ChatGPT active conversation + composerRestyle: ${sel}`);
+    }
+    assert.equal(/(?:^|;|\s)(?:position|z-index|top|bottom|left|right|anchor-scope)\s*:/i.test(block.body), false, `Thread Footer spacing rule must never alter native positioning, z-index, or anchor-scope: ${block.body}`);
   }
 
   const overlaidDockRule = findRule(

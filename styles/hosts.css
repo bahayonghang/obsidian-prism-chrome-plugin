@@ -611,6 +611,35 @@ html[data-op-enabled="true"][data-op-composer="true"][data-op-home="false"]:not(
   margin-top: 0 !important;
   margin-bottom: 0 !important;
 }
+/* v0.4.4 #46: Tighten live ChatGPT Thread Footer bottom inset & inner wrapper padding without altering its native
+ * positioning, z-index, or anchor-scope. Gated strictly on active conversation + composerRestyle + non-Native Palette. */
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] {
+  --thread-composer-bottom-inset: 0px !important;
+  padding-bottom: 7px !important;
+  margin-bottom: 0 !important;
+  min-height: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] [data-thread-scroll-footer="true"] {
+  --thread-composer-bottom-inset: 0px !important;
+  padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
+  min-height: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] [data-thread-scroll-footer="true"]::after {
+  height: 0 !important;
+  min-height: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] :has([data-op-composer-surface="true"]) {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  min-height: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] [data-op-composer-surface="true"] {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
 html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] {
   min-height: 0 !important;
   padding-top: 16px !important;
@@ -790,6 +819,8 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-m
  * shifts it left by --op-reading-shift so a full column clears the Conversation Rail. */
 html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) main {
   --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+  --thread-content-responsive-max-width: var(--op-reading-width, 48rem) !important;
+  --thread-body-max-width: var(--op-reading-width, 48rem) !important;
   --user-chat-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
 }
 html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(#thread-bottom-container,#thread-bottom,#thread-bottom [class*="--thread-content-max-width"]) {
@@ -818,6 +849,20 @@ html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="
   max-width: none !important;
   margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem)) / 2 + var(--op-reading-shift, 0px))) !important;
   margin-right: auto !important;
+}
+/* v0.4.4 #46: Live Thread Footer width bridge on [data-thread-composer-backdrop="true"] and inner wrapper uncap. */
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) [data-thread-composer-backdrop="true"] {
+  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+  --thread-content-responsive-max-width: var(--op-reading-width, 48rem) !important;
+  --thread-body-max-width: var(--op-reading-width, 48rem) !important;
+  max-width: calc(var(--op-reading-width, 48rem) + 40px) !important;
+  margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem) - 40px) / 2 + var(--op-reading-shift, 0px))) !important;
+  margin-right: auto !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-thread-composer-backdrop="true"] :has(form[data-chatgpt-composer]),[data-thread-composer-backdrop="true"] form[data-chatgpt-composer]) {
+  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+  --thread-body-max-width: var(--op-reading-width, 48rem) !important;
+  max-width: 100% !important;
 }
 html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-content-search-unit-key$=":user"] :has([data-user-message-bubble="true"]),[data-message-author-role="user"] :has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"])) {
   --user-chat-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;

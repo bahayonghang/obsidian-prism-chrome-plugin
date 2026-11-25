@@ -57,10 +57,14 @@
           '#thread-bottom [class*="--thread-content-max-width"]',
           '#thread-bottom :has(form[data-chatgpt-composer]):not(:has(> form[data-chatgpt-composer]))',
           '#thread-bottom :has(> form[data-chatgpt-composer])',
-          '#thread-bottom > form[data-chatgpt-composer]'
+          '#thread-bottom > form[data-chatgpt-composer]',
+          '[data-thread-composer-backdrop="true"]',
+          '[data-thread-composer-backdrop="true"] :has(form[data-chatgpt-composer])',
+          '[data-thread-composer-backdrop="true"] form[data-chatgpt-composer]'
         ]
       },
       threadColumns: '[class*="transcriptContent"], .thread, [data-testid="conversation-thread"], [class*="thread-content"]',
+      threadColumnsStrict: '[class*="transcriptContent"], .thread, [data-testid="conversation-thread"]',
       composerColumns: '.composer-column, .composer-container, [data-testid="composer-container"]',
       // v0.3.1 #19: grid area names the two-row Composer Surface rearranges. Inferred: the probe
       // (2026-11-22) saw only the column tracks, so an unnamed grid falls back to structural slots.
@@ -426,6 +430,25 @@
     if (!markers.length || !inConversationScroller(markers[0], view)) return [];
     return [...new Set([...markers, layer])].filter(node => node && !isOwned(node) &&
       !node.matches(OVERLAY_EXCLUDED) && !node.querySelector(MESSAGE_AREAS));
+  }
+  function findThreadFooterLayer(spec, composer) {
+    if (!spec.threadFooters || !composer || isOwned(composer)) return null;
+    const view = composer.ownerDocument?.defaultView || global;
+    if (!view?.getComputedStyle) return null;
+    const nodes = findThreadFooter(spec, composer, view);
+    if (nodes.length) {
+      let outermost = null;
+      for (const node of nodes) {
+        if (!outermost || node.contains?.(outermost)) outermost = node;
+      }
+      return outermost;
+    }
+    const backdrops = findComposerBackdrops(spec, composer);
+    const ancestors = [];
+    for (let node = composer.parentElement; node; node = node.parentElement) {
+      if (backdrops.includes(node)) ancestors.push(node);
+    }
+    return [...ancestors].reverse().find(node => isThreadFooterLayer(spec, node, view) && inConversationScroller(node, view)) || null;
   }
   function findComposerBackdrops(spec, composer) {
     if (!composer || isOwned(composer)) return [];
@@ -1268,20 +1291,45 @@
     }
     return spacers;
   }
-  function findColumnSurfaces(selector, primary, anchor) {
+  function hasGenuineThreadContentClass(node) {
+    const raw = node?.getAttribute?.('class');
+    if (!raw) return false;
+    return String(raw).trim().split(/\s+/).some(token =>
+      Boolean(token) && !/--thread-content/i.test(token) && !token.includes('[') && !token.includes('(') && /thread-content/i.test(token)
+    );
+  }
+  function findMessageScroller(primary, anchor) {
+    if (!primary || !anchor) return null;
+    const view = anchor.ownerDocument?.defaultView || global;
+    for (let node = anchor.parentElement; node && node !== primary; node = node.parentElement) {
+      if (isScrollContainer(node, view) || node.matches?.('[data-prism-test-scroller],infinite-scroller')) return node;
+    }
+    return null;
+  }
+  function findColumnSurfaces(selector, primary, anchor, filter = null) {
     if (!selector || !primary) return [];
     const out = [];
     for (const node of primary.querySelectorAll(selector)) {
-      if (!isOwned(node) && isVisible(node) && primary.contains(node) && (!anchor || node.contains(anchor) || anchor.contains(node))) {
+      if (!isOwned(node) && isVisible(node) && primary.contains(node) && (!anchor || node.contains(anchor) || anchor.contains(node)) && (!filter || filter(node))) {
         if (!out.includes(node)) out.push(node);
       }
     }
     if (!out.length && anchor) {
       for (let node = anchor.parentElement; node && node !== primary; node = node.parentElement) {
-        if (!isOwned(node) && node.matches && node.matches(selector)) { out.push(node); break; }
+        if (!isOwned(node) && node.matches && node.matches(selector) && (!filter || filter(node))) { out.push(node); break; }
       }
     }
     return out;
+  }
+  function findThreadColumnSurfaces(spec, primary, anchor) {
+    const scroller = findMessageScroller(primary, anchor);
+    return findColumnSurfaces(spec.threadColumns, primary, anchor, node => {
+      if (scroller && node !== scroller && node.contains?.(scroller)) return false;
+      if (spec.threadColumnsStrict && !node.matches?.(spec.threadColumnsStrict)) {
+        return hasGenuineThreadContentClass(node);
+      }
+      return true;
+    });
   }
   /* v0.3.1 #21 Content Width Presets, computed from the main area's width (not fixed tiers).
    * Returns the target reading (text) width and a leftward shift for the centred column, or null
@@ -1520,9 +1568,10 @@
       composerCardSurface: (composer) => findComposerCard(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerBackdropSurfaces: (composer) => findComposerBackdrops(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerScrimSurface: (composer) => findComposerScrim(spec, composer === undefined ? findComposer(spec, root) : composer),
+      threadFooterLayer: (composer) => findThreadFooterLayer(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerBelowSiblings: (composer, dock) => {
         const comp = composer === undefined ? findComposer(spec, root) : composer;
-        const resolvedDock = dock === undefined ? findComposerScrim(spec, comp) : dock;
+        const resolvedDock = dock === undefined ? (findComposerScrim(spec, comp) || findThreadFooterLayer(spec, comp)) : dock;
         const primary = findPrimary(spec, root);
         const allMessages = messages();
         return findComposerBelowSiblings(comp, resolvedDock, primary, allMessages[allMessages.length - 1] || null);
@@ -1561,7 +1610,7 @@
       codeHeaderFor: (surface, pre, headers) => findCodeHeaderFor(spec, surface, pre, headers),
       codeWellFor: (pre) => findCodeWellFor(spec, pre),
       threadTailSpacers: () => findThreadTailSpacers(spec, findPrimary(spec, root), messages()),
-      threadColumns: () => findColumnSurfaces(spec.threadColumns, findPrimary(spec, root), messages()[0]),
+      threadColumns: () => findThreadColumnSurfaces(spec, findPrimary(spec, root), messages()[0]),
       composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, findPrimary(spec, root), composer === undefined ? findComposer(spec, root) : composer),
       sidebarSurfaces: () => findSidebars(spec, root),
       sidebarActiveTargets: (sidebars) => findSidebarActiveTargets(sidebars === undefined ? findSidebars(spec, root) : sidebars),

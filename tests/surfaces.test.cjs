@@ -224,12 +224,15 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     composerSurface: () => composer,
     composerGrid: () => ({ element: gridEl, slots: null, trailing: trailingEl }),
     composerEmptyHeaders: () => options.emptyHeaders || [],
-    composerBackdropSurfaces: () => [scrim],
-    composerScrimSurface: () => scrim,
-    composerBelowSiblings: () => ({
-      empty: options.withBelowSiblings ? [emptySibling] : [],
-      disclaimers: options.withBelowSiblings ? [disclaimerSibling] : []
-    }),
+    composerBackdropSurfaces: () => options.composerBackdropSurfaces ? options.composerBackdropSurfaces() : [scrim],
+    composerScrimSurface: () => (options.composerScrimSurface ? options.composerScrimSurface() : scrim),
+    threadFooterLayer: () => (options.threadFooterLayer ? options.threadFooterLayer() : null),
+    composerBelowSiblings: (comp, dock) => (options.composerBelowSiblings
+      ? options.composerBelowSiblings(comp, dock)
+      : {
+          empty: options.withBelowSiblings ? [emptySibling] : [],
+          disclaimers: options.withBelowSiblings ? [disclaimerSibling] : []
+        }),
     composerAddTrigger: () => addBtn,
     modelSelectorTrigger: () => modelBtn,
     modelCapsuleSlot: () => modelSlotEl,
@@ -1200,7 +1203,7 @@ test('v0.4.0 handover: same-realm double-injection keeps active marks flicker-fr
   const SURFACE_ATTRS = [
     'data-op-main-surface', 'data-op-thread-column', 'data-op-composer-column', 'data-op-code-surface',
     'data-op-code-header', 'data-op-code-icon-fill', 'data-op-code-icon-stroke',
-    'data-op-composer-dock', 'data-op-composer-overlaid', 'data-op-composer-scrim', 'data-op-thread-scroller', 'data-op-scroller-fade',
+    'data-op-composer-dock', 'data-op-thread-footer', 'data-op-composer-overlaid', 'data-op-composer-scrim', 'data-op-thread-scroller', 'data-op-scroller-fade',
     'data-op-composer-empty-sibling', 'data-op-composer-disclaimer', 'data-op-thread-spacer',
     'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-header-empty', 'data-op-composer-leading', 'data-op-composer-primary',
     'data-op-composer-trailing', 'data-op-composer-toolbar', 'data-op-composer-add', 'data-op-model-capsule',
@@ -2045,4 +2048,66 @@ test('v0.4.4 #47: runtime leaves idle voice/mic unmarked and tracks Send/Stop pr
   assert.equal(stopBtn.getAttribute('data-op-composer-primary-action'), null, 'Stop mark clears when returning to idle voice state');
 
   ctx.runtime.stop();
+});
+
+test('v0.4.4 #46: runtime marks data-op-thread-footer and scans footer siblings only in active restyled non-host conversation, with clean teardown', async () => {
+  let receivedDock = undefined;
+  let threadFooterEl = null;
+  let footerSpacer = null;
+  let footerDisclaimer = null;
+  const ctx = createRuntimeDom({ themeMode: 'dark', palette: 'obsidian', composerRestyle: true }, {
+    host: 'chatgpt',
+    composerScrimSurface: () => null,
+    composerBackdropSurfaces: () => (threadFooterEl ? [threadFooterEl] : []),
+    threadFooterLayer: () => threadFooterEl,
+    composerBelowSiblings: (_comp, dock) => {
+      receivedDock = dock;
+      return dock === threadFooterEl
+        ? { empty: [footerSpacer], disclaimers: [footerDisclaimer] }
+        : { empty: [], disclaimers: [] };
+    }
+  });
+  const e = Object.fromEntries(ctx.elements);
+  threadFooterEl = ctx.makeEl('div', { class: 'thread-footer_A8ZvKV' });
+  footerSpacer = ctx.makeEl('div', { class: 'thread-footer-spacer_v4' });
+  footerDisclaimer = ctx.makeEl('div', { class: 'disclaimer_v7rk' });
+  threadFooterEl.append(footerSpacer, footerDisclaimer);
+  e.primary.append(threadFooterEl);
+
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 160));
+  assert.equal(receivedDock, threadFooterEl, 'passes threadFooterLayer to composerBelowSiblings when dockHost is null');
+  assert.equal(threadFooterEl.getAttribute('data-op-thread-footer'), 'true');
+  assert.equal(threadFooterEl.getAttribute('data-op-composer-dock'), null, 'Thread Footer never gets data-op-composer-dock');
+  assert.equal(threadFooterEl.getAttribute('data-op-composer-backdrop'), 'true');
+  assert.equal(footerSpacer.getAttribute('data-op-composer-empty-sibling'), 'true');
+  assert.equal(footerDisclaimer.getAttribute('data-op-composer-disclaimer'), 'true');
+
+  // composerRestyle: false clears Thread Footer spacing/sibling marks while keeping backdrop paint clear.
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', composerRestyle: false } });
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(threadFooterEl.getAttribute('data-op-thread-footer'), null);
+  assert.equal(footerSpacer.getAttribute('data-op-composer-empty-sibling'), null);
+  assert.equal(footerDisclaimer.getAttribute('data-op-composer-disclaimer'), null);
+  assert.equal(threadFooterEl.getAttribute('data-op-composer-backdrop'), 'true', 'backdrop paint clearing stays active when composerRestyle is false');
+
+  // Re-enable composerRestyle then switch to Native Palette -> clears all marks.
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', composerRestyle: true } });
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(threadFooterEl.getAttribute('data-op-thread-footer'), 'true');
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'host', themeMode: 'dark', composerRestyle: true } });
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(threadFooterEl.getAttribute('data-op-thread-footer'), null);
+  assert.equal(threadFooterEl.getAttribute('data-op-composer-backdrop'), null);
+  assert.equal(footerSpacer.getAttribute('data-op-composer-empty-sibling'), null);
+  assert.equal(footerDisclaimer.getAttribute('data-op-composer-disclaimer'), null);
+
+  // Re-enable -> stop() leaves zero residue.
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', composerRestyle: true } });
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(threadFooterEl.getAttribute('data-op-thread-footer'), 'true');
+  ctx.runtime.stop();
+  assert.equal(threadFooterEl.getAttribute('data-op-thread-footer'), null);
+  assert.equal(footerSpacer.getAttribute('data-op-composer-empty-sibling'), null);
+  assert.equal(footerDisclaimer.getAttribute('data-op-composer-disclaimer'), null);
 });
