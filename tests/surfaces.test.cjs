@@ -232,7 +232,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     composerAddTrigger: () => addBtn,
     modelSelectorTrigger: () => modelBtn,
     modelCapsuleSlot: () => modelSlotEl,
-    composerPrimaryAction: () => primaryActionBtn,
+    composerPrimaryAction: () => (options.composerPrimaryAction ? options.composerPrimaryAction() : primaryActionBtn),
     composerAttachments: () => [composerAttachment],
     composerChips: () => [chip],
     codeSurfaces: () => options.codeSurfaces ? options.codeSurfaces() : [codeSurface],
@@ -1981,6 +1981,44 @@ test('v0.4.1 review: user source mode survives transient incomplete-brace stream
   assert.equal(recoveredToggle.getAttribute('data-formula-mode'), 'preview');
   assert.equal(pre.getAttribute('data-op-formula-source-hidden'), 'true');
   assert.equal(recoveredPreview.hidden, false);
+
+  ctx.runtime.stop();
+});
+
+test('v0.4.4 #47: runtime leaves idle voice/mic unmarked and tracks Send/Stop primary action reversibly across transitions', async () => {
+  let activePrimary = null;
+  const ctx = createRuntimeDom({ themeMode: 'dark', palette: 'obsidian', composerRestyle: true }, {
+    host: 'chatgpt',
+    composerPrimaryAction: () => activePrimary
+  });
+  const e = Object.fromEntries(ctx.elements);
+  const makeNode = ctx.makeEl;
+  const voiceBtn = makeNode('button', { 'aria-label': 'Start Voice' });
+  const sendBtn = makeNode('button', { 'data-testid': 'send-button', 'aria-label': 'Send prompt' });
+  const stopBtn = makeNode('button', { 'data-testid': 'stop-button', 'aria-label': 'Stop streaming' });
+  e.trailingEl.append(voiceBtn, sendBtn, stopBtn);
+
+  await new Promise(resolve => setTimeout(resolve, 25));
+  assert.equal(voiceBtn.getAttribute('data-op-composer-primary-action'), null);
+  assert.equal(sendBtn.getAttribute('data-op-composer-primary-action'), null);
+  assert.equal(stopBtn.getAttribute('data-op-composer-primary-action'), null);
+
+  activePrimary = sendBtn;
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 160));
+  assert.equal(sendBtn.getAttribute('data-op-composer-primary-action'), 'true');
+  assert.equal(voiceBtn.getAttribute('data-op-composer-primary-action'), null);
+
+  activePrimary = stopBtn;
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 160));
+  assert.equal(stopBtn.getAttribute('data-op-composer-primary-action'), 'true');
+  assert.equal(sendBtn.getAttribute('data-op-composer-primary-action'), null, 'previous Send mark clears when Stop takes over');
+
+  activePrimary = null;
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 160));
+  assert.equal(stopBtn.getAttribute('data-op-composer-primary-action'), null, 'Stop mark clears when returning to idle voice state');
 
   ctx.runtime.stop();
 });

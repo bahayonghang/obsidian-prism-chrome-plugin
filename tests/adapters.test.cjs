@@ -864,18 +864,26 @@ test('v0.4.0 #26: ChatGPT adapter resolves composerGrid.trailing, modelCapsuleSl
   assert.equal(resolvedGrid.trailing, trailing);
   assert.equal(adapter.modelCapsuleSlot(resolvedGrid.trailing, modelBtn), modelBtn);
   assert.deepEqual([...adapter.composerAttachments(composer)], [tile]);
-  assert.equal(adapter.composerPrimaryAction(composer), voiceBtn);
+  assert.equal(adapter.composerPrimaryAction(composer), null, 'idle Start Voice and Dictate never receive primary action');
 
-  // Exclude dictate (English & Chinese) and prefer send button over voice button when both exist.
+  // Strictly match real Send and Stop buttons only; never fall back to voice, dictate, or arbitrary buttons.
   const sendBtn = el('button', { type: 'button', 'data-testid': 'send-button', 'aria-label': 'Send prompt' });
   trailing.append(sendBtn);
   assert.equal(adapter.composerPrimaryAction(composer), sendBtn);
 
+  const stopBtn = el('button', { type: 'button', 'data-testid': 'stop-button', 'aria-label': 'Stop streaming' });
+  trailing.append(stopBtn);
+  assert.equal(adapter.composerPrimaryAction(composer), stopBtn, 'active Stop button resolves as primary action');
+
+  stopBtn.style.display = 'none';
+  assert.equal(adapter.composerPrimaryAction(composer), sendBtn);
+
   sendBtn.style.display = 'none';
-  voiceBtn.style.display = 'none';
   const zhDictate = el('button', { type: 'button', 'aria-label': '听写' });
-  trailing.append(zhDictate);
-  assert.equal(adapter.composerPrimaryAction(composer), null, 'never falls back to dictate, model, add, or attachment remove buttons');
+  const speechBtn = el('button', { type: 'button', 'data-testid': 'composer-speech-button', 'data-composer-voice-start': 'true', 'aria-label': 'Start Voice' });
+  const arbitraryBtn = el('button', { type: 'button', 'aria-label': 'Custom audio tool' });
+  trailing.append(zhDictate, speechBtn, arbitraryBtn);
+  assert.equal(adapter.composerPrimaryAction(composer), null, 'never falls back to voice, dictate, model, add, attachment remove, or arbitrary trailing buttons');
 
   // Positional grid (unnamed children) returns trailing === slots.trailing.
   for (const child of [header, leading, primary, trailing]) {
@@ -893,7 +901,7 @@ test('v0.4.0 #26: ChatGPT adapter resolves composerGrid.trailing, modelCapsuleSl
   assert.equal(adapter.modelCapsuleSlot(trailing, externalModel), null);
 });
 
-test('v0.4.0 #26: Gemini adapter resolves bard-mode-switcher capsule slot, trailing microphone fallback, and uploader-file-preview attachments', () => {
+test('v0.4.0 #26 / v0.4.4 #47: Gemini adapter resolves bard-mode-switcher capsule slot, uploader-file-preview attachments, and strict Send/Stop primary action', () => {
   const A = adapters();
   const { doc, body, el } = makeDoc('gemini');
   const chatWindow = el('chat-window');
@@ -918,9 +926,9 @@ test('v0.4.0 #26: Gemini adapter resolves bard-mode-switcher capsule slot, trail
   const modelBtn = el('button', { type: 'button', 'aria-label': 'Open mode picker, currently Neon High' }, { textContent: 'Neon High' });
   switcher.append(modelBtn);
   const chip = el('button', { type: 'button', class: 'toolbox-drawer-item-button' }, { textContent: 'Deep Research' });
-  // Unlabeled / localized fallback button inside trailing still resolves as primary action when not model/chip/dictate.
-  const idleMicFallback = el('button', { type: 'button', 'aria-label': 'Use audio input' });
-  trailing.append(switcher, chip, idleMicFallback);
+  const idleMicBtn = el('button', { type: 'button', 'aria-label': 'Microphone' });
+  const idleAudioBtn = el('button', { type: 'button', 'aria-label': 'Use audio input' });
+  trailing.append(switcher, chip, idleMicBtn, idleAudioBtn);
 
   grid.append(fileRow, leading, textWrap, trailing);
   inputArea.append(grid);
@@ -934,18 +942,25 @@ test('v0.4.0 #26: Gemini adapter resolves bard-mode-switcher capsule slot, trail
   assert.equal(resolvedGrid.trailing, trailing);
   assert.equal(adapter.modelCapsuleSlot(resolvedGrid.trailing, modelBtn), switcher);
   assert.deepEqual([...adapter.composerAttachments(inputArea)], [preview]);
-  assert.equal(adapter.composerPrimaryAction(inputArea), idleMicFallback);
+  assert.equal(adapter.composerPrimaryAction(inputArea), null, 'idle Microphone and unlabeled audio buttons never receive primary action');
 
   const sendBtn = el('button', { type: 'button', 'data-test-id': 'send-button', 'aria-label': 'Send message' });
   trailing.append(sendBtn);
   assert.equal(adapter.composerPrimaryAction(inputArea), sendBtn);
+
+  const stopBtn = el('button', { type: 'button', 'data-test-id': 'stop-response-button', 'aria-label': 'Stop response' });
+  trailing.append(stopBtn);
+  assert.equal(adapter.composerPrimaryAction(inputArea), stopBtn);
+
+  stopBtn.style.display = 'none';
+  assert.equal(adapter.composerPrimaryAction(inputArea), sendBtn);
   assert.equal(adapter.composerCardSurface(grid), inputArea, 'Gemini composerCardSurface resolves enclosing input-area-v2');
 });
 
-test('primaryAction tier priority: Send beats Voice and Microphone even when Send precedes them in DOM order', () => {
+test('v0.4.4 #47 primaryAction strict matching: only real Send and Stop/Cancel buttons match across ChatGPT and Gemini', () => {
   const A = adapters();
 
-  // ChatGPT: [sendBtn, voiceBtn, micBtn] in DOM order -> Send must win over Voice & Microphone.
+  // ChatGPT: Stop > Send, while Voice, Start Voice, Stop Voice, Microphone, Dictate and arbitrary buttons return null.
   {
     const { doc, body, el } = makeDoc('chatgpt');
     const composer = el('div', { 'data-composer-layout': 'single-line' });
@@ -955,23 +970,27 @@ test('primaryAction tier priority: Send beats Voice and Microphone even when Sen
     primary.append(el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' }));
     const trailing = el('div', {}, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridColumnStart: 'trailing' } });
     const sendBtn = el('button', { type: 'button', 'data-testid': 'send-button', 'aria-label': 'Send prompt' });
-    const voiceBtn = el('button', { type: 'button', 'data-testid': 'composer-speech-button', 'aria-label': 'Start Voice' });
+    const stopBtn = el('button', { type: 'button', 'data-testid': 'stop-button', 'aria-label': 'Stop generating' });
+    const voiceBtn = el('button', { type: 'button', 'data-testid': 'composer-speech-button', 'data-composer-voice-start': 'true', 'aria-label': 'Start Voice' });
+    const stopVoiceBtn = el('button', { type: 'button', 'aria-label': 'Stop Voice' });
     const micBtn = el('button', { type: 'button', 'aria-label': 'Microphone' });
-    trailing.append(sendBtn, voiceBtn, micBtn);
+    const dictateBtn = el('button', { type: 'button', 'aria-label': 'Dictate' });
+    const zhVoiceBtn = el('button', { type: 'button', 'aria-label': '开始语音对话' });
+    trailing.append(sendBtn, stopBtn, voiceBtn, stopVoiceBtn, micBtn, dictateBtn, zhVoiceBtn);
     grid.append(leading, primary, trailing);
     composer.append(grid);
     body.append(composer);
 
     const adapter = A.forHost('chatgpt', doc);
     assert.equal(adapter.composerCardSurface(composer), composer);
-    assert.equal(adapter.composerPrimaryAction(composer), sendBtn, 'ChatGPT Tier 1 Send beats later Tier 2 Voice and Tier 3 Microphone');
+    assert.equal(adapter.composerPrimaryAction(composer), stopBtn, 'ChatGPT active Stop beats Send, Voice and Microphone');
+    stopBtn.style.display = 'none';
+    assert.equal(adapter.composerPrimaryAction(composer), sendBtn, 'ChatGPT active Send beats Voice and Microphone');
     sendBtn.style.display = 'none';
-    assert.equal(adapter.composerPrimaryAction(composer), voiceBtn, 'ChatGPT Tier 2 Voice beats later Tier 3 Microphone');
-    voiceBtn.style.display = 'none';
-    assert.equal(adapter.composerPrimaryAction(composer), micBtn, 'ChatGPT falls back to Tier 3 Microphone when Send/Voice hidden');
+    assert.equal(adapter.composerPrimaryAction(composer), null, 'ChatGPT returns null when only Voice, Stop Voice, Microphone, or Dictate are visible');
   }
 
-  // Gemini: [sendBtn, micBtn] in DOM order -> Send must win over Microphone.
+  // Gemini: Stop > Send, while Microphone, Voice, Dictate and arbitrary buttons return null.
   {
     const { doc, body, el } = makeDoc('gemini');
     const inputArea = el('input-area-v2');
@@ -981,17 +1000,22 @@ test('primaryAction tier priority: Send beats Voice and Microphone even when Sen
     textWrap.append(el('div', { class: 'ql-editor', contenteditable: 'true', role: 'textbox' }));
     const trailing = el('div', {}, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridColumnStart: 'trailing-actions' } });
     const sendBtn = el('button', { type: 'button', 'data-test-id': 'send-button', 'aria-label': 'Send message' });
+    const stopBtn = el('button', { type: 'button', 'data-test-id': 'stop-button', 'aria-label': 'Stop response' });
     const micBtn = el('button', { type: 'button', 'aria-label': 'Microphone' });
-    trailing.append(sendBtn, micBtn);
+    const zhMicBtn = el('button', { type: 'button', 'aria-label': '麦克风' });
+    const voiceBtn = el('button', { type: 'button', 'aria-label': 'Use voice' });
+    trailing.append(sendBtn, stopBtn, micBtn, zhMicBtn, voiceBtn);
     grid.append(leading, textWrap, trailing);
     inputArea.append(grid);
     body.append(inputArea);
 
     const adapter = A.forHost('gemini', doc);
     assert.equal(adapter.composerCardSurface(grid), inputArea);
-    assert.equal(adapter.composerPrimaryAction(inputArea), sendBtn, 'Gemini Tier 1 Send beats later Tier 3 Microphone');
+    assert.equal(adapter.composerPrimaryAction(inputArea), stopBtn, 'Gemini active Stop beats Send and Microphone');
+    stopBtn.style.display = 'none';
+    assert.equal(adapter.composerPrimaryAction(inputArea), sendBtn, 'Gemini active Send beats Microphone');
     sendBtn.style.display = 'none';
-    assert.equal(adapter.composerPrimaryAction(inputArea), micBtn, 'Gemini falls back to Tier 3 Microphone when Send hidden');
+    assert.equal(adapter.composerPrimaryAction(inputArea), null, 'Gemini returns null when only Microphone or Voice are visible');
   }
 
   assert.deepEqual(JSON.parse(JSON.stringify(A.dockEdgeMargin(1280))), { right: 20, bottom: 18 });
