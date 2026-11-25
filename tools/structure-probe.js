@@ -27,6 +27,7 @@
 (function prismStructureProbe(options) {
   'use strict';
   const SAMPLE_LIMIT = Math.max(1, Math.min(20, Number(options.samples) || 3));
+  const DISCLAIMER_SELECTOR = '[class*="disclaimer"], [data-testid*="disclaimer"], [style*="view-transition-name"]';
   const TARGETS = {
     chatgpt: {
       sidebar: '#stage-slideover-sidebar, nav',
@@ -50,7 +51,7 @@
       contentFades: { selector: '[class*="content-fade"], .content-fade, [class*="fade-mask"]', limit: 12 },
       threadBottomSiblings: { siblingsAfter: '#thread-bottom' },
       dockSiblings: { siblingsAfter: '#thread-bottom-container' },
-      disclaimerShells: { selector: '[class*="disclaimer"], [data-testid*="disclaimer"], [style*="view-transition-name"]', limit: 12 },
+      disclaimerShells: { selector: DISCLAIMER_SELECTOR, limit: 12 },
       outerWrappers: { outerWrappers: '[class*="--thread-content-"]', limit: 12 },
       threadScrollFooter: '[data-thread-scroll-footer]',
       threadComposerBackdrop: '[data-thread-composer-backdrop]',
@@ -155,7 +156,9 @@
   }
   function redactClass(token) {
     if (/[[\]:()]/.test(token)) {
-      return redactStyle(token).replace(/(['"])[^'"]+\1/g, (_, quote) => `${quote}[text]${quote}`);
+      return redactStyle(token)
+        .replace(/(['"])[^'"]+\1/g, (_, quote) => `${quote}[text]${quote}`)
+        .replace(/[A-Za-z0-9_-]*\d{5,}[A-Za-z0-9_-]*/g, '[id]');
     }
     return ID_LIKE.test(token) ? '[id]' : token;
   }
@@ -353,7 +356,7 @@
         internalSpacers.push(describeSibling(sib));
       }
     }
-    const internalDisclaimers = [...footer.querySelectorAll('[class*="disclaimer"], [data-testid*="disclaimer"], [style*="view-transition-name"]')].slice(0, 12).map(describe);
+    const internalDisclaimers = [...footer.querySelectorAll(DISCLAIMER_SELECTOR)].slice(0, 12).map(describe);
     const sample = describe(footer);
     sample.pseudos = { before: pseudoStyles(footer, '::before', ANCHOR_STYLE_KEYS), after: pseudoStyles(footer, '::after', ANCHOR_STYLE_KEYS) };
     sample.anchor = anchorStyles(footer);

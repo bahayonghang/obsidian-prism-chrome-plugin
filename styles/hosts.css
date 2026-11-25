@@ -625,7 +625,7 @@ html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][da
   margin-bottom: 0 !important;
   min-height: 0 !important;
 }
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] [data-thread-scroll-footer="true"]::after {
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) :is([data-op-thread-footer="true"][data-thread-scroll-footer="true"], [data-op-thread-footer="true"] [data-thread-scroll-footer="true"])::after {
   height: 0 !important;
   min-height: 0 !important;
 }
@@ -971,7 +971,7 @@ html[data-op-enabled="true"][data-op-composer="true"][data-op-composer-glow="tru
   opacity: 1 !important;
 }
 @media (prefers-reduced-motion: reduce) {
-  html[data-op-enabled="true"][data-op-composer="true"][data-op-composer-glow="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"]:is(:hover, :focus-within)::before {
+  html[data-op-enabled="true"][data-op-composer="true"][data-op-composer-glow="true"]:not([data-op-effective-palette="host"]):not([data-op-motion="off"]) [data-op-composer-surface="true"]:is(:hover, :focus-within)::before {
     content: none !important;
     opacity: 0 !important;
   }
@@ -1109,7 +1109,7 @@ html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-pal
 }
 
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-toolbar="true"] :is(button, [role="button"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]),
-html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], button[aria-label*="Start Voice" i], button[aria-label*="Voice" i], button[aria-label*="语音"], button[aria-label*="Microphone" i], button[aria-label*="麦克风"], button[aria-label*="Dictate" i], button[aria-label*="听写"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]) {
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"], button[aria-label*="Microphone" i], button[aria-label*="Mic" i], button[aria-label*="麦克风"], button[aria-label*="Dictate" i], button[aria-label*="Dictation" i], button[aria-label*="听写"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]) {
   width: 28px !important;
   min-width: 28px !important;
   height: 28px !important;
@@ -1127,12 +1127,12 @@ html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-pal
   transition: background-color .14s ease, color .14s ease;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-toolbar="true"] :is(button, [role="button"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]):hover,
-html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], button[aria-label*="Start Voice" i], button[aria-label*="Voice" i], button[aria-label*="语音"], button[aria-label*="Microphone" i], button[aria-label*="麦克风"], button[aria-label*="Dictate" i], button[aria-label*="听写"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]):hover {
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"], button[aria-label*="Microphone" i], button[aria-label*="Mic" i], button[aria-label*="麦克风"], button[aria-label*="Dictate" i], button[aria-label*="Dictation" i], button[aria-label*="听写"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]):hover {
   background: var(--op-pill-hover-bg) !important;
   color: var(--op-fg) !important;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-toolbar="true"] :is(button, [role="button"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]):focus-visible,
-html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], button[aria-label*="Start Voice" i], button[aria-label*="Voice" i], button[aria-label*="语音"], button[aria-label*="Microphone" i], button[aria-label*="麦克风"], button[aria-label*="Dictate" i], button[aria-label*="听写"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]):focus-visible {
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"], button[aria-label*="Microphone" i], button[aria-label*="Mic" i], button[aria-label*="麦克风"], button[aria-label*="Dictate" i], button[aria-label*="Dictation" i], button[aria-label*="听写"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]):focus-visible {
   outline: 2px solid var(--op-accent);
   outline-offset: 2px;
 }
@@ -1160,7 +1160,7 @@ html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-pal
   outline: 2px solid var(--op-accent);
   outline-offset: 2px;
 }
-html[data-op-enabled="true"][data-op-composer="true"][data-op-motion="off"]:not([data-op-effective-palette="host"]) :is([data-op-composer-add="true"], [data-op-model-capsule="true"], [data-op-composer-primary-action="true"], [data-op-composer-chip="true"]) {
+html[data-op-enabled="true"][data-op-composer="true"][data-op-motion="off"]:not([data-op-effective-palette="host"]) :is([data-op-composer-add="true"], [data-op-model-capsule="true"], [data-op-composer-primary-action="true"], [data-op-composer-chip="true"], [data-op-composer-toolbar="true"] :is(button, [role="button"])) {
   transition: none !important;
 }
 

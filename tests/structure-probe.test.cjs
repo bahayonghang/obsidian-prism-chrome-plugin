@@ -157,7 +157,7 @@ function makeMockDom(hostname, variant = 'default') {
     const zero = { x: 0, y: 0, width: 0, height: 0 };
     const main = create('main', { rect: { x: 260, y: 0, width: 1280, height: 900 }, style: { position: 'relative' } });
     const outerShell1 = create('div', {
-      classes: ['app-shell-main-content', '[--thread-content-top-inset:0px]', '[--secret-token:68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13]', 'after:content-["Secret_private_phrase"]'],
+      classes: ['app-shell-main-content', '[--thread-content-top-inset:0px]', '[--secret-token:68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13]', 'after:content-["Secret_private_phrase"]', 'hover:user-12345', '[--uid:987654321]'],
       rect: { x: 260, y: 0, width: 1280, height: 900 },
       style: { display: 'flex', overflowY: 'visible', paddingBottom: '24px', '--thread-content-top-inset': '0px' }
     });
@@ -615,7 +615,7 @@ test('structure probe reports the painted composer footer: ancestor depth, boxle
   const probeSource = fs.readFileSync(path.join(ROOT, PROBE), 'utf8');
   const result = JSON.parse(JSON.stringify(vm.runInNewContext(probeSource, makeMockDom('chatgpt.com', 'deep-footer'))));
   const json = JSON.stringify(result);
-  for (const secret of ['Private user text', 'Private disclaimer prose', 'Secret footer label', 'Secret_private_phrase', 'secret.example', '5f2c9a81-0d3e-4b7a-9c61-2e8f0a6d13b4', '68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13', 'prompt-textarea', 'secret-conversation-id']) {
+  for (const secret of ['Private user text', 'Private disclaimer prose', 'Secret footer label', 'Secret_private_phrase', 'secret.example', '5f2c9a81-0d3e-4b7a-9c61-2e8f0a6d13b4', '68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13', 'prompt-textarea', 'secret-conversation-id', '12345', '987654321']) {
     assert.equal(json.includes(secret), false, `probe output omits ${secret}`);
   }
   // v0.4.4 #46: bottomOffsets resolve from Thread Footer when #thread-bottom-container is absent.
@@ -655,7 +655,7 @@ test('structure probe reports the painted composer footer: ancestor depth, boxle
 
   const outer = result.targets.outerWrappers;
   assert.ok(outer.count >= 3, 'captures outer non-scrolling wrappers above the scroller');
-  assert.ok(outer.samples.some(s => s.classes.includes('[--thread-content-top-inset:0px]') && s.style.paddingBottom === '24px' && s.classes.includes('[--secret-token:[id]]') && s.classes.includes('after:content-["[text]"]')), 'captures outer wrapper 1 paddingBottom & redacts secrets inside Tailwind arbitrary classes');
+  assert.ok(outer.samples.some(s => s.classes.includes('[--thread-content-top-inset:0px]') && s.style.paddingBottom === '24px' && s.classes.includes('[--secret-token:[id]]') && s.classes.includes('after:content-["[text]"]') && s.classes.includes('hover:[id]') && s.classes.includes('[--uid:[id]]')), 'captures outer wrapper 1 paddingBottom & redacts secrets and numeric IDs inside Tailwind arbitrary classes');
   assert.ok(outer.samples.some(s => s.classes.includes('[--thread-content-responsive-max-width:48rem]') && s.style.paddingBottom === '24px' && s.style['--thread-content-responsive-max-width'] === '48rem' && s.classes.includes('[--secret-bg:url([url])]')), 'captures outer wrapper 2 paddingBottom & custom property');
   assert.ok(outer.samples.some(s => s.classes.includes('[--thread-content-x:initial]') && s.style.paddingBottom === '0px'), 'captures scroll-layout wrapper');
 
