@@ -29,9 +29,8 @@
       composerChips: '[data-testid="composer-mode-pill"], [data-testid="composer-chip"], [data-testid="composer-tool-chip"]',
       attachments: '[data-testid="attachment-card"], [data-testid="file-attachment"], [data-testid="uploaded-file"], [data-testid="image-attachment"], [class*="file-tile"], .native-footer-attachment',
       primaryActions: [
-        '[data-testid="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="发送"]',
-        '[data-testid="composer-speech-button"], button[aria-label*="Start Voice" i], button[aria-label*="Voice" i], button[aria-label*="语音"]',
-        'button[aria-label*="Microphone" i], button[aria-label*="麦克风"]'
+        '[data-testid="stop-button"], [data-testid="input-cancel-button"], .stop-button, button[aria-label*="Stop" i], button[aria-label*="Cancel" i], button[aria-label*="停止"], button[aria-label*="取消"]',
+        '[data-testid="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="发送"]'
       ],
       /* v0.3.1 #21 / v0.4.0 #26 Content Width Presets: the reading (text) width is 48rem natively (the 808px
        * transcript = 48rem + 2 × 20px padding, probe 2026-11-22). This declaration owns the width
@@ -95,9 +94,8 @@
       composerChips: '.toolbox-drawer-item-button, [data-test-id="composer-chip"]',
       attachments: '[data-test-id="file-preview-chip"], [data-test-id="attachment-card"], .file-preview-chip, uploader-file-preview, file-preview-chip, .native-footer-attachment',
       primaryActions: [
-        '[data-test-id="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="发送"]',
-        'button[aria-label*="Start Voice" i], button[aria-label*="Voice" i], button[aria-label*="语音"]',
-        'button[aria-label*="Microphone" i], button[aria-label*="麦克风"]'
+        '[data-test-id="stop-button"], [data-test-id="stop-response-button"], .stop-button, button[aria-label*="Stop" i], button[aria-label*="Cancel" i], button[aria-label*="停止"], button[aria-label*="取消"]',
+        '[data-test-id="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="发送"]'
       ],
       /* v0.3.1 #21: Gemini caps every markdown block at 708px (not the outer panel), plus the
        * User Turn, the response footer, the disclaimer and the 660px input area (probe 2026-11-22).
@@ -991,8 +989,9 @@
       if (modelTrigger && (node === modelTrigger || node.contains(modelTrigger) || modelTrigger.contains?.(node))) return false;
       if (spec.attachments && node.closest?.(spec.attachments)) return false;
       if (spec.composerChips && node.closest?.(spec.composerChips)) return false;
+      if (node.matches?.('[data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"]')) return false;
       const aria = node.getAttribute?.('aria-label') || '';
-      if (/\bdictate\b|听写/i.test(aria)) return false;
+      if (/\b(?:dictate|dictation|voice|microphone|mic)\b|听写|语音|麦克风/i.test(aria)) return false;
       return true;
     };
     const tiers = Array.isArray(spec.primaryActions) ? spec.primaryActions : (spec.primaryActions ? [spec.primaryActions] : []);
@@ -1003,10 +1002,6 @@
         const matched = [...scope.querySelectorAll(selector)].filter(isCandidate);
         if (matched.length) return matched[matched.length - 1];
       }
-    }
-    if (trailing && composer.contains(trailing)) {
-      const fallback = [...trailing.querySelectorAll('button')].filter(isCandidate);
-      if (fallback.length) return fallback[fallback.length - 1];
     }
     return null;
   }
