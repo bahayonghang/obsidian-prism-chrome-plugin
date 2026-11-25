@@ -88,15 +88,30 @@ form[data-chatgpt-composer]{width:100%;background:transparent}
 #thread-bottom-container.has-sharp-edge-shadow{--sharp-edge-bottom-shadow:0 -24px 0 0 #2b2738, 0 18px 0 0 #2b2738;--sharp-edge-bottom-shadow-placeholder-content:"";--sharp-edge-top-shadow:0 2px 0 0 #2b2738;--composer-surface-primary:rgba(48,48,48,.95);box-shadow:var(--sharp-edge-bottom-shadow)}
 #thread-bottom-container.has-sharp-edge-shadow::after{content:var(--sharp-edge-bottom-shadow-placeholder-content);position:absolute;left:0;right:0;bottom:0;height:48px;pointer-events:none;z-index:-1;box-shadow:var(--sharp-edge-bottom-shadow)}
 #thread-bottom-container.has-host-after::after{content:"";position:absolute;left:0;right:0;bottom:0;height:96px;pointer-events:none;z-index:-1;background:linear-gradient(transparent,#2d2a3a 18%,#2d2a3a);-webkit-mask-image:linear-gradient(to bottom,transparent,#000 18%,#000);mask-image:linear-gradient(to bottom,transparent,#000 18%,#000)}
-/* v0.4.3 #41 live thread footer (2026-11-24 facts; inactive until applyChatGPTThreadFooter builds it): an absolutely
- * positioned child of the scroll container (z-index 20, anchor-scope) whose ::before (gradient from the composer mid-line
- * to its bottom edge) and ::after (solid from the composer bottom down) paint an opaque --color-surface, inset 16px.
- * Inferred: the 16px bottom padding and which node carries [data-composer-body]. anchor() fallbacks only guard old engines. */
-.thread-footer_A8ZvKV{position:absolute;left:0;right:0;bottom:0;z-index:20;anchor-scope:--thread-composer;padding-bottom:16px;--color-surface:#0e0e0e;--padding-toolbar:16px}
+/* v0.4.4 #46 live outer non-scrolling flex app-shell wrappers carrying Tailwind --thread-content-* class tokens
+ * (inactive until applyChatGPTThreadFooter wraps [data-prism-test-scroller]). */
+.thread-outer-shell_v4{flex:1 1 0;min-height:0;display:flex;flex-direction:column}
+.thread-outer-shell_v4[class*="[--thread-content-top-inset:0px]"]{--thread-content-top-inset:0px}
+.thread-outer-shell_v4[class*="[--thread-content-responsive-max-width:48rem]"]{--thread-content-responsive-max-width:48rem}
+.thread-scroll-layout_v4{position:relative;flex:1 1 0;min-height:0;display:flex;flex-direction:column;--thread-content-x:initial}
+/* v0.4.3 #41 / v0.4.4 #46 live thread footer (2026-11-24 facts; inactive until applyChatGPTThreadFooter builds it):
+ * an absolutely positioned child of the scroll container (z-index 20, anchor-scope) whose ::before (gradient from
+ * composer mid-line to its bottom edge) and ::after (solid from composer bottom down) paint an opaque --color-surface,
+ * inset 16px. Inside sit [data-thread-scroll-footer="true"] (24px ::after inset via --thread-composer-bottom-inset),
+ * [data-thread-composer-backdrop="true"] (808px live width limiter with 20px side padding), an empty spacer, and an
+ * inner disclaimer shell, producing a 72px native gap beneath Composer Surface. anchor() fallbacks guard engines without
+ * CSS Anchor Positioning. */
+.thread-footer_A8ZvKV{position:absolute;left:0;right:0;bottom:0;z-index:20;anchor-scope:--thread-composer;padding-bottom:0;--color-surface:#0e0e0e;--padding-toolbar:16px;--thread-footer-anchor-fallback:72px}
 .thread-footer_A8ZvKV form[data-chatgpt-composer]{anchor-name:--thread-composer}
-.thread-footer_A8ZvKV:has([data-thread-composer-backdrop] [data-composer-body])::before{content:"";position:absolute;z-index:-1;pointer-events:none;inset-inline:var(--padding-toolbar);top:anchor(--thread-composer center,50%);bottom:anchor(--thread-composer bottom,16px);background:linear-gradient(transparent,var(--color-surface))}
-.thread-footer_A8ZvKV:has([data-thread-composer-backdrop] [data-composer-body])::after{content:"";position:absolute;z-index:-1;pointer-events:none;inset-inline:var(--padding-toolbar);top:anchor(--thread-composer bottom,calc(100% - 16px));bottom:0;background:var(--color-surface)}
+.thread-footer_A8ZvKV:has([data-thread-composer-backdrop] [data-composer-body])::before{content:"";position:absolute;z-index:-1;pointer-events:none;inset-inline:var(--padding-toolbar);top:anchor(--thread-composer center,calc(50% - var(--thread-footer-anchor-fallback) / 2));bottom:anchor(--thread-composer bottom,var(--thread-footer-anchor-fallback));background:linear-gradient(transparent,var(--color-surface))}
+.thread-footer_A8ZvKV:has([data-thread-composer-backdrop] [data-composer-body])::after{content:"";position:absolute;z-index:-1;pointer-events:none;inset-inline:var(--padding-toolbar);top:anchor(--thread-composer bottom,calc(100% - var(--thread-footer-anchor-fallback)));bottom:0;background:var(--color-surface)}
 .thread-footer-contents_k2{display:contents}
+[data-thread-scroll-footer="true"]{--thread-composer-bottom-inset:24px}
+[data-thread-scroll-footer="true"]::after{content:"";display:block;height:var(--thread-composer-bottom-inset,24px);pointer-events:none}
+[data-thread-composer-backdrop="true"]{--thread-content-max-width:var(--thread-content-responsive-max-width,48rem);--thread-body-max-width:var(--thread-content-max-width);width:100%;max-width:calc(var(--thread-content-max-width) + 40px);margin-inline:auto;padding:0 20px}
+.thread-composer-shell_v4{width:100%;max-width:var(--thread-body-max-width,48rem);margin-inline:auto}
+.thread-footer-spacer_v4{height:12px}
+.thread-footer-disclaimer_v4{text-align:center;font-size:12px;line-height:16px;color:var(--text-secondary);min-height:36px;padding:8px 0 12px}
 .dock-outer-spacer{flex:none;height:28px}
 .disclaimer-outer-wrap{flex:none;text-align:center;font-size:12px;line-height:16px;color:var(--text-secondary);margin-top:-8px;min-height:36px;padding:0 0 12px;view-transition-name:disclaimer-shell}
 .host-corner-help{position:fixed;right:16px;bottom:16px;z-index:20;width:32px;height:32px;border-radius:999px;background:#2f2f2f;color:var(--text-secondary);border:1px solid rgba(255,255,255,.12);display:inline-flex;align-items:center;justify-content:center}
