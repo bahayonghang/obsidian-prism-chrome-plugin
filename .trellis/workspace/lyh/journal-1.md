@@ -104,3 +104,26 @@ Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
 ### Git Commits
 
 (No associated commits)
+
+
+## Session 6: v0.4.4 实施完成：spec #44 / #45–#48 合并到 dev 并关单
+<!-- trellis-session: v=3 fp=dbd87289fa04855b -->
+
+**Date**: 2026-11-25
+**Task**: v0.4.4 实施完成：spec #44 / #45–#48 合并到 dev 并关单
+**Branch**: `dev`
+
+### Summary
+
+隔离 worktree 按三波波前 TDD 完成 Spec #44 全部子票（#45 Gemini 纯透明底栏、#47 原版光学 Composer Surface 与控件分级、#46 探针扩展与 ChatGPT 外层防误伤/Thread Footer 留白收紧/宽度桥接、#48 0.4.4 版本与文档同步），完成双轴 /code-review 返修、just ci（148/148 单测 + 双次可复现打包）与 Chromium 有头 64 / Firefox 62 全量回归（离线夹具，未在真实登录会话验证）；按拓扑关闭远程 #45–#48 与 #44，并以 --no-ff 合并入本地 dev（未推送）。
+Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `48dee45` | merge(v044): 🔀 合并 feat/v044-spec-44（Spec #44 / #45–#48）至 dev |
+
+### Next Steps
+
+- 在已登录 ChatGPT 与 Gemini 页面加载 dist/chrome 复看，并按所有者授权决定是否推送 dev
