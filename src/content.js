@@ -42,7 +42,6 @@
   let primarySurface = null;
   let dockObserver = null;
   let observedDock = null;
-  let dockScrim = null;
   let dockScroller = null;
   let dockOverlaidHost = null;
   let alphaFadeScroller = null;
@@ -123,7 +122,7 @@
     if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = null;
     if (geometryFrame) cancelAnimationFrame(geometryFrame); geometryFrame = null;
     dockObserver?.disconnect(); dockObserver = null; observedDock = null;
-    dockScrim = dockScroller = dockOverlaidHost = alphaFadeScroller = alphaFadeDock = null;
+    dockScroller = dockOverlaidHost = alphaFadeScroller = alphaFadeDock = null;
     railSignature = ''; lastEstimate = 0; lastModelLabel = ''; lastAttachments = 0; activeTurn = -1;
     if (permanent) {
       stopped = true;
@@ -1004,7 +1003,7 @@
     };
     const isNativePalette = Schema.resolvePalette(cfg) === 'host';
     const isHome = !adapter.userTurns().length && !adapter.assistantTurns().length;
-    let dockHost = null, threadFooter = null, nextScrim = null, nextScroller = null, nextThreadScroller = null, nextOverlaidDock = null, nextAlphaFadeScroller = null, nextAlphaFadeDock = null, nextObservedDock = null;
+    let dockHost = null, threadFooter = null, nextScroller = null, nextThreadScroller = null, nextOverlaidDock = null, nextAlphaFadeScroller = null, nextAlphaFadeDock = null, nextObservedDock = null;
     const nextPrimary = adapter.primarySurface?.() || null;
     add(nextPrimary,'data-op-main-surface');
     for (const element of adapter.threadColumns?.() || []) add(element,'data-op-thread-column');
@@ -1027,10 +1026,6 @@
         if (isOverlaid) {
           nextOverlaidDock = dockHost;
           add(dockHost, 'data-op-composer-overlaid');
-          if (adapter.usesOverlayScrim) {
-            nextScrim = dockHost;
-            add(nextScrim, 'data-op-composer-scrim');
-          }
           nextScroller = overlaidScroller(dockHost, scroller);
           add(nextScroller, 'data-op-thread-scroller');
           if (nextScroller) {
@@ -1078,7 +1073,7 @@
         }
       }
     }
-    nextObservedDock = nextScrim || dockHost || threadFooter || composer || null;
+    nextObservedDock = dockHost || threadFooter || composer || null;
     if (cfg.sidebarStyle !== 'native') {
       const sidebars = adapter.sidebarSurfaces?.() || [];
       for (const element of sidebars) add(element,'data-op-sidebar-surface');
@@ -1122,7 +1117,7 @@
         dockObserver.observe(observedDock);
       }
     }
-    dockScrim = nextScrim; dockOverlaidHost = nextOverlaidDock; dockScroller = nextThreadScroller;
+    dockOverlaidHost = nextOverlaidDock; dockScroller = nextThreadScroller;
     alphaFadeScroller = nextAlphaFadeScroller; alphaFadeDock = nextAlphaFadeDock;
     const home = String(isHome);
     if (document.documentElement.getAttribute('data-op-home') !== home) document.documentElement.setAttribute('data-op-home',home);

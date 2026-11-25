@@ -431,6 +431,15 @@
     return [...new Set([...markers, layer])].filter(node => node && !isOwned(node) &&
       !node.matches(OVERLAY_EXCLUDED) && !node.querySelector(MESSAGE_AREAS));
   }
+  function findBackdropAncestors(spec, composer) {
+    const backdrops = findComposerBackdrops(spec, composer);
+    if (!backdrops.length) return [];
+    const ancestors = [];
+    for (let node = composer.parentElement; node; node = node.parentElement) {
+      if (backdrops.includes(node)) ancestors.push(node);
+    }
+    return ancestors;
+  }
   function findThreadFooterLayer(spec, composer) {
     if (!spec.threadFooters || !composer || isOwned(composer)) return null;
     const view = composer.ownerDocument?.defaultView || global;
@@ -443,11 +452,7 @@
       }
       return outermost;
     }
-    const backdrops = findComposerBackdrops(spec, composer);
-    const ancestors = [];
-    for (let node = composer.parentElement; node; node = node.parentElement) {
-      if (backdrops.includes(node)) ancestors.push(node);
-    }
+    const ancestors = findBackdropAncestors(spec, composer);
     return [...ancestors].reverse().find(node => isThreadFooterLayer(spec, node, view) && inConversationScroller(node, view)) || null;
   }
   function findComposerBackdrops(spec, composer) {
@@ -1029,17 +1034,13 @@
     return null;
   }
   function findComposerScrim(spec, composer) {
-    const backdrops = findComposerBackdrops(spec, composer);
-    if (!backdrops.length) return null;
     // Outermost structural ancestor in the bounded dock chain (ignore empty fade siblings).
-    const ancestors = [];
+    const ancestors = findBackdropAncestors(spec, composer);
+    if (!ancestors.length) return null;
     const view = composer.ownerDocument?.defaultView || global;
-    for (let node = composer.parentElement; node; node = node.parentElement) {
-      if (backdrops.includes(node)) ancestors.push(node);
-    }
     // v0.4.3 #41: a host thread footer is paint-only; dock spacing and z-index rules never target it or its contents.
     if (ancestors.some(node => isThreadFooterLayer(spec, node, view))) return null;
-    return ancestors.length ? ancestors[ancestors.length - 1] : null;
+    return ancestors[ancestors.length - 1];
   }
   function isComposerDockOverlaid(dock, scroller, view = dock?.ownerDocument?.defaultView || global) {
     if (!dock) return false;

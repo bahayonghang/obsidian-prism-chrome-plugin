@@ -33,7 +33,7 @@ export const LIVE_SELECTORS = {
     threadScrollFooter: '[data-thread-scroll-footer="true"]',
     threadComposerBackdrop: '[data-thread-composer-backdrop="true"]',
     threadFooterDisclaimer: '[data-prism-test-scroller] > :has([data-thread-scroll-footer="true"]) [class*="disclaimer"]',
-    threadFooterSpacer: '[data-prism-test-scroller] > :has([data-thread-scroll-footer="true"]) .thread-footer-spacer_v4',
+    threadFooterSpacer: '[data-thread-composer-backdrop="true"] + div:empty',
     outerThreadWrappers: 'main [class*="--thread-content-"]',
     disclaimer: '#thread-bottom [class*="disclaimer"]',
     cornerFloat: '.host-corner-help'

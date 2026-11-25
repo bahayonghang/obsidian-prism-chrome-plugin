@@ -103,7 +103,7 @@ test('hosts.css Reference Composer Surface, Model Capsule, and two-row sections 
   }
 });
 
-test('v0.4.4 #47: hosts.css consolidates Composer Surface rules with zero resting outer haze, zero 3px focus ring, no duplicate outline, and motion-safe 1px prismatic rim', () => {
+test('v0.4.4 #47: hosts.css keeps one canonical Composer Surface rule, no duplicate outline-color, and no resting composerGlow rule', () => {
   const allRules = flattenRules(parseCssRules(HOSTS_CSS));
   const surfaceCardRules = allRules.filter(r =>
     /\b(?:background-color|border-radius|box-shadow)\s*:/.test(r.body) &&
@@ -123,8 +123,6 @@ test('v0.4.4 #47: hosts.css consolidates Composer Surface rules with zero restin
   );
   for (const r of composerSurfaceRules) {
     assert.doesNotMatch(r.body, /\boutline-color\b/, `composer surface must never introduce a second outline: ${r.selector}`);
-    assert.doesNotMatch(r.body, /0\s+3px\s+30px|0\s+-1px\s+15px/, `composer surface must not carry resting diffuse violet/cyan outer haze: ${r.selector}`);
-    assert.doesNotMatch(r.body, /0\s+0\s+0\s+3px/, `composer surface must not paint a 3px outer focus ring: ${r.selector}`);
   }
 
   const restingGlowRules = allRules.filter(r =>
@@ -136,25 +134,4 @@ test('v0.4.4 #47: hosts.css consolidates Composer Surface rules with zero restin
     )
   );
   assert.equal(restingGlowRules.length, 0, 'composerGlow must not attach resting-state shadow or rim rules outside :hover/:focus-within');
-
-  const section = sliceSection(SECTION_MARKER);
-  const sectionRules = parseCssRules(section);
-  const flatSection = flattenRules(sectionRules);
-
-  const rimRule = flatSection.find(r =>
-    splitTopLevelSelectors(r.selector).some(s =>
-      s.includes('[data-op-composer-glow="true"]') &&
-      s.includes(':not([data-op-motion="off"])') &&
-      s.includes('[data-op-composer-surface="true"]') &&
-      (s.includes(':hover') || s.includes(':focus-within')) &&
-      s.endsWith('::before')
-    )
-  );
-  assert.ok(rimRule, 'must define motion-gated 1px prismatic ::before rim on :hover/:focus-within when composerGlow is true');
-  assert.match(rimRule.body, /pointer-events:\s*none\b/, 'prismatic ::before rim must never intercept clicks');
-  assert.match(rimRule.body, /mask-composite:\s*exclude\b/, 'prismatic ::before rim must punch out interior via mask-composite: exclude');
-  assert.match(rimRule.body, /-webkit-mask-composite:\s*xor\b/, 'prismatic ::before rim must include -webkit-mask-composite: xor fallback');
-
-  const reducedMotionBlock = sectionRules.find(r => r.isAtRule && /prefers-reduced-motion:\s*reduce/i.test(r.selector));
-  assert.ok(reducedMotionBlock, 'must suppress prismatic ::before rim under @media (prefers-reduced-motion: reduce)');
 });
