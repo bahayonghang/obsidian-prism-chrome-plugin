@@ -8,7 +8,7 @@
 
 <!-- @@@auto:current-status -->
 - **Active File**: `journal-1.md`
-- **Total Sessions**: 4
+- **Total Sessions**: 5
 - **Last Active**: 2026-11-24
 <!-- @@@/auto:current-status -->
 
@@ -19,7 +19,7 @@
 <!-- @@@auto:active-documents -->
 | File | Lines | Status |
 |------|-------|--------|
-| `journal-1.md` | ~89 | Active |
+| `journal-1.md` | ~106 | Active |
 <!-- @@@/auto:active-documents -->
 
 ---
@@ -29,6 +29,7 @@
 <!-- @@@auto:session-history -->
 | # | Date | Title | Commits | Branch |
 |---|------|-------|---------|--------|
+| 5 | 2026-11-24 | v0.4.4 线上取证与原版对照：确认方案并发布 spec #44 | - | `dev` |
 | 4 | 2026-11-24 | v0.4.3 实施完成：spec #40 / #41–#43 合并到 dev 并关单 | `fa33aa2` | `dev` |
 | 3 | 2026-11-24 | 用户确认 spec #40 方案：0.4.3、不加正文淡出、按已发布 tickets 执行 | - | `dev` |
 | 2 | 2026-11-24 | v0.4.3 线上取证：ChatGPT 底栏黑带根因与侧栏激活高亮，发布 spec #40 与 tickets #41-#43 | - | `dev` |

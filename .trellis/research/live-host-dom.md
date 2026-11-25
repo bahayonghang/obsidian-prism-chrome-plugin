@@ -113,8 +113,29 @@ v0.3.0 的夹具是按推测的结构手写的，浏览器测试量的是扩展�
 - 以上均在离线 live 夹具上双引擎验证。2026-11-24 所有者在已登录 ChatGPT 对话页加载 v0.4.3 `dist/chrome` 复看：黑带消失，图标瓷片与整行高亮符合设计，滚动正文从输入框两侧经过可以接受（详见 `docs/TESTING.md` 的 v0.4.3 记录）。
 - 本次取证推翻的旧结论：v0.4.1 的"ChatGPT 独立消息滚动容器挂 `data-op-scroller-fade` 淡出正文"在线上未生效（标记数 0），且现在底栏是滚动容器的子节点，不能再用滚动容器遮罩；v0.4.3 有意不加正文淡出，清掉黑带后正文会从输入框两侧经过。
 
+## 2026-11-24 线上实测续（v0.4.3 生效；spec [#44](https://github.com/bahayonghang/obsidian-prism-chrome-plugin/issues/44)，tickets #45–#48，待实现）
+
+来源：已登录 ChatGPT 与 Gemini 会话，`dist/chrome` 解包加载 v0.4.3，ego-browser 临时只读探针（1213×904，DPR 1.5，只取结构、几何与计算样式，未读正文），结合用户深色实机截图与 `ref/obsidian-prism` 原版样式对照。
+
+### 实测事实
+
+- **Gemini 底栏两侧暗色矩形框的来源**：线上底部停靠容器为 `input-container.hide-on-print.input-gradient.input-gradient-overlay.edge-to-edge.lm-input-redesign.grow-input-downwards`（`position: absolute; bottom: 0; padding: 8px 16px 0`，宽 `925.3px` 铺满整个 `chat-window`），内部居中的 `.input-area-container` 宽仅 `660px`。暗框并非宿主残留绘制，而是扩展挂在全宽 `input-container` 上的 `data-op-composer-scrim="true"`：其 `::before` 铺满全宽绘制 `44%` 画布色（浅色 `26%`）加 `backdrop-filter: blur(14px)`，且 `mask-image` 仅做顶边 `16px` 单向纵向羽化、左右无裁剪，在深色极光背景上将 `.input-area-container` 左右两翼压暗成高约 `106–136px` 的矩形暗带（左侧翼区平均 RGB `[16.9, 20.5, 29.6]`，正上方 `[18.3, 23.8, 35.8]`）。
+- **ChatGPT 输入框下方 `72px`（1.5x 物理像素约 `89–108px`）空白的三重叠加根因**：视口高 `904px` 时，`ComposerLayoutRoot`（`[data-op-composer-surface="true"]`）底边在 `y=832px`（`vpBottomGap: 72px`）：
+  1. 外层两个非滚动弹性布局壳（`div.@container/app-shell-main-content...[--thread-content-top-inset:...]` 与内层 `div.[--thread-content-responsive-max-width:...]`，以及更内层的 `div.group/thread-scroll-layout.[--thread-content-x:initial]`）因 Tailwind 自定义属性类名包含子串 `thread-content`，被 `src/adapters.js` 的 `threadColumns`（`[class*="thread-content"]`）误标 `data-op-thread-column="true"` 并各注入 `padding-bottom: 24px !important`，最外两层合计 `48px` 直接把整个滚动容器与绝对定位底栏顶高到 `y=856px`；
+  2. `[data-thread-scroll-footer="true"]` 带有 `after:block after:h-(--thread-composer-bottom-inset)`（`::after` 静态块高 `24px`），把 `[data-thread-composer-backdrop="true"]`（宽 `808px`，左右内边距 `20px`，带 `[--thread-content-max-width:var(--thread-content-responsive-max-width,inherit)]` 与 `[--thread-body-max-width:...]`）及输入框底边再推高 `24px` 至 `y=832px`；
+  3. v0.4.3 中 `findComposerScrim` 遇到 `Thread Footer` 直接返回 `null`，导致 `dockHost === null`，整条 `data-op-composer-dock` 贴底、空兄弟折叠与底栏内免责声明扫描链路被跳过。
+- **ChatGPT 线上输入框计算样式与按钮细节**：`ComposerLayoutRoot` 计算出的 `border` 为 `0px none`（宿主规则压过了扩展描边颜色或重置了边框宽度），且残留宿主 `backdrop-filter: blur(12px)`；空输入状态下最右侧按钮为开始语音按钮（`[data-composer-voice-start="true"]`），被扩展 `findComposerPrimaryAction` 回退命中并染成 `30×30` 实心圆钮。
+- **原版 `ref/obsidian-prism` 生产输入框基线**：生产样式 `ref/obsidian-prism/style.css` 对对话区底部渐变层与滚动遮罩全部清零（纯透明底栏，无全宽模糊带）；输入框卡片圆角为 `sharp: 6px / balanced: 10px / soft: 14px`，采用高不透明实底（`backdrop-filter: none`）+ `172°` 顶面微漫反光 + 低对比度 `1px` 物理描边 + 顶缘 `inset 0 1px 0` 镜面高光 + 分层投影，静态无宽幅紫青外发光雾，棱镜流光为 `1px` 贴边光谱细边；单行编辑区 `min-height: 40px`、卡片 `gap: 6px`；`+` 与模型胶囊同为 `28px` 中性微凸药丸（仅左侧星芒与档位后缀着色）；语音与麦克风为 `28×28` 透明幽灵圆钮，仅发送与停止按钮为 `30×30` 高对比实心圆钮。
+
+### spec #44 的方案（2026-11-24 用户确认“都按照推荐来”；待实现，尚未合入代码）
+
+- **协议状态（已确认规划，未实现）**：
+  1. **双端统一纯透明底栏**：Gemini 关闭叠层模糊遮罩（取消 `44%/26%` 画布染色与 `backdrop-filter: blur`），只清 `input-container` 及其伪元素的原生绘制，保留叠层停靠区的 `--op-dock-clearance` 末尾留白确保最后一条回复及 `message-actions` 可完整滚出并点击。
+  2. **对齐原版光学 `Composer Surface` 与控件分级**：圆角取 `sharp: 6px / balanced: 12px / soft: 16px`；清除宿主 `backdrop-filter`，强制四边 `1px` 实线低对比物理描边 + 顶缘内高光 + `172°` 漫反光实底；移除常态 `30px` 外雾与聚焦 `3px` 外环，`composerGlow` 改为悬停/聚焦态纯 CSS `1px` 贴边光谱细边（不加 Canvas 节点，遵守 ADR-0002）；单行编辑区最小高度拉升至约 `38–40px`；`+` 与 `Model Capsule` 改为中性微凸药丸（保留四芒星与档位后缀强调色）；`30×30` 实心主操作圆钮仅匹配真正的发送与停止按钮，语音开始按钮与麦克风归为透明幽灵图标。
+  3. **收紧 ChatGPT 底部留白并桥接新底栏宽度**：`threadColumns` 排除含 `--thread-content-*` 自定义属性类名的外层非滚动应用壳（消除 `48px` 悬空）；对话态且开启重塑时收敛 `Thread Footer` 内部 `--thread-composer-bottom-inset` / `::after` 占位并恢复底栏内免责声明隐藏与空兄弟折叠，使输入框距视口底边落在 `6–8px`；把 `[data-thread-composer-backdrop="true"]` 补入 `contentWidth.composerTargets`；目标版本 `0.4.4`。
+
 ## 仍是推断值或未在线上验证
 
-- 2026-11-24 实测已推翻：ChatGPT 的 `#thread-bottom-container` / `#thread-bottom` 在线上已不存在，下面凡以它们为前提的输入列条目都需按上一节的结构重新取证。
-- 推断选择器与数值：ChatGPT `#thread-bottom [class*="--thread-content-max-width"]` 与中间包装层/直属 `form[data-chatgpt-composer]` 结构、嵌套用户气泡外/内限宽包裹层（`userTurnTargets` 覆盖链）、ChatGPT 两行输入框的 area 名 `leading`/`primary`/`trailing`（有结构槽位兜底）、输入框附件头行、h1/h4、线上真实角落浮件形态（`cornerFloatingObstacles`）；Gemini 网格列宽、`.response-footer` 宽度、h1/h4、User Turn 中间包裹容器链、滚动区 150px 底部留白及是否动态调白。
-- 未在线上验证：仓库内含 v0.4.0–v0.4.3 扩展的 `tools/structure-probe.js` 尚未在真实登录页面上运行，需所有者授权后人工执行；本页 ChatGPT 底栏与侧栏激活态的事实来自 2026-11-24 的临时只读脚本，其余实测事实仍来自 2026-11-22 更早一次只读探针，所有 v0.4.0/v0.4.1/v0.4.2 浏览器验证均运行于离线探针夹具（`未在真实登录会话验证`），线上 ChatGPT/Gemini 的 User Turn 多层祖先限宽、输入列结构、A/B 底栏模式、两行输入框真实网格、外层占位真实结构及角落浮件避让仍需登录实测验收。
+- 2026-11-24 实测已确认（替代旧推断）：ChatGPT `#thread-bottom-container` / `#thread-bottom` 已下线，当前线上输入列限宽落在 `[data-thread-composer-backdrop="true"]`（承载 `--thread-content-max-width` 与 `--thread-body-max-width`）；外层应用壳含 `[--thread-content-*]` Tailwind 变量类名；`[data-thread-scroll-footer="true"]::after` 提供 `24px` `--thread-composer-bottom-inset`；Gemini 底部停靠层为全宽 `input-container.input-gradient.input-gradient-overlay.edge-to-edge` 包裹 `660px` `.input-area-container`。
+- 仍是推断选择器与数值：ChatGPT 嵌套用户气泡外/内限宽包裹层（`userTurnTargets` 覆盖链）、ChatGPT 两行输入框的 area 名 `leading`/`primary`/`trailing`（有结构槽位兜底）、输入框附件头行、h1/h4、线上真实角落浮件形态（`cornerFloatingObstacles`）；Gemini 网格列宽、`.response-footer` 宽度、h1/h4、User Turn 中间包裹容器链、滚动区底部留白数值及是否动态调白。
+- 未在线上验证：仓库内的 `tools/structure-probe.js` 本身仍未直接在真实登录页面运行（2026-11-24 两轮事实均来自临时只读脚本）；v0.4.4 方案待编码实现并在离线夹具与真实登录会话上复看验收。

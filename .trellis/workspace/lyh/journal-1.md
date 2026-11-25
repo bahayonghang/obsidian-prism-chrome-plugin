@@ -87,3 +87,20 @@ Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
 ### Next Steps
 
 - 如需发布，按所有者授权推送 dev
+
+
+## Session 5: v0.4.4 线上取证与原版对照：确认方案并发布 spec #44
+<!-- trellis-session: v=3 fp=ee770081d1aff1e8 -->
+
+**Date**: 2026-11-24
+**Task**: v0.4.4 线上取证与原版对照：确认方案并发布 spec #44
+**Branch**: `dev`
+
+### Summary
+
+ego-browser 线上实测定位 Gemini 底栏两侧黑框（扩展自身全宽 Composer Scrim 44% 画布染色+模糊无横向裁剪）与 ChatGPT 底部 72px 空白（threadColumns 误命中含 --thread-content-* 外层壳注入 48px + [data-thread-scroll-footer]::after 24px 且 Thread Footer 跳过了贴底与免责声明扫描），对照 ref/obsidian-prism 原版确认双端纯透明底栏、12px 紧凑光学卡片/1px 描边/去静态外雾、中性微凸胶囊与空态语音幽灵化方案，发布 Spec #44。
+Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
+
+### Git Commits
+
+(No associated commits)
