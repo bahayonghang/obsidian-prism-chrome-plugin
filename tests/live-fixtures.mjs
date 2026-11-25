@@ -542,7 +542,12 @@ async function assertProbePrivacy(page, host, probeSource) {
     assert.ok(bubbleTranscript, 'chatgpt: userBubbleAncestors captures transcriptContent');
     assert.equal(bubbleTranscript.style['--thread-content-max-width'], '48rem');
     assert.equal(bubbleTranscript.style['--user-chat-width'], '70%');
+    assert.ok(result.targets.sidebarActive.count >= 2, `chatgpt: sidebarActive captures active rail/row items (got ${result.targets.sidebarActive.count})`);
+    assert.ok(result.targets.sidebarActive.samples.some(sample => sample.role === 'group' && sample.rect.height === 36), 'chatgpt: sidebarActive captures 36px active row');
   } else {
+    assert.equal(result.targets.sidebarActive.count, 1, 'gemini: sidebarActive captures the active conversation row');
+    assert.equal(first('sidebarActive').tag, 'a');
+    assert.equal(first('sidebarActive').pseudos?.before?.hasContent, true, 'gemini: sidebarActive captures host state-layer ::before');
     assert.equal(first('markdownBlocks').style.maxWidth, '708px');
     assert.equal(normalize(first('textInputField').style.gridTemplateAreas), NATIVE_BASELINES.gemini.gridAreas);
     assert.equal(first('inputContainer').style.position, 'absolute');

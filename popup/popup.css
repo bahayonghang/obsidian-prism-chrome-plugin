@@ -508,8 +508,8 @@ fieldset {
   min-height:10px;
   margin:0 -3px;
   border-radius:3px;
-  background:color-mix(in srgb,var(--preview-accent) 15%,transparent);
-  box-shadow:inset 2px 0 var(--preview-accent)
+  background:color-mix(in srgb,var(--preview-accent) 17%,transparent);
+  box-shadow:inset 3px 0 0 var(--preview-accent),inset 0 0 0 1px color-mix(in srgb,var(--preview-accent) 28%,transparent)
 }
 .preview-avatar {
   font-size:6px;

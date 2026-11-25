@@ -402,13 +402,32 @@ function makeMockDom(hostname, variant = 'default') {
       style: { position: 'fixed' }
     });
     owned.append(ownedFloat);
+    const sidebar = create('aside', {
+      attrs: { id: 'stage-slideover-sidebar' },
+      style: { '--sidebar-surface-primary': '#181818', backgroundColor: 'rgb(24, 24, 24)' }
+    });
+    const nav = create('nav');
+    const activeRow = create('div', {
+      attrs: { role: 'group', 'aria-current': 'page', 'data-secret-row': 'Private sidebar title' },
+      classes: ['sidebar-active-row'],
+      rect: { x: 8, y: 120, width: 262, height: 36 },
+      style: { backgroundColor: 'rgba(255, 255, 255, 0.1)', borderRadius: '10px', fontWeight: '400' }
+    });
+    const activeLink = create('a', {
+      attrs: { href: 'https://secret.example/c/68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13', 'aria-current': 'page', 'aria-label': 'Private sidebar label' },
+      rect: { x: 16, y: 128, width: 243, height: 20 },
+      style: { fontWeight: '400' }
+    });
+    activeRow.append(activeLink);
+    nav.append(activeRow);
+    sidebar.append(nav);
     col.append(form, spacer, disclaimer);
     threadBottom.append(col);
     dock.append(contentFadeContainer, threadBottom, threadBottomAfterSpacer);
     parent.append(scroller, extraFade1, extraFade2, dock, dockOuterSpacer, disclaimerOuterWrap, secretVtShell, mixedIdVtShell);
     main.append(parent);
     mainCol.append(main);
-    page.append(mainCol);
+    page.append(sidebar, mainCol);
     body.append(page, cornerBtn, dialog, owned);
   } else if (hostname === 'gemini.google.com') {
     const app = create('chat-app');
@@ -456,8 +475,24 @@ function makeMockDom(hostname, variant = 'default') {
       rect: { x: 1492, y: 852, width: 32, height: 32 },
       style: { position: 'fixed' }
     });
+    const sidenav = create('bard-sidenav', {
+      style: { '--gem-sys-color--surface': '#1e1f20', '--gem-sys-color--on-surface': '#e3e3e3', backgroundColor: 'rgb(30, 31, 32)' }
+    });
+    const sideNavV2 = create('side-navigation-v2');
+    const geminiActive = create('a', {
+      attrs: { href: '/app/4f8a1c2e9b7d', 'aria-current': 'page', 'aria-label': 'Private gemini sidebar label', 'data-conversation-id': '4f8a1c2e9b7d' },
+      classes: ['conversation-item'],
+      rect: { x: 12, y: 108, width: 288, height: 36 },
+      style: { backgroundColor: 'rgb(31, 55, 96)', borderRadius: '999px', fontWeight: '400' },
+      pseudos: {
+        '::before': { content: '""', backgroundColor: 'rgba(168, 199, 250, 0.12)' },
+        '::after': { content: 'none' }
+      }
+    });
+    sideNavV2.append(geminiActive);
+    sidenav.append(sideNavV2);
     chatWindow.append(geminiScroller, inputContainer);
-    app.append(chatWindow);
+    app.append(sidenav, chatWindow);
     body.append(app, cornerBtn);
   }
   const document = {
@@ -580,8 +615,23 @@ test('structure probe collects pseudo paint/mask, full ancestor depth, siblingsA
   assert.ok(chatgptTranscriptAnc, 'captures transcriptContent in userBubbleAncestors');
   assert.equal(chatgptTranscriptAnc.style['--thread-content-max-width'], '48rem');
   assert.equal(chatgptTranscriptAnc.style['--user-chat-width'], '70%');
+  assert.equal(chatgptJson.includes('Private sidebar title'), false, 'redacts data-* on sidebarActive');
+  assert.equal(chatgptJson.includes('Private sidebar label'), false, 'never leaks aria-label on sidebarActive');
+  assert.equal(chatgpt.targets.sidebarActive.count, 2, 'collects ChatGPT sidebarActive outer row and inner link without duplicates');
+  assert.ok(chatgpt.targets.sidebarActive.samples.some(s => s.classes.includes('sidebar-active-row') && s.style.borderRadius === '10px' && s.data['data-secret-row'] === '[text]'));
+  assert.ok(chatgpt.targets.sidebarActive.samples.some(s => s.tag === 'a' && s.hasAriaLabel === true));
 
   const gemini = runProbe('gemini.google.com');
+  const geminiJson = JSON.stringify(gemini);
+  assert.equal(geminiJson.includes('Private gemini sidebar label'), false, 'never leaks Gemini sidebarActive aria-label');
+  assert.equal(geminiJson.includes('4f8a1c2e9b7d'), false, 'redacts Gemini sidebarActive hex ids');
+  assert.equal(gemini.targets.sidebarActive.count, 1, 'collects Gemini sidebarActive without duplicates across nested sidebar containers');
+  assert.equal(gemini.targets.sidebarActive.samples[0].classes[0], 'conversation-item');
+  assert.equal(gemini.targets.sidebarActive.samples[0].data['data-conversation-id'], '[id]');
+  assert.equal(gemini.targets.sidebarActive.samples[0].style.borderRadius, '999px');
+  assert.equal(gemini.targets.sidebarActive.samples[0].pseudos?.before?.hasContent, true);
+  assert.equal(gemini.targets.sidebarActive.samples[0].pseudos?.before?.backgroundColor, 'rgba(168, 199, 250, 0.12)');
+  assert.equal(gemini.targets.sidebar.samples[0].style['--gem-sys-color--on-surface'], '#e3e3e3');
   assert.equal(gemini.targets.inputSiblings.count, 1, 'collects siblings after Gemini .input-area-container');
   assert.equal(gemini.targets.inputSiblings.samples[0].tag, 'hallucination-disclaimer');
   assert.equal(gemini.targets.inputSiblings.samples[0].hasInteractive, false);

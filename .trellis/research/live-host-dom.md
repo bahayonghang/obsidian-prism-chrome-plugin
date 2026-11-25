@@ -138,8 +138,17 @@ v0.3.0 的夹具是按推测的结构手写的，浏览器测试量的是扩展�
 - **ChatGPT 外层防误伤、`Thread Footer` 底部收紧与加宽桥接（#46，`6583196` / `1ed76ea` / `923ab6f` / `80cb03f`）**：`tools/structure-probe.js` 新增 `threadFooterBottomOffset`、外层壳 `outerWrappers`、`threadScrollFooter`、`threadComposerBackdrop`、`scrollFooterSiblings`、`composerBackdropSiblings`、底栏内部占位/免责声明及 `scrollerOverlap` 只读指标并通过隐私单测；`src/adapters.js` 的 `findThreadColumnSurfaces` 排除包含滚动容器的外层壳及仅凭 `[--thread-content-*]` 自定义属性类命中的容器（消除 `48px` 误注入）；新增 `threadFooterLayer` 与可逆标记 `data-op-thread-footer="true"`（已注册入 `RUNTIME_SURFACE_ATTRS`），在活跃对话且 `composerRestyle: true` 时不改底栏定位/`z-index`/`anchor-scope` 而收敛 `[data-thread-scroll-footer="true"]` 的 `--thread-composer-bottom-inset` / `::after` 高度、内部包裹层底距并恢复底栏内免责声明隐藏与空兄弟折叠，使输入框底距视口落入 `6–8px`（离线实测 `7px`），同时将 `[data-thread-composer-backdrop="true"]` 及其内部表单包裹接入 `contentWidth.composerTargets`（与 `styles/hosts.css` 静态同步）实现三档宽度对齐与 `Bottom Dock` 避让。
 - **版本与文档（#48）**：三处版本号对齐为 `0.4.4`，领域词汇表、架构、测试文档、README、修改记录与本笔记同步；以上均在离线 live 夹具上双引擎验证（`未在真实登录会话验证`）。
 
+## 2026-11-25 实机对比截图取证与侧栏激活态显著度优化
+
+来源：用户提供的已登录 Gemini 与 ChatGPT 浅色（`crystal` + `follow` + `glass`）实机对比截图逐像素采样。
+
+- **实测事实**：
+  - Gemini 侧栏激活行已命中 `data-op-sidebar-active="true"`（行宽/行高完整，左侧 `x=28..29` 存在 2px 蓝色内阴影），但实测激活底色 `rgb(231, 238, 254)`（`color-mix(#2563EB 11%, #FFFFFF)`）与周边侧栏 `rgb(229, 236, 243)`–`rgb(231, 238, 246)` 几乎零亮度差（理论对纯色 `#E8EEF6` `ΔE = 3.6`，甚至淡于悬停态 `ΔE = 5.9`）；深色模式下 `11%` 混 `--op-card` 与 `7%` 混 `--op-secondary` 悬停态同样撞车（`obsidian/mono` `ΔE = 0.7`、`obsidian/gemini` `ΔE = 1.9`）；同时 `--gem-sys-color--on-surface: var(--op-fg)` 使 Gemini 所有非激活标题与激活项字色、字重完全一致。
+  - 次要对照观察（`OUT_OF_SCOPE_NOTED`）：ChatGPT 实机截图中窄图标轨为 `#E8EEF6` (`rgb(228, 236, 246)`)，宽会话侧栏底色呈近纯白 `rgb(252, 252, 252)`，叠加青绿异色相放大了局部反差；本次保持范围聚焦在侧栏激活态系统本身，未改动 ChatGPT 宽侧栏底色。
+- **已实现**：`styles/hosts.css` 引入分明暗语义变量（浅色 `17%` 混 `--op-sidebar` / 深色 `16%` 混 `--op-secondary`；悬停浅色 `6%` 混 `--op-sidebar` / 深色 `6%` 混 `--op-card`）、`3px` 左主色竖条 + `1px` 强调色四周微描边、`font-weight: 600` + 浅色深强调墨色、激活行 `::before`/`::after` 背景安全清绘、`@media (forced-colors: active)` `Highlight` 轮廓兜底，以及 Gemini 侧栏 `--gem-sys-color--on-surface: var(--op-fg-secondary)`；`popup/popup.css` 同步 `.preview-nav-active`；`tools/structure-probe.js` 新增双端 `sidebarActive` 只读采集及 `borderRadius` / 侧栏变量；`tests/fixtures/gemini-live.html` 补充 `.conversation-title`、`--gem-sys-color--on-surface` 与宿主 `::before` 压力层；`tests/sidebar-highlight.mjs` 新增全 4 配色 × 5 强调色及 `crystal/solid` 激活底板 `ΔE >= 9` / `channelGap >= 20`、悬停分离 `ΔE >= 5`、`3px+1px` 边缘与字重回归门禁（离线双引擎已通过，`未在真实登录会话验证`）。
+
 ## 仍是推断值或未在线上验证
 
 - 2026-11-24 实测已确认（替代旧推断）：ChatGPT `#thread-bottom-container` / `#thread-bottom` 已下线，当前线上输入列限宽落在 `[data-thread-composer-backdrop="true"]`（承载 `--thread-content-max-width` 与 `--thread-body-max-width`）；外层应用壳含 `[--thread-content-*]` Tailwind 变量类名；`[data-thread-scroll-footer="true"]::after` 提供 `24px` `--thread-composer-bottom-inset`；Gemini 底部停靠层为全宽 `input-container.input-gradient.input-gradient-overlay.edge-to-edge` 包裹 `660px` `.input-area-container`。
-- 仍是推断选择器与数值：ChatGPT 嵌套用户气泡外/内限宽包裹层（`userTurnTargets` 覆盖链）、ChatGPT 两行输入框的 area 名 `leading`/`primary`/`trailing`（有结构槽位兜底）、输入框附件头行、h1/h4、线上真实角落浮件形态（`cornerFloatingObstacles`）；Gemini 网格列宽、`.response-footer` 宽度、h1/h4、User Turn 中间包裹容器链、滚动区底部留白数值及是否动态调白。
-- 未在线上验证：仓库内的 `tools/structure-probe.js` 本身仍未直接在真实登录页面运行（2026-11-24 两轮事实均来自临时只读脚本）；v0.4.4 全部实现与回归测试均在离线探针夹具完成（`未在真实登录会话验证`），待所有者在已登录 ChatGPT 与 Gemini 页面加载 `dist/chrome` 复看验收。
+- 仍是推断选择器与数值：ChatGPT 嵌套用户气泡外/内限宽包裹层（`userTurnTargets` 覆盖链）、ChatGPT 两行输入框的 area 名 `leading`/`primary`/`trailing`（有结构槽位兜底）、输入框附件头行、h1/h4、线上真实角落浮件形态（`cornerFloatingObstacles`）；Gemini 网格列宽、`.response-footer` 宽度、h1/h4、User Turn 中间包裹容器链、滚动区底部留白数值及是否动态调白；Gemini 夹具的 `.conversation-title` 类名与激活行 `::before` 状态层数值为离线压力推断值。
+- 未在线上验证：仓库内的 `tools/structure-probe.js` 本身仍未直接在真实登录页面运行（2026-11-24 两轮事实均来自临时只读脚本）；v0.4.4 及本次侧栏激活高亮升级均在离线探针夹具完成双引擎验收（`未在真实登录会话验证`），待所有者在已登录 ChatGPT 与 Gemini 页面重新加载 `dist/chrome` 复看验收。

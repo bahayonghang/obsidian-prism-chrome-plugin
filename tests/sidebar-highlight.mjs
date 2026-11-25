@@ -1,9 +1,10 @@
 /**
- * v0.4.3 #42: sidebar active highlight shaped like its control, measured on the live fixtures.
- * An icon tile (equal-width icon-only rail button) gets an even fill, an even 1px ring and an accent icon,
- * with no single-side bar and no visible host overlay. An active row gets exactly one highlight layer that
- * covers the whole row, with no second layer on its inner link and no visible host grey. Assertions use
- * rendered pixels, boxes and computed styles, never marker attributes.
+ * v0.4.3 #42 / sidebar active prominence upgrade: sidebar active highlight shaped like its control,
+ * measured on the live fixtures. An icon tile (equal-width icon-only rail button) gets an even fill,
+ * an even 1px ring and an accent icon, with no single-side bar and no visible host overlay. An active
+ * row gets one opaque layer clearly separated from the sidebar background (deltaE >= 9, channelGap >= 20)
+ * and hover state, paired with a 3px left accent bar, a subtler 1px perimeter hairline, 600 weight,
+ * and no second layer or host ::before overlay. Assertions use rendered pixels, boxes and computed styles.
  */
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -16,12 +17,16 @@ const TARGETS = {
     idleTile: '#stage-slideover-sidebar button[aria-label="Library"]',
     row: '#stage-slideover-sidebar [role="group"][aria-current="page"]',
     link: '#stage-slideover-sidebar [role="group"][aria-current="page"] > a',
-    idleRow: '#stage-slideover-sidebar nav > a[href^="/c/"]:not([aria-current])'
+    title: '#stage-slideover-sidebar [role="group"][aria-current="page"] > a',
+    idleRow: '#stage-slideover-sidebar nav > a[href^="/c/"]:not([aria-current])',
+    idleTitle: '#stage-slideover-sidebar nav > a[href^="/c/"]:not([aria-current])'
   },
   gemini: {
     row: 'side-navigation-v2 a[aria-current="page"]',
     link: 'side-navigation-v2 a[aria-current="page"]',
-    idleRow: 'side-navigation-v2 a[href^="/app/"]:not([aria-current])'
+    title: 'side-navigation-v2 a[aria-current="page"] .conversation-title',
+    idleRow: 'side-navigation-v2 a[href^="/app/"]:not([aria-current])',
+    idleTitle: 'side-navigation-v2 a[href^="/app/"]:not([aria-current]) .conversation-title'
   }
 };
 const ACCENTS = ['follow', 'cobalt', 'iris', 'amber', 'mono'];
@@ -48,6 +53,19 @@ function contrast(fg, bg) {
   const a = lum(fg), b = lum(bg);
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
+function srgbToLab(c) {
+  const lin = v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  const [r, g, b] = [c.r, c.g, c.b].map(v => lin(v / 255));
+  const f = t => t > 0.008856 ? Math.cbrt(t) : 7.787 * t + 16 / 116;
+  const fx = f((r * 0.4124564 + g * 0.3575761 + b * 0.1804375) / 0.95047);
+  const fy = f((r * 0.2126729 + g * 0.7151522 + b * 0.0721750) / 1.00000);
+  const fz = f((r * 0.0193339 + g * 0.1191920 + b * 0.9503041) / 1.08883);
+  return [116 * fy - 16, 500 * (fx - fy), 200 * (fy - fz)];
+}
+function deltaE(a, b) {
+  const [l1, a1, b1] = srgbToLab(a), [l2, a2, b2] = srgbToLab(b);
+  return Math.hypot(l1 - l2, a1 - a2, b1 - b2);
+}
 /** Weight of `accent` when `color` is read as a mix of accent and foreground (1 = pure accent). */
 function accentWeight(color, accent, fg) {
   const d = ['r', 'g', 'b'].map(k => accent[k] - fg[k]);
@@ -64,19 +82,19 @@ async function rectOf(page, selector) {
     return { left: r.left, top: r.top, width: r.width, height: r.height, right: r.right, bottom: r.bottom };
   });
 }
-/** Computed paint of the visible pieces: tile (+ host ::before overlay and icon), row and inner link. */
+/** Computed paint of the visible pieces: tile (+ host ::before overlay and icon), row, row overlay, title and inner link. */
 async function paintSnapshot(page, host) {
   return page.evaluate(targets => {
     const read = (selector, pseudo) => {
       const node = selector && document.querySelector(selector);
       if (!node) return null;
       const style = getComputedStyle(node, pseudo);
-      return ['backgroundColor', 'backgroundImage', 'boxShadow', 'color', 'outlineStyle', 'borderTopLeftRadius', 'fontFamily', 'transitionDuration']
+      return ['backgroundColor', 'backgroundImage', 'boxShadow', 'color', 'fontWeight', 'outlineStyle', 'borderTopLeftRadius', 'fontFamily', 'transitionDuration']
         .map(key => `${key}:${style[key]}`).join('|');
     };
     return {
       tile: read(targets.tile), tileOverlay: read(targets.tile, '::before'), icon: read(targets.tile && `${targets.tile} svg`),
-      row: read(targets.row), link: read(targets.link), idleRow: read(targets.idleRow)
+      row: read(targets.row), rowOverlay: read(targets.row, '::before'), link: read(targets.link), title: read(targets.title), idleRow: read(targets.idleRow)
     };
   }, TARGETS[host]);
 }
@@ -89,7 +107,11 @@ async function computed(page, selector, keys, pseudo) {
 async function rootTokens(page) {
   return page.evaluate(() => {
     const style = getComputedStyle(document.documentElement);
-    return { accent: style.getPropertyValue('--op-accent').trim(), fg: style.getPropertyValue('--op-fg').trim() };
+    return {
+      accent: style.getPropertyValue('--op-accent').trim(),
+      fg: style.getPropertyValue('--op-fg').trim(),
+      sidebar: style.getPropertyValue('--op-sidebar').trim()
+    };
   });
 }
 async function pixelsOf(page, rect, pad = 0) {
@@ -130,15 +152,17 @@ async function assertIconTile(page, label) {
   return { fill, icon };
 }
 
-/** Active row: exactly one highlight layer covering the whole row, an accent left edge, no inner layer. */
+/** Active row: one opaque highlight clearly separated from the sidebar, 3px left bar, 1px hairline ring, 600 weight, no host overlay. */
 async function assertRowHighlight(page, host, label) {
-  const { row, link } = TARGETS[host];
+  const { row, link, title, idleRow } = TARGETS[host];
   await hoverNothing(page);
   await settle(page);
   const rect = await rectOf(page, row);
   const linkRect = await rectOf(page, link);
+  const idleRect = await rectOf(page, idleRow);
   const pad = 4;
   const { image, clip } = await pixelsOf(page, rect, pad);
+  const { image: idleImg, clip: idleClip } = await pixelsOf(page, idleRect, 0);
   const fill = parseColor((await computed(page, row, ['backgroundColor'])).backgroundColor);
   assert.ok(fill && fill.a === 1, `${label}: the active row has one opaque highlight`);
   const at = (x, y) => image.at(x - clip.x, y - clip.y);
@@ -146,34 +170,57 @@ async function assertRowHighlight(page, host, label) {
   const column = Math.round(rect.right - 12);
   const matches = [];
   for (let y = clip.y; y < clip.y + image.height; y++) if (channelGap(at(column, y), fill) <= 3) matches.push(y);
-  assert.ok(matches.length, `${label}: the row highlight colour ${show(fill)} is painted`);
+  assert.ok(matches.length, `${label}: the row highlight colour ${show(fill)} is painted with no host overlay on top`);
   const top = Math.min(...matches), bottom = Math.max(...matches) + 1;
   assert.equal(matches.length, bottom - top, `${label}: one uninterrupted layer (no inner link layer) from ${top} to ${bottom}: ${matches.join(',')}`);
   assert.ok(Math.abs(top - rect.top) <= 1 && Math.abs(bottom - rect.bottom) <= 1,
     `${label}: highlight box ${top}–${bottom} equals the whole row ${rect.top}–${rect.bottom} (inner link ${linkRect.top}–${linkRect.bottom})`);
+  // Rendered active fill stands clearly apart from the rendered surrounding sidebar behind an inactive row.
+  const sidebarPixel = idleImg.at(Math.round(idleRect.right - 12) - idleClip.x, Math.round(idleRect.top + idleRect.height / 2) - idleClip.y);
+  const renderedDe = deltaE(fill, sidebarPixel);
+  const renderedGap = channelGap(fill, sidebarPixel);
+  assert.ok(renderedDe >= 9 && renderedGap >= 20,
+    `${label}: active fill ${show(fill)} clearly stands out from rendered sidebar ${show(sidebarPixel)} (dE=${renderedDe.toFixed(1)}, gap=${renderedGap})`);
   const middle = rect.top + rect.height / 2;
-  const edge = at(Math.floor(rect.left), middle);
-  assert.ok(channelGap(edge, fill) >= 20, `${label}: the row has a left accent edge (edge ${show(edge)} vs fill ${show(fill)})`);
-  assert.ok(channelGap(at(Math.floor(rect.left) + 2, middle), fill) <= 3, `${label}: the left edge is 2px wide`);
-  assert.ok(channelGap(at(Math.ceil(rect.right) - 1, middle), fill) <= 3, `${label}: only the left side carries an edge`);
-  const text = parseColor((await computed(page, link, ['color'])).color);
+  const edge0 = at(Math.floor(rect.left), middle);
+  for (const dx of [0, 1, 2]) {
+    const px = at(Math.floor(rect.left) + dx, middle);
+    assert.ok(channelGap(px, fill) >= 20, `${label}: left accent bar at +${dx}px is painted (px ${show(px)} vs fill ${show(fill)})`);
+  }
+  assert.ok(channelGap(at(Math.floor(rect.left) + 3, middle), fill) <= 3, `${label}: the left accent bar is 3px wide`);
+  const rightEdge = at(Math.ceil(rect.right) - 1, middle);
+  assert.ok(channelGap(rightEdge, fill) >= 10, `${label}: right perimeter hairline is visible (edge ${show(rightEdge)} vs fill ${show(fill)})`);
+  assert.ok(channelGap(rightEdge, fill) < channelGap(edge0, fill),
+    `${label}: right 1px hairline (gap ${channelGap(rightEdge, fill)}) stays subtler than the 3px left bar (gap ${channelGap(edge0, fill)})`);
+  assert.ok(channelGap(at(Math.ceil(rect.right) - 2, middle), fill) <= 3, `${label}: the perimeter hairline is 1px wide`);
+  const titleStyle = await computed(page, title, ['color', 'fontWeight']);
+  const text = parseColor(titleStyle.color);
   const ratio = contrast(text, fill);
   assert.ok(ratio >= 4.5, `${label}: active row text contrast ${ratio.toFixed(2)}:1 >= 4.5:1`);
+  assert.ok(Number(titleStyle.fontWeight) >= 600, `${label}: active row text is semibold (got ${titleStyle.fontWeight})`);
   return { fill, rect };
 }
 
-/** Text and icon contrast (computed, opaque surfaces) for every accent in the current palette. */
+/** Text, icon contrast, and sidebar separation across every accent in the current palette. */
 async function assertContrastAcrossAccents(page, host, palette, label) {
   for (const accent of ACCENTS) {
     await patchConfig(page, { accentTone: accent });
     await page.waitForFunction(value => document.documentElement.getAttribute('data-op-accent') === value, accent);
     await settle(page);
     const tokens = await rootTokens(page);
-    const accentColor = parseColor(tokens.accent), fg = parseColor(tokens.fg);
+    const accentColor = parseColor(tokens.accent), fg = parseColor(tokens.fg), sidebarBg = parseColor(tokens.sidebar);
     const name = `${label} ${palette}/${accent}`;
     const rowFill = parseColor((await computed(page, TARGETS[host].row, ['backgroundColor'])).backgroundColor);
-    const rowText = parseColor((await computed(page, TARGETS[host].link, ['color'])).color);
+    const titleStyle = await computed(page, TARGETS[host].title, ['color', 'fontWeight']);
+    const rowText = parseColor(titleStyle.color);
+    const de = deltaE(rowFill, sidebarBg), gap = channelGap(rowFill, sidebarBg);
+    assert.ok(de >= 9 && gap >= 20, `${name}: active fill ${show(rowFill)} stays distinct from sidebar ${show(sidebarBg)} (dE=${de.toFixed(1)}, gap=${gap})`);
     assert.ok(contrast(rowText, rowFill) >= 4.5, `${name}: row text contrast ${contrast(rowText, rowFill).toFixed(2)}:1 >= 4.5:1`);
+    assert.ok(Number(titleStyle.fontWeight) >= 600, `${name}: active title fontWeight >= 600 (got ${titleStyle.fontWeight})`);
+    const idleTitleStyle = await computed(page, TARGETS[host].idleTitle, ['color', 'fontWeight']);
+    const idleText = parseColor(idleTitleStyle.color);
+    assert.ok(contrast(idleText, sidebarBg) >= 4.5, `${name}: inactive row text contrast ${contrast(idleText, sidebarBg).toFixed(2)}:1 >= 4.5:1`);
+    assert.ok(Number(idleTitleStyle.fontWeight) < 600, `${name}: inactive row stays lighter than active (got ${idleTitleStyle.fontWeight})`);
     if (!TARGETS[host].tile) continue;
     const tileFill = parseColor((await computed(page, TARGETS[host].tile, ['backgroundColor'])).backgroundColor);
     const icon = parseColor((await computed(page, `${TARGETS[host].tile} svg`, ['color'])).color);
@@ -195,13 +242,17 @@ async function assertStatesDistinct(page, host, label) {
   await hoverNothing(page);
   await settle(page);
   const active = await signature(t.row);
+  const activeFill = parseColor((await computed(page, t.row, ['backgroundColor'])).backgroundColor);
   const idle = await signature(t.idleRow);
   const idleRect = await rectOf(page, t.idleRow);
   await page.mouse.move(idleRect.left + idleRect.width / 2, idleRect.top + idleRect.height / 2);
   await settle(page);
   const hovered = await signature(t.idleRow);
+  const hoveredFill = parseColor((await computed(page, t.idleRow, ['backgroundColor'])).backgroundColor);
   assert.notEqual(hovered, idle, `${label}: hover changes an inactive row`);
   assert.notEqual(hovered, active, `${label}: a hovered row does not look active`);
+  assert.ok(deltaE(activeFill, hoveredFill) >= 5,
+    `${label}: active fill ${show(activeFill)} stays clearly separate from hovered fill ${show(hoveredFill)} (dE=${deltaE(activeFill, hoveredFill).toFixed(1)})`);
   const rowRect = await rectOf(page, t.row);
   await page.mouse.move(rowRect.left + rowRect.width / 2, rowRect.top + rowRect.height / 2);
   await settle(page);
@@ -259,10 +310,19 @@ export async function checkSidebarActiveHighlight(suite) {
         await assertRowHighlight(page, host, `${tag} ${palette}`);
         await assertContrastAcrossAccents(page, host, palette, tag);
         if (palette === 'obsidian' || palette === 'crystal') await assertStatesDistinct(page, host, `${tag} ${palette}`);
+        if (palette === 'crystal') {
+          await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-sidebar-highlight-crystal.png`) });
+        }
       }
       await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-sidebar-highlight.png`) });
 
-      // Solid sidebar surface and the compact option keep one whole-row layer.
+      // Solid light crystal (worst-case same-hue background without glass brightening) keeps clear separation.
+      await patchConfig(page, { themeMode: 'light', lightPreset: 'crystal', accentTone: 'follow', sidebarStyle: 'solid', sidebarCompact: false },
+        () => document.documentElement.getAttribute('data-op-effective-palette') === 'crystal' && document.documentElement.getAttribute('data-op-sidebar-style') === 'solid');
+      if (host === 'chatgpt') await assertIconTile(page, `${tag} crystal solid`);
+      await assertRowHighlight(page, host, `${tag} crystal solid`);
+
+      // Solid dark obsidian + compact option keep one whole-row layer.
       await patchConfig(page, { themeMode: 'dark', palette: 'obsidian', sidebarStyle: 'solid', sidebarCompact: true },
         () => document.documentElement.getAttribute('data-op-sidebar-compact') === 'true' && document.documentElement.getAttribute('data-op-sidebar-style') === 'solid');
       if (host === 'chatgpt') await assertIconTile(page, `${tag} solid compact`);

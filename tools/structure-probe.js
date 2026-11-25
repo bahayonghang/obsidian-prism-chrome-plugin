@@ -28,9 +28,11 @@
   'use strict';
   const SAMPLE_LIMIT = Math.max(1, Math.min(20, Number(options.samples) || 3));
   const DISCLAIMER_SELECTOR = '[class*="disclaimer"], [data-testid*="disclaimer"], [style*="view-transition-name"]';
+  const SIDEBAR_ACTIVE_SELECTOR = '[aria-current="page"], [aria-current="true"], [aria-selected="true"], [data-active="true"]';
   const TARGETS = {
     chatgpt: {
       sidebar: '#stage-slideover-sidebar, nav',
+      sidebarActive: { sidebarActive: '#stage-slideover-sidebar, nav', limit: 8 },
       main: 'main',
       transcript: '[class*="transcriptContent"]',
       turns: '[data-turn-key]',
@@ -70,6 +72,7 @@
     },
     gemini: {
       sidebar: 'bard-sidenav, side-navigation-v2, mat-sidenav',
+      sidebarActive: { sidebarActive: 'bard-sidenav, side-navigation-v2, mat-sidenav', limit: 8 },
       chatWindow: 'chat-window',
       extendedGridScope: '.enable-extended-and-xl-grid',
       userQueries: 'user-query',
@@ -99,7 +102,7 @@
     'display', 'position', 'overflowY', 'boxSizing', 'width', 'minWidth', 'maxWidth', 'height', 'minHeight',
     'marginTop', 'marginBottom', 'marginLeft', 'marginRight',
     'paddingLeft', 'paddingRight', 'paddingTop', 'paddingBottom', 'top', 'bottom', 'zIndex', 'opacity',
-    'color', 'backgroundColor', 'backgroundImage', 'boxShadow', 'maskImage', 'webkitMaskImage', 'backdropFilter',
+    'color', 'backgroundColor', 'backgroundImage', 'boxShadow', 'borderRadius', 'maskImage', 'webkitMaskImage', 'backdropFilter',
     'viewTransitionName',
     'fontFamily', 'fontSize', 'fontWeight', 'lineHeight',
     'gridTemplateColumns', 'gridTemplateRows', 'gridTemplateAreas', 'gridArea', 'flexDirection', 'alignItems', 'justifyContent'
@@ -128,7 +131,10 @@
     '--sharp-edge-top-shadow',
     '--sharp-edge-top-shadow-placeholder-content',
     '--composer-surface-primary',
-    '--main-surface-primary'
+    '--main-surface-primary',
+    '--sidebar-surface-primary',
+    '--gem-sys-color--surface',
+    '--gem-sys-color--on-surface'
   ];
   const VALUE_REDACTED_STYLES = new Set(['viewTransitionName']);
   const CSS_UNIT_NUMBER = /^\d+(?:px|em|rem|vh|vw|vmin|vmax|ch|ex|pt|pc|in|cm|mm|deg|rad|turn|ms|s|fr)$/i;
@@ -429,10 +435,24 @@
       composerOverlapPx: scrollerBottom !== null && composerTop !== null ? round(Math.max(0, scrollerBottom - composerTop)) : null
     };
   }
+  function collectSidebarActive(spec) {
+    const seen = new Set();
+    const nodes = [];
+    for (const sidebar of document.querySelectorAll(spec.sidebarActive)) {
+      for (const node of sidebar.querySelectorAll(SIDEBAR_ACTIVE_SELECTOR)) {
+        if (seen.has(node)) continue;
+        seen.add(node);
+        nodes.push(node);
+      }
+    }
+    const limit = spec.limit != null ? Math.max(1, Number(spec.limit) || SAMPLE_LIMIT) : 8;
+    return { count: nodes.length, samples: nodes.slice(0, limit).map(describe) };
+  }
   function collect(spec) {
     if (typeof spec !== 'string' && spec.paintedFooter) return collectPaintedFooter(spec);
     if (typeof spec !== 'string' && spec.outerWrappers) return collectOuterWrappers(spec);
     if (typeof spec !== 'string' && spec.scrollerOverlap) return collectScrollerOverlap(spec.scrollerOverlap);
+    if (typeof spec !== 'string' && spec.sidebarActive) return collectSidebarActive(spec);
     if (typeof spec !== 'string' && spec.siblingsAfter) {
       const nodes = [];
       for (let node = document.querySelector(spec.siblingsAfter)?.nextElementSibling; node; node = node.nextElementSibling) nodes.push(node);
