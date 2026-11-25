@@ -27,6 +27,7 @@
 (function prismStructureProbe(options) {
   'use strict';
   const SAMPLE_LIMIT = Math.max(1, Math.min(20, Number(options.samples) || 3));
+  const DISCLAIMER_SELECTOR = '[class*="disclaimer"], [data-testid*="disclaimer"], [style*="view-transition-name"]';
   const TARGETS = {
     chatgpt: {
       sidebar: '#stage-slideover-sidebar, nav',
@@ -50,7 +51,13 @@
       contentFades: { selector: '[class*="content-fade"], .content-fade, [class*="fade-mask"]', limit: 12 },
       threadBottomSiblings: { siblingsAfter: '#thread-bottom' },
       dockSiblings: { siblingsAfter: '#thread-bottom-container' },
-      disclaimerShells: { selector: '[class*="disclaimer"], [data-testid*="disclaimer"], [style*="view-transition-name"]', limit: 12 },
+      disclaimerShells: { selector: DISCLAIMER_SELECTOR, limit: 12 },
+      outerWrappers: { outerWrappers: '[class*="--thread-content-"]', limit: 12 },
+      threadScrollFooter: '[data-thread-scroll-footer]',
+      threadComposerBackdrop: '[data-thread-composer-backdrop]',
+      scrollFooterSiblings: { siblingsAfter: '[data-thread-scroll-footer]' },
+      composerBackdropSiblings: { siblingsAfter: '[data-thread-composer-backdrop]' },
+      scrollerOverlap: { scrollerOverlap: { composer: ['[data-composer-layout]', 'form[data-chatgpt-composer]'], footer: '#thread-bottom-container' } },
       cornerFloats: { cornerFloats: true },
       composerFooter: {
         paintedFooter: {
@@ -89,7 +96,7 @@
     }
   };
   const STYLE_KEYS = [
-    'display', 'position', 'boxSizing', 'width', 'minWidth', 'maxWidth', 'height', 'minHeight',
+    'display', 'position', 'overflowY', 'boxSizing', 'width', 'minWidth', 'maxWidth', 'height', 'minHeight',
     'marginTop', 'marginBottom', 'marginLeft', 'marginRight',
     'paddingLeft', 'paddingRight', 'paddingTop', 'paddingBottom', 'top', 'bottom', 'zIndex', 'opacity',
     'color', 'backgroundColor', 'backgroundImage', 'boxShadow', 'maskImage', 'webkitMaskImage', 'backdropFilter',
@@ -108,6 +115,11 @@
   const CORNER_EXCLUDED_ANCESTOR = 'dialog, [role="dialog"], [aria-modal="true"], [data-op-owned], form[data-chatgpt-composer], input-area-v2, input-container';
   const CUSTOM_PROPERTIES = [
     '--thread-content-max-width',
+    '--thread-content-responsive-max-width',
+    '--thread-body-max-width',
+    '--thread-content-top-inset',
+    '--thread-content-x',
+    '--thread-composer-bottom-inset',
     '--user-chat-width',
     '--bard-chat-window-content-width-default',
     '--bard-chat-window-content-width',
@@ -143,7 +155,12 @@
     return value.split(':').map(redactToken).join(':');
   }
   function redactClass(token) {
-    return ID_LIKE.test(token) && !/[[\]:]/.test(token) ? '[id]' : token;
+    if (/[[\]:()]/.test(token)) {
+      return redactStyle(token)
+        .replace(/(['"])[^'"]+\1/g, (_, quote) => `${quote}[text]${quote}`)
+        .replace(/[A-Za-z0-9_-]*\d{5,}[A-Za-z0-9_-]*/g, '[id]');
+    }
+    return ID_LIKE.test(token) ? '[id]' : token;
   }
   function redactStyle(value) {
     return String(value)
@@ -180,11 +197,13 @@
       viewportBottomOffset: round(innerHeight - bottom)
     };
   }
-  function bottomOffset(selector) {
-    const node = selector ? document.querySelector(selector) : null;
+  function elementBottomOffset(node) {
     if (!node) return null;
     const box = node.getBoundingClientRect();
     return round(innerHeight - (box.bottom ?? (box.y + box.height)));
+  }
+  function bottomOffset(selector) {
+    return elementBottomOffset(selector ? document.querySelector(selector) : null);
   }
   function styles(element) {
     const computed = getComputedStyle(element);
@@ -269,14 +288,41 @@
     return (computed.backgroundImage && computed.backgroundImage !== 'none') ||
       Boolean(computed.backgroundColor && !TRANSPARENT.test(computed.backgroundColor));
   }
-  // v0.4.3 #41: the nearest ancestor of the composer form whose ::before/::after paints a surface, how many steps
-  // separate it from the form, Composer Surface and editor, and how many of those wrappers generate no box.
+  function findPaintedFooterNode(form) {
+    for (let node = form?.parentElement; node && !node.matches('main, body, html'); node = node.parentElement) {
+      if (paintsPseudo(node, '::before') || paintsPseudo(node, '::after')) return node;
+    }
+    return null;
+  }
+  function findThreadFooterNode() {
+    const marker = document.querySelector('[data-thread-scroll-footer]') || document.querySelector('[data-thread-composer-backdrop]');
+    if (!marker) return null;
+    const form = document.querySelector('form[data-chatgpt-composer]');
+    const painted = form ? findPaintedFooterNode(form) : null;
+    if (painted && (painted === marker || painted.contains(marker))) return painted;
+    return marker;
+  }
+  function findMessageScrollerNode() {
+    const turn = document.querySelector('[data-turn-key], [data-content-search-unit-key], [data-message-author-role], user-query, model-response');
+    for (let node = turn?.parentElement; node && !node.matches('body, html'); node = node.parentElement) {
+      if (/(auto|scroll)/.test(getComputedStyle(node).overflowY || '') || node.matches('[data-prism-test-scroller], [class*="thread-scroll"], infinite-scroller')) {
+        return node;
+      }
+    }
+    return document.querySelector('[data-prism-test-scroller], [class*="thread-scroll"], infinite-scroller');
+  }
+  function describeSibling(node) {
+    return {
+      ...describe(node),
+      childCount: node.children.length,
+      hasInteractive: node.matches(INTERACTIVE_SELECTOR) || Boolean(node.querySelector(INTERACTIVE_SELECTOR))
+    };
+  }
+  // v0.4.3 #41 / v0.4.4 #46: the nearest ancestor of the composer form whose ::before/::after paints a surface,
+  // ancestor depths, boxless wrappers, inner scrollFooter/composerBackdrop metrics, internal spacers and disclaimers.
   function collectPaintedFooter(spec) {
     const form = document.querySelector(spec.paintedFooter.form);
-    let footer = null;
-    for (let node = form?.parentElement; node && !node.matches('main, body, html'); node = node.parentElement) {
-      if (paintsPseudo(node, '::before') || paintsPseudo(node, '::after')) { footer = node; break; }
-    }
+    const footer = findPaintedFooterNode(form);
     if (!footer) return { count: 0, samples: [] };
     const chain = start => {
       if (!start || !footer.contains(start)) return null;
@@ -299,24 +345,101 @@
       }
       markers[name] = found;
     }
+    const scrollFooterNode = footer.matches('[data-thread-scroll-footer]') ? footer : footer.querySelector('[data-thread-scroll-footer]');
+    const composerBackdropNode = footer.matches('[data-thread-composer-backdrop]') ? footer : footer.querySelector('[data-thread-composer-backdrop]');
+    const internalSpacers = [];
+    const seenSpacers = new Set();
+    for (let cur = form; cur && cur !== footer; cur = cur.parentElement) {
+      for (let sib = cur.nextElementSibling; sib; sib = sib.nextElementSibling) {
+        if (seenSpacers.has(sib)) continue;
+        seenSpacers.add(sib);
+        internalSpacers.push(describeSibling(sib));
+      }
+    }
+    const internalDisclaimers = [...footer.querySelectorAll(DISCLAIMER_SELECTOR)].slice(0, 12).map(describe);
     const sample = describe(footer);
     sample.pseudos = { before: pseudoStyles(footer, '::before', ANCHOR_STYLE_KEYS), after: pseudoStyles(footer, '::after', ANCHOR_STYLE_KEYS) };
     sample.anchor = anchorStyles(footer);
-    return { count: 1, chains, markers, formAnchor: anchorStyles(form), samples: [sample] };
+    return {
+      count: 1,
+      chains,
+      markers,
+      formAnchor: anchorStyles(form),
+      scrollFooter: scrollFooterNode ? describe(scrollFooterNode) : null,
+      composerBackdrop: composerBackdropNode ? describe(composerBackdropNode) : null,
+      internalSpacers,
+      internalDisclaimers,
+      samples: [sample]
+    };
+  }
+  function collectOuterWrappers(spec) {
+    const seen = new Set();
+    const nodes = [];
+    const push = node => {
+      if (!node || seen.has(node) || node.matches('body, html')) return;
+      seen.add(node);
+      nodes.push(node);
+    };
+    const scroller = findMessageScrollerNode();
+    for (let node = scroller?.parentElement; node && !node.matches('body, html'); node = node.parentElement) push(node);
+    if (spec.outerWrappers) {
+      for (const node of document.querySelectorAll(spec.outerWrappers)) push(node);
+    }
+    const limit = spec.limit != null ? Math.max(1, Number(spec.limit) || nodes.length) : 12;
+    return { count: nodes.length, samples: nodes.slice(0, limit).map(describe) };
+  }
+  function firstQuery(selectorOrList) {
+    if (!selectorOrList) return null;
+    if (Array.isArray(selectorOrList)) {
+      for (const sel of selectorOrList) {
+        const hit = document.querySelector(sel);
+        if (hit) return hit;
+      }
+      return null;
+    }
+    return document.querySelector(selectorOrList);
+  }
+  function collectScrollerOverlap(spec) {
+    const scroller = findMessageScrollerNode();
+    const footer = findThreadFooterNode() || firstQuery(spec.footer);
+    const composer = firstQuery(spec.composer);
+    const scrollerBox = scroller ? scroller.getBoundingClientRect() : null;
+    const footerBox = footer ? footer.getBoundingClientRect() : null;
+    const composerBox = composer ? composer.getBoundingClientRect() : null;
+    const scrollerBottom = scrollerBox ? (scrollerBox.bottom ?? (scrollerBox.y + scrollerBox.height)) : null;
+    const footerTop = footerBox ? (footerBox.top ?? footerBox.y) : null;
+    const footerBottom = footerBox ? (footerBox.bottom ?? (footerBox.y + footerBox.height)) : null;
+    const composerTop = composerBox ? (composerBox.top ?? composerBox.y) : null;
+    const composerBottom = composerBox ? (composerBox.bottom ?? (composerBox.y + composerBox.height)) : null;
+    return {
+      found: Boolean(scroller),
+      scroller: scroller ? {
+        descriptor: descriptor(scroller),
+        rect: rect(scroller),
+        paddingBottom: redactStyle(getComputedStyle(scroller).paddingBottom || ''),
+        overflowY: redactStyle(getComputedStyle(scroller).overflowY || ''),
+        containsFooter: Boolean(footer && scroller.contains(footer)),
+        containsComposer: Boolean(composer && scroller.contains(composer))
+      } : null,
+      footerTop: footerTop !== null ? round(footerTop) : null,
+      footerBottom: footerBottom !== null ? round(footerBottom) : null,
+      composerTop: composerTop !== null ? round(composerTop) : null,
+      composerBottom: composerBottom !== null ? round(composerBottom) : null,
+      footerOverlapPx: scrollerBottom !== null && footerTop !== null ? round(Math.max(0, scrollerBottom - footerTop)) : null,
+      composerOverlapPx: scrollerBottom !== null && composerTop !== null ? round(Math.max(0, scrollerBottom - composerTop)) : null
+    };
   }
   function collect(spec) {
     if (typeof spec !== 'string' && spec.paintedFooter) return collectPaintedFooter(spec);
+    if (typeof spec !== 'string' && spec.outerWrappers) return collectOuterWrappers(spec);
+    if (typeof spec !== 'string' && spec.scrollerOverlap) return collectScrollerOverlap(spec.scrollerOverlap);
     if (typeof spec !== 'string' && spec.siblingsAfter) {
       const nodes = [];
       for (let node = document.querySelector(spec.siblingsAfter)?.nextElementSibling; node; node = node.nextElementSibling) nodes.push(node);
       const limit = spec.limit != null ? Math.max(1, Number(spec.limit) || nodes.length) : nodes.length;
       return {
         count: nodes.length,
-        samples: nodes.slice(0, limit).map(node => ({
-          ...describe(node),
-          childCount: node.children.length,
-          hasInteractive: node.matches(INTERACTIVE_SELECTOR) || Boolean(node.querySelector(INTERACTIVE_SELECTOR))
-        }))
+        samples: nodes.slice(0, limit).map(describeSibling)
       };
     }
     let nodes;
@@ -339,6 +462,8 @@
   const site = /(^|\.)chatgpt\.com$|(^|\.)chat\.openai\.com$/.test(hostname) ? 'chatgpt' : /(^|\.)gemini\.google\.com$/.test(hostname) ? 'gemini' : 'unknown';
   const targets = { ...(TARGETS[site] || {}), ...(options.targets || {}) };
   const bottomSpec = BOTTOM_SELECTORS[site];
+  const threadFooterNode = site === 'chatgpt' ? findThreadFooterNode() : null;
+  const dockNode = bottomSpec ? (document.querySelector(bottomSpec.dock) || threadFooterNode) : null;
   const result = {
     probe: 'obsidian-prism-structure-probe',
     version: 1,
@@ -348,7 +473,8 @@
     colorScheme: matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light',
     root: { html: describe(document.documentElement), body: document.body ? describe(document.body) : null },
     bottomOffsets: {
-      dockBottomOffset: bottomSpec ? bottomOffset(bottomSpec.dock) : null,
+      dockBottomOffset: elementBottomOffset(dockNode),
+      threadFooterBottomOffset: elementBottomOffset(threadFooterNode),
       composerBottomOffset: bottomSpec ? bottomOffset(bottomSpec.composer) : null
     },
     targets: {}

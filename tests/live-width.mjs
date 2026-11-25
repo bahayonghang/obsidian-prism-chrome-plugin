@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { onLiveFixture, injectExtension, patchConfig, settle, LIVE_SELECTORS, NATIVE_BASELINES } from './live-fixtures.mjs';
+import { onLiveFixture, injectExtension, patchConfig, settle, applyChatGPTThreadFooter, LIVE_SELECTORS, NATIVE_BASELINES } from './live-fixtures.mjs';
 import { MAIN_SELECTORS, paragraphWidth, setMainWidth } from './measure.mjs';
 
 const MIN_STEP = 120; // spec: adjacent presets differ by at least 120px
@@ -46,7 +46,7 @@ async function measure(page, host) {
     };
     if (host === 'chatgpt') {
       out.transcriptColumn = rect(s.column);
-      out.composerColumn = rect(s.composerColumn);
+      out.composerColumn = rect(s.composerColumn) || rect(s.threadComposerBackdrop);
     }
     if (host === 'gemini') {
       out.blocks = [...document.querySelectorAll(`${s.assistant} > *`)].map(node => { const r = node.getBoundingClientRect(); return { tag: node.localName, width: r.width, left: r.left, right: r.right }; });
@@ -225,11 +225,12 @@ async function applyChatGPTNestedNativeCap(page) {
   assert.equal(applied, true, 'chatgpt variant: nested bubble caps and capped .nested-dock-shell applied');
 }
 
-async function checkHost(suite, host, { withoutComposerLimiter = false, unwrapComposerForm = false, nestComposerWrapper = false, nestedNativeCap = false } = {}) {
+async function checkHost(suite, host, { withoutComposerLimiter = false, unwrapComposerForm = false, nestComposerWrapper = false, nestedNativeCap = false, threadFooter = false } = {}) {
   const { engine, artifacts } = suite;
-  const variant = withoutComposerLimiter ? ' (no inferred composer limiter)' : unwrapComposerForm ? ' (direct form under #thread-bottom)' : nestComposerWrapper ? ' (nested wrapper under #thread-bottom)' : nestedNativeCap ? ' (nested native-cap)' : '';
-  const failureTag = withoutComposerLimiter ? '-variant' : unwrapComposerForm ? '-direct-form' : nestComposerWrapper ? '-nested-wrapper' : nestedNativeCap ? '-nested-cap' : '';
+  const variant = withoutComposerLimiter ? ' (no inferred composer limiter)' : unwrapComposerForm ? ' (direct form under #thread-bottom)' : nestComposerWrapper ? ' (nested wrapper under #thread-bottom)' : nestedNativeCap ? ' (nested native-cap)' : threadFooter ? ' (live Thread Footer)' : '';
+  const failureTag = withoutComposerLimiter ? '-variant' : unwrapComposerForm ? '-direct-form' : nestComposerWrapper ? '-nested-wrapper' : nestedNativeCap ? '-nested-cap' : threadFooter ? '-thread-footer' : '';
   await onLiveFixture(suite, host, { failure: `${host}-live-width${failureTag}-failure` }, async ({ page, errors }) => {
+    if (threadFooter) await applyChatGPTThreadFooter(page);
     if (withoutComposerLimiter) await removeInferredComposerLimiter(page);
     if (unwrapComposerForm) await unwrapComposerFormInDom(page);
     if (nestComposerWrapper) await nestComposerWrapperInDom(page);
@@ -262,7 +263,7 @@ async function checkHost(suite, host, { withoutComposerLimiter = false, unwrapCo
       await cyclePreset(page, 'full');
       const full = await measure(page, host);
       if (host === 'gemini') full.longTable = await longTableWidth(page);
-      if (!withoutComposerLimiter && !unwrapComposerForm && !nestComposerWrapper && !nestedNativeCap && ['vp1707', 'main1280', 'main1100'].includes(size.key)) {
+      if (!withoutComposerLimiter && !unwrapComposerForm && !nestComposerWrapper && !nestedNativeCap && !threadFooter && ['vp1707', 'main1280', 'main1100'].includes(size.key)) {
         await page.screenshot({ path: path.join(artifacts, `${engine}-${host}-live-width-full-${size.key}.png`) });
       }
 
@@ -390,6 +391,7 @@ async function checkHost(suite, host, { withoutComposerLimiter = false, unwrapCo
 
 export async function checkLiveWidthPresets(options) {
   for (const host of ['chatgpt', 'gemini']) await checkHost(options, host);
+  await checkHost(options, 'chatgpt', { threadFooter: true });
   await checkHost(options, 'chatgpt', { withoutComposerLimiter: true });
   await checkHost(options, 'chatgpt', { unwrapComposerForm: true });
   await checkHost(options, 'chatgpt', { nestComposerWrapper: true });

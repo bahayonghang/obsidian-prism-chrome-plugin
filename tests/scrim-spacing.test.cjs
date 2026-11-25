@@ -94,6 +94,7 @@ test('hosts.css tightens ChatGPT active conversation bottom spacer, thread colum
     for (const sel of block.selectors) {
       if (
         sel.includes('[data-op-composer-dock="true"]') ||
+        sel.includes('[data-op-thread-footer="true"]') ||
         sel.includes('[data-op-composer-empty-sibling="true"]') ||
         sel.includes('[data-op-composer-disclaimer="true"]') ||
         sel.includes('hallucination-disclaimer')
@@ -101,6 +102,15 @@ test('hosts.css tightens ChatGPT active conversation bottom spacer, thread colum
         assert.ok(sel.includes('[data-op-composer="true"]'), `bottom pinning / disclaimer / empty-sibling rule must gate on [data-op-composer="true"]: ${sel}`);
       }
     }
+  }
+
+  const threadFooterBlocks = blocks.filter(b => b.selectors.some(s => s.includes('[data-op-thread-footer="true"]')));
+  assert.ok(threadFooterBlocks.length >= 2, 'must define ChatGPT active conversation rules for [data-op-thread-footer="true"]');
+  for (const block of threadFooterBlocks) {
+    for (const sel of block.selectors) {
+      assert.ok(sel.startsWith(chatgptComposerPrefix), `Thread Footer spacing rule must gate on ChatGPT active conversation + composerRestyle: ${sel}`);
+    }
+    assert.equal(/(?:^|;|\s)(?:position|z-index|top|bottom|left|right|anchor-scope)\s*:/i.test(block.body), false, `Thread Footer spacing rule must never alter native positioning, z-index, or anchor-scope: ${block.body}`);
   }
 
   const overlaidDockRule = findRule(
@@ -194,18 +204,18 @@ test('hosts.css tightens ChatGPT active conversation bottom spacer, thread colum
   assert.match(geminiDisclaimerRule.body, /display:\s*none\s*!important/);
 });
 
-test('hosts.css clears backdrop layers, shadows, sharp-edge vars, and ::after unconditionally while preserving scrim ::before and avoiding wildcards/:root', () => {
+test('hosts.css clears backdrop layers, shadows, sharp-edge vars, backdrop-filter, ::before, and ::after unconditionally while keeping overlaid scroll clearance and zero painted scrim rules', () => {
   const allBlocks = parseRuleBlocks(hostsCss);
   const dualPrefix = 'html[data-op-enabled="true"]:not([data-op-effective-palette="host"])';
   assert.equal(
-    allBlocks.some(b =>
-      b.selectors.some(s =>
-        s === `${dualPrefix} [data-op-composer-backdrop="true"]::before` ||
-        s === ':root'
-      )
-    ),
+    allBlocks.some(b => b.selectors.some(s => s === ':root')),
     false,
-    'must not unconditionally clear ::before on scrim-eligible backdrop hosts or emit bare :root rules'
+    'must not emit bare :root rules'
+  );
+  assert.equal(
+    allBlocks.some(b => b.selectors.some(s => s.includes('[data-op-composer-scrim="true"]'))),
+    false,
+    'must not define painted [data-op-composer-scrim="true"] canvas veil or blur rules for either host'
   );
   for (const block of allBlocks) {
     for (const sel of block.selectors) {
@@ -220,10 +230,10 @@ test('hosts.css clears backdrop layers, shadows, sharp-edge vars, and ::after un
   const baseBackdropRule = allBlocks.find(
     b =>
       b.selectors.some(s => s === `${dualPrefix} [data-op-composer-backdrop="true"]`) &&
-      b.selectors.some(s => s === `${dualPrefix} [data-op-composer-backdrop="true"]:not([data-op-composer-scrim="true"])::before`) &&
+      b.selectors.some(s => s === `${dualPrefix} [data-op-composer-backdrop="true"]::before`) &&
       b.selectors.some(s => s === `${dualPrefix} [data-op-composer-backdrop="true"]::after`)
   );
-  assert.ok(baseBackdropRule, 'backdrop rule must clear background, shadows, sharp-edge vars, masks, non-scrim ::before, and unconditional ::after');
+  assert.ok(baseBackdropRule, 'backdrop rule must clear background, shadows, sharp-edge vars, backdrop-filter, masks, ::before, and ::after unconditionally');
   for (const prop of [
     /--sharp-edge-bottom-shadow:\s*none\s*!important/,
     /--sharp-edge-bottom-shadow-placeholder-content:\s*none\s*!important/,
@@ -231,6 +241,8 @@ test('hosts.css clears backdrop layers, shadows, sharp-edge vars, and ::after un
     /--sharp-edge-top-shadow-placeholder-content:\s*none\s*!important/,
     /background-color:\s*transparent\s*!important/,
     /background-image:\s*none\s*!important/,
+    /-webkit-backdrop-filter:\s*none\s*!important/,
+    /\bbackdrop-filter:\s*none\s*!important/,
     /-webkit-mask-image:\s*none\s*!important/,
     /\bmask-image:\s*none\s*!important/,
     /box-shadow:\s*none\s*!important/
@@ -243,47 +255,19 @@ test('hosts.css clears backdrop layers, shadows, sharp-edge vars, and ::after un
   const nextIdx = hostsCss.indexOf('/* === ', idx + SECTION_MARKER.length);
   const blocks = parseRuleBlocks(nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx));
 
-  const fadeRule = blocks.find(b => b.selectors.some(s => s.startsWith(dualPrefix) && s.includes('.native-composer-fade:not([data-op-composer-scrim="true"])')));
-  assert.ok(fadeRule, 'must keep .native-composer-fade transparent when not scrim host');
+  const fadeRule = blocks.find(b => b.selectors.some(s => s.startsWith(dualPrefix) && s.includes('.native-composer-fade')));
+  assert.ok(fadeRule, 'must keep .native-composer-fade transparent');
   assert.match(fadeRule.body, /background-color:\s*transparent\s*!important/);
   assert.match(fadeRule.body, /background-image:\s*none\s*!important/);
   assert.match(fadeRule.body, /-webkit-mask-image:\s*none\s*!important/);
   assert.match(fadeRule.body, /\bmask-image:\s*none\s*!important/);
-});
 
-test('hosts.css scopes Blur Composer Scrim to Gemini and tunes opacity separately for dark and light schemes', () => {
-  const blurMarker = '/* === Blur Composer Scrim (v0.3.1 #22) === */';
-  const idx = hostsCss.indexOf(blurMarker);
-  assert.notEqual(idx, -1);
-  const nextIdx = hostsCss.indexOf('/* === ', idx + blurMarker.length);
-  const section = nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx);
-  const supportsIdx = section.indexOf('@supports');
-  assert.notEqual(supportsIdx, -1);
-  const fallbackBlocks = parseRuleBlocks(section.slice(0, supportsIdx));
-  const blurBlocks = parseRuleBlocks(section.slice(supportsIdx));
-
-  for (const block of [...fallbackBlocks, ...blurBlocks]) {
-    for (const sel of block.selectors) {
-      if (sel.includes('[data-op-composer-scrim="true"]')) {
-        assert.ok(sel.includes('[data-op-host="gemini"]'), `scrim rule must be Gemini-scoped: ${sel}`);
-      }
-    }
-  }
-
-  const darkFallback = fallbackBlocks.find(b => b.selectors.some(s => s.includes('[data-op-host="gemini"]') && s.endsWith('[data-op-composer-scrim="true"]::before') && !s.includes('[data-op-scheme="light"]')));
-  assert.ok(darkFallback);
-  assert.match(darkFallback.body, /var\(--op-canvas\) 56%/);
-
-  const lightFallback = fallbackBlocks.find(b => b.selectors.some(s => s.includes('[data-op-host="gemini"]') && s.includes('[data-op-scheme="light"]') && s.endsWith('[data-op-composer-scrim="true"]::before')));
-  assert.ok(lightFallback);
-  assert.match(lightFallback.body, /var\(--op-canvas\) 20%[\s\S]*var\(--op-canvas\) 36%/);
-
-  const darkBlur = blurBlocks.find(b => b.selectors.some(s => s.includes('[data-op-host="gemini"]') && s.endsWith('[data-op-composer-scrim="true"]::before') && !s.includes('[data-op-scheme="light"]')));
-  assert.ok(darkBlur);
-  assert.match(darkBlur.body, /var\(--op-canvas\) 44%/);
-
-  const lightBlur = blurBlocks.find(b => b.selectors.some(s => s.includes('[data-op-host="gemini"]') && s.includes('[data-op-scheme="light"]') && s.endsWith('[data-op-composer-scrim="true"]::before')));
-  assert.ok(lightBlur);
-  assert.match(lightBlur.body, /var\(--op-canvas\) 26%/);
-  assert.match(lightBlur.body, /background-image:\s*none\s*!important/);
+  const clearanceRule = allBlocks.find(b =>
+    b.selectors.some(s =>
+      s === 'html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-scroller="true"]::after'
+    )
+  );
+  assert.ok(clearanceRule, 'must keep overlaid scroller ::after clearance rule gated on enabled + active conversation + non-host palette');
+  assert.match(clearanceRule.body, /height:\s*var\(--op-dock-clearance,\s*0px\)\s*!important/);
+  assert.match(clearanceRule.body, /pointer-events:\s*none\s*!important/);
 });

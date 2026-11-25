@@ -29,9 +29,8 @@
       composerChips: '[data-testid="composer-mode-pill"], [data-testid="composer-chip"], [data-testid="composer-tool-chip"]',
       attachments: '[data-testid="attachment-card"], [data-testid="file-attachment"], [data-testid="uploaded-file"], [data-testid="image-attachment"], [class*="file-tile"], .native-footer-attachment',
       primaryActions: [
-        '[data-testid="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="发送"]',
-        '[data-testid="composer-speech-button"], button[aria-label*="Start Voice" i], button[aria-label*="Voice" i], button[aria-label*="语音"]',
-        'button[aria-label*="Microphone" i], button[aria-label*="麦克风"]'
+        '[data-testid="stop-button"], [data-testid="input-cancel-button"], .stop-button, button[aria-label*="Stop" i], button[aria-label*="Cancel" i], button[aria-label*="停止"], button[aria-label*="取消"]',
+        '[data-testid="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="发送"]'
       ],
       /* v0.3.1 #21 / v0.4.0 #26 Content Width Presets: the reading (text) width is 48rem natively (the 808px
        * transcript = 48rem + 2 × 20px padding, probe 2026-11-22). This declaration owns the width
@@ -58,10 +57,14 @@
           '#thread-bottom [class*="--thread-content-max-width"]',
           '#thread-bottom :has(form[data-chatgpt-composer]):not(:has(> form[data-chatgpt-composer]))',
           '#thread-bottom :has(> form[data-chatgpt-composer])',
-          '#thread-bottom > form[data-chatgpt-composer]'
+          '#thread-bottom > form[data-chatgpt-composer]',
+          '[data-thread-composer-backdrop="true"]',
+          '[data-thread-composer-backdrop="true"] :has(form[data-chatgpt-composer])',
+          '[data-thread-composer-backdrop="true"] form[data-chatgpt-composer]'
         ]
       },
       threadColumns: '[class*="transcriptContent"], .thread, [data-testid="conversation-thread"], [class*="thread-content"]',
+      threadColumnsStrict: '[class*="transcriptContent"], .thread, [data-testid="conversation-thread"]',
       composerColumns: '.composer-column, .composer-container, [data-testid="composer-container"]',
       // v0.3.1 #19: grid area names the two-row Composer Surface rearranges. Inferred: the probe
       // (2026-11-22) saw only the column tracks, so an unnamed grid falls back to structural slots.
@@ -73,7 +76,8 @@
       thoughts: '[data-testid="reasoning-content"], [data-testid="thoughts-content"], [data-testid="thinking-content"]',
       streaming: '[data-testid="stop-button"], [data-is-streaming="true"]',
       usesOverlayScrim: false,
-      usesScrollerAlphaFade: true
+      usesScrollerAlphaFade: true,
+      conversationOnlyBackdrops: false
     },
     gemini: {
       users: 'user-query, [data-test-id="user-query"], .user-query-container',
@@ -84,7 +88,7 @@
       editors: ['input-area-v2 .ql-editor[contenteditable="true"]', 'rich-textarea .ql-editor', 'input-area-v2 [contenteditable="true"]', 'rich-textarea [contenteditable="true"]', 'textarea[aria-label]', 'main [contenteditable="true"][role="textbox"]'],
       composers: ['input-area-v2 .text-input-field', 'input-area-v2 .input-area-container', '.input-area-container', '[data-test-id="input-area"]', 'input-area-v2', 'input-area'],
       composerCard: 'input-area-v2',
-      composerBackdrops: 'input-area-v2,input-area,.input-area-container,[data-test-id="input-area"],[data-test-id="input-area-container"],.input-area-wrapper',
+      composerBackdrops: 'input-container,.input-gradient,input-area-v2,input-area,.input-area-container,[data-test-id="input-area"],[data-test-id="input-area-container"],.input-area-wrapper',
       codeSurfaces: 'code-block, .code-block',
       codeHeaders: '.code-block-decoration, [data-test-id="code-block-header"]',
       codeWells: '.formatted-code-block-internal-container',
@@ -94,9 +98,8 @@
       composerChips: '.toolbox-drawer-item-button, [data-test-id="composer-chip"]',
       attachments: '[data-test-id="file-preview-chip"], [data-test-id="attachment-card"], .file-preview-chip, uploader-file-preview, file-preview-chip, .native-footer-attachment',
       primaryActions: [
-        '[data-test-id="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="发送"]',
-        'button[aria-label*="Start Voice" i], button[aria-label*="Voice" i], button[aria-label*="语音"]',
-        'button[aria-label*="Microphone" i], button[aria-label*="麦克风"]'
+        '[data-test-id="stop-button"], [data-test-id="stop-response-button"], .stop-button, button[aria-label*="Stop" i], button[aria-label*="Cancel" i], button[aria-label*="停止"], button[aria-label*="取消"]',
+        '[data-test-id="send-button"], .send-button, button[aria-label*="Send" i], button[aria-label*="发送"]'
       ],
       /* v0.3.1 #21: Gemini caps every markdown block at 708px (not the outer panel), plus the
        * User Turn, the response footer, the disclaimer and the 660px input area (probe 2026-11-22).
@@ -129,8 +132,9 @@
       sidebarLinks: 'a[href^="/app/"]',
       thoughts: 'model-thoughts .thoughts-content, model-thoughts .thought-content, model-thoughts .markdown, [data-test-id="thoughts-content"], [data-test-id="thinking-content"]',
       streaming: '[data-test-id="stop-button"], [data-test-id="stop-response-button"], .stop-button',
-      usesOverlayScrim: true,
-      usesScrollerAlphaFade: false
+      usesOverlayScrim: false,
+      usesScrollerAlphaFade: false,
+      conversationOnlyBackdrops: true
     }
   });
 
@@ -426,6 +430,30 @@
     if (!markers.length || !inConversationScroller(markers[0], view)) return [];
     return [...new Set([...markers, layer])].filter(node => node && !isOwned(node) &&
       !node.matches(OVERLAY_EXCLUDED) && !node.querySelector(MESSAGE_AREAS));
+  }
+  function findBackdropAncestors(spec, composer) {
+    const backdrops = findComposerBackdrops(spec, composer);
+    if (!backdrops.length) return [];
+    const ancestors = [];
+    for (let node = composer.parentElement; node; node = node.parentElement) {
+      if (backdrops.includes(node)) ancestors.push(node);
+    }
+    return ancestors;
+  }
+  function findThreadFooterLayer(spec, composer) {
+    if (!spec.threadFooters || !composer || isOwned(composer)) return null;
+    const view = composer.ownerDocument?.defaultView || global;
+    if (!view?.getComputedStyle) return null;
+    const nodes = findThreadFooter(spec, composer, view);
+    if (nodes.length) {
+      let outermost = null;
+      for (const node of nodes) {
+        if (!outermost || node.contains?.(outermost)) outermost = node;
+      }
+      return outermost;
+    }
+    const ancestors = findBackdropAncestors(spec, composer);
+    return [...ancestors].reverse().find(node => isThreadFooterLayer(spec, node, view) && inConversationScroller(node, view)) || null;
   }
   function findComposerBackdrops(spec, composer) {
     if (!composer || isOwned(composer)) return [];
@@ -989,8 +1017,9 @@
       if (modelTrigger && (node === modelTrigger || node.contains(modelTrigger) || modelTrigger.contains?.(node))) return false;
       if (spec.attachments && node.closest?.(spec.attachments)) return false;
       if (spec.composerChips && node.closest?.(spec.composerChips)) return false;
+      if (node.matches?.('[data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"]')) return false;
       const aria = node.getAttribute?.('aria-label') || '';
-      if (/\bdictate\b|听写/i.test(aria)) return false;
+      if (/\b(?:dictate|dictation|voice|microphone|mic)\b|听写|语音|麦克风/i.test(aria)) return false;
       return true;
     };
     const tiers = Array.isArray(spec.primaryActions) ? spec.primaryActions : (spec.primaryActions ? [spec.primaryActions] : []);
@@ -1002,24 +1031,16 @@
         if (matched.length) return matched[matched.length - 1];
       }
     }
-    if (trailing && composer.contains(trailing)) {
-      const fallback = [...trailing.querySelectorAll('button')].filter(isCandidate);
-      if (fallback.length) return fallback[fallback.length - 1];
-    }
     return null;
   }
   function findComposerScrim(spec, composer) {
-    const backdrops = findComposerBackdrops(spec, composer);
-    if (!backdrops.length) return null;
     // Outermost structural ancestor in the bounded dock chain (ignore empty fade siblings).
-    const ancestors = [];
+    const ancestors = findBackdropAncestors(spec, composer);
+    if (!ancestors.length) return null;
     const view = composer.ownerDocument?.defaultView || global;
-    for (let node = composer.parentElement; node; node = node.parentElement) {
-      if (backdrops.includes(node)) ancestors.push(node);
-    }
     // v0.4.3 #41: a host thread footer is paint-only; dock spacing and z-index rules never target it or its contents.
     if (ancestors.some(node => isThreadFooterLayer(spec, node, view))) return null;
-    return ancestors.length ? ancestors[ancestors.length - 1] : null;
+    return ancestors[ancestors.length - 1];
   }
   function isComposerDockOverlaid(dock, scroller, view = dock?.ownerDocument?.defaultView || global) {
     if (!dock) return false;
@@ -1271,20 +1292,45 @@
     }
     return spacers;
   }
-  function findColumnSurfaces(selector, primary, anchor) {
+  function hasGenuineThreadContentClass(node) {
+    const raw = node?.getAttribute?.('class');
+    if (!raw) return false;
+    return String(raw).trim().split(/\s+/).some(token =>
+      Boolean(token) && !/--thread-content/i.test(token) && !token.includes('[') && !token.includes('(') && /thread-content/i.test(token)
+    );
+  }
+  function findMessageScroller(primary, anchor) {
+    if (!primary || !anchor) return null;
+    const view = anchor.ownerDocument?.defaultView || global;
+    for (let node = anchor.parentElement; node && node !== primary; node = node.parentElement) {
+      if (isScrollContainer(node, view) || node.matches?.('[data-prism-test-scroller],infinite-scroller')) return node;
+    }
+    return null;
+  }
+  function findColumnSurfaces(selector, primary, anchor, filter = null) {
     if (!selector || !primary) return [];
     const out = [];
     for (const node of primary.querySelectorAll(selector)) {
-      if (!isOwned(node) && isVisible(node) && primary.contains(node) && (!anchor || node.contains(anchor) || anchor.contains(node))) {
+      if (!isOwned(node) && isVisible(node) && primary.contains(node) && (!anchor || node.contains(anchor) || anchor.contains(node)) && (!filter || filter(node))) {
         if (!out.includes(node)) out.push(node);
       }
     }
     if (!out.length && anchor) {
       for (let node = anchor.parentElement; node && node !== primary; node = node.parentElement) {
-        if (!isOwned(node) && node.matches && node.matches(selector)) { out.push(node); break; }
+        if (!isOwned(node) && node.matches && node.matches(selector) && (!filter || filter(node))) { out.push(node); break; }
       }
     }
     return out;
+  }
+  function findThreadColumnSurfaces(spec, primary, anchor) {
+    const scroller = findMessageScroller(primary, anchor);
+    return findColumnSurfaces(spec.threadColumns, primary, anchor, node => {
+      if (scroller && node !== scroller && node.contains?.(scroller)) return false;
+      if (spec.threadColumnsStrict && !node.matches?.(spec.threadColumnsStrict)) {
+        return hasGenuineThreadContentClass(node);
+      }
+      return true;
+    });
   }
   /* v0.3.1 #21 Content Width Presets, computed from the main area's width (not fixed tiers).
    * Returns the target reading (text) width and a leftward shift for the centred column, or null
@@ -1508,6 +1554,7 @@
       host,
       usesOverlayScrim: Boolean(spec.usesOverlayScrim),
       usesScrollerAlphaFade: Boolean(spec.usesScrollerAlphaFade),
+      conversationOnlyBackdrops: Boolean(spec.conversationOnlyBackdrops),
       contentWidth: Object.freeze({
         native: spec.contentWidth.native,
         targets: Object.freeze([...spec.contentWidth.targets]),
@@ -1522,9 +1569,10 @@
       composerCardSurface: (composer) => findComposerCard(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerBackdropSurfaces: (composer) => findComposerBackdrops(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerScrimSurface: (composer) => findComposerScrim(spec, composer === undefined ? findComposer(spec, root) : composer),
+      threadFooterLayer: (composer) => findThreadFooterLayer(spec, composer === undefined ? findComposer(spec, root) : composer),
       composerBelowSiblings: (composer, dock) => {
         const comp = composer === undefined ? findComposer(spec, root) : composer;
-        const resolvedDock = dock === undefined ? findComposerScrim(spec, comp) : dock;
+        const resolvedDock = dock === undefined ? (findComposerScrim(spec, comp) || findThreadFooterLayer(spec, comp)) : dock;
         const primary = findPrimary(spec, root);
         const allMessages = messages();
         return findComposerBelowSiblings(comp, resolvedDock, primary, allMessages[allMessages.length - 1] || null);
@@ -1563,7 +1611,7 @@
       codeHeaderFor: (surface, pre, headers) => findCodeHeaderFor(spec, surface, pre, headers),
       codeWellFor: (pre) => findCodeWellFor(spec, pre),
       threadTailSpacers: () => findThreadTailSpacers(spec, findPrimary(spec, root), messages()),
-      threadColumns: () => findColumnSurfaces(spec.threadColumns, findPrimary(spec, root), messages()[0]),
+      threadColumns: () => findThreadColumnSurfaces(spec, findPrimary(spec, root), messages()[0]),
       composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, findPrimary(spec, root), composer === undefined ? findComposer(spec, root) : composer),
       sidebarSurfaces: () => findSidebars(spec, root),
       sidebarActiveTargets: (sidebars) => findSidebarActiveTargets(sidebars === undefined ? findSidebars(spec, root) : sidebars),

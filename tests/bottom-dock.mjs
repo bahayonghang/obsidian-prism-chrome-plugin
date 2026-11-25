@@ -5,7 +5,7 @@
  */
 import assert from 'node:assert/strict';
 import path from 'node:path';
-import { onLiveFixture, injectExtension, patchConfig, settle, LIVE_SELECTORS } from './live-fixtures.mjs';
+import { onLiveFixture, injectExtension, patchConfig, settle, applyChatGPTThreadFooter, LIVE_SELECTORS } from './live-fixtures.mjs';
 
 const VIEWPORTS = [
   { width: 1707, height: 900 },
@@ -92,7 +92,7 @@ async function assertButtonTypographyAndContrast(page, label) {
   }
 }
 
-async function assertZeroOverlapAndHitTest(page, host, label) {
+async function assertZeroOverlapAndHitTest(page, host, label, { minGap = 3.5, maxGap = 6.5 } = {}) {
   const s = LIVE_SELECTORS[host];
   const trailingSelectors = host === 'chatgpt' ? [s.dictate, s.voice] : [s.mic];
   const geom = await page.evaluate(({ cardSel, cornerSel, trailingSelectors }) => {
@@ -151,7 +151,7 @@ async function assertZeroOverlapAndHitTest(page, host, label) {
   assert.ok(geom.composer, `${label}: composer card exists`);
   if (geom.composerRestyle === 'true') {
     const composerBottomGap = Math.round((geom.vh - geom.composer.bottom) * 10) / 10;
-    assert.ok(composerBottomGap >= 3.5 && composerBottomGap <= 6.5, `${label}: lowered Composer Surface bottomGap sits in 4-6px range (got ${composerBottomGap}px)`);
+    assert.ok(composerBottomGap >= minGap && composerBottomGap <= maxGap, `${label}: lowered Composer Surface bottomGap sits in ${minGap}-${maxGap}px range (got ${composerBottomGap}px)`);
   }
   assert.equal(rectsOverlap(geom.dock, geom.composer, 0), false, `${label}: dock must not overlap composer (${JSON.stringify(geom.dock)} vs ${JSON.stringify(geom.composer)})`);
   for (const [idx, ctrl] of geom.trailing.entries()) {
@@ -202,7 +202,7 @@ async function assertPopoverInsideViewport(page, label) {
 const RUNTIME_SURFACE_ATTRS = [
   'data-op-main-surface', 'data-op-thread-column', 'data-op-composer-column', 'data-op-code-surface',
   'data-op-code-header', 'data-op-code-icon-fill', 'data-op-code-icon-stroke',
-  'data-op-composer-dock', 'data-op-composer-overlaid', 'data-op-composer-scrim', 'data-op-thread-scroller', 'data-op-scroller-fade',
+  'data-op-composer-dock', 'data-op-thread-footer', 'data-op-composer-overlaid', 'data-op-composer-scrim', 'data-op-thread-scroller', 'data-op-scroller-fade',
   'data-op-composer-empty-sibling', 'data-op-composer-disclaimer', 'data-op-thread-spacer',
   'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-header-empty', 'data-op-composer-leading', 'data-op-composer-primary',
   'data-op-composer-trailing', 'data-op-composer-toolbar', 'data-op-composer-add', 'data-op-model-capsule',
@@ -422,4 +422,55 @@ export async function checkBottomDock(suite) {
       console.log(`PASS ${engine} ${host} bottom dock: singleton handover, typography/anti-squish, zero-overlap matrix (1707/1280/820 x standard/wide/full + 820x500), composerRestyle restore, popover containment & clean teardown`);
     });
   }
+
+  // v0.4.4 #46: ChatGPT live Thread Footer avoidance matrix (narrow 820x500 / 820x900 / 1280x900 x full/wide/standard).
+  await onLiveFixture(suite, 'chatgpt', { failure: 'chatgpt-thread-footer-bottom-dock-failure', colorScheme: 'dark' }, async ({ page, errors }) => {
+    const s = LIVE_SELECTORS.chatgpt;
+    await applyChatGPTThreadFooter(page);
+    const nativeBottomGap = await page.evaluate(sel => Math.round((window.innerHeight - document.querySelector(sel).getBoundingClientRect().bottom) * 10) / 10, COMPOSER_CARD.chatgpt);
+    assert.ok(nativeBottomGap >= 64, `${engine} chatgpt thread-footer dock: native gap >= 64px (got ${nativeBottomGap}px)`);
+    await injectExtension(page, suite, { waitFor: '#op-bottom-dock' });
+    await settle(page);
+
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 820, height: 900 }, { width: 820, height: 500 }]) {
+      await page.setViewportSize(viewport);
+      await settle(page);
+      for (const preset of PRESETS) {
+        await patchConfig(page, { contentWidth: preset });
+        await page.waitForFunction(value => document.documentElement.getAttribute('data-op-content-width') === value, preset);
+        await settle(page);
+        const label = `${engine} chatgpt thread-footer ${viewport.width}x${viewport.height} ${preset}`;
+        await assertZeroOverlapAndHitTest(page, 'chatgpt', label, { minGap: 5, maxGap: 10 });
+        if (preset === 'full') await assertPopoverInsideViewport(page, label);
+      }
+    }
+
+    // composerRestyle: false restores native gap & keeps zero overlap; disable/stop leave zero residue (including data-op-thread-footer).
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await patchConfig(page, { contentWidth: 'full', composerRestyle: false }, () => document.documentElement.getAttribute('data-op-composer') === 'false');
+    await settle(page);
+    const unstyledGap = await page.evaluate(sel => Math.round((window.innerHeight - document.querySelector(sel).getBoundingClientRect().bottom) * 10) / 10, COMPOSER_CARD.chatgpt);
+    assert.ok(Math.abs(unstyledGap - nativeBottomGap) <= 1, `${engine} chatgpt thread-footer: composerRestyle:false restores native gap (${unstyledGap} vs ${nativeBottomGap})`);
+    await assertZeroOverlapAndHitTest(page, 'chatgpt', `${engine} chatgpt thread-footer 1280x900 composerRestyle:false`, { minGap: 5, maxGap: 10 });
+
+    await patchConfig(page, { composerRestyle: true }, () => document.documentElement.getAttribute('data-op-composer') === 'true');
+    await settle(page);
+    await assertZeroOverlapAndHitTest(page, 'chatgpt', `${engine} chatgpt thread-footer 1280x900 composerRestyle:true`, { minGap: 5, maxGap: 10 });
+
+    await patchConfig(page, { enabled: false }, () => !document.documentElement.hasAttribute('data-op-enabled'));
+    await settle(page);
+    await assertNoRuntimeResidue(page, `${engine} chatgpt thread-footer disable`);
+    const disabledGap = await page.evaluate(sel => Math.round((window.innerHeight - document.querySelector(sel).getBoundingClientRect().bottom) * 10) / 10, COMPOSER_CARD.chatgpt);
+    assert.ok(Math.abs(disabledGap - nativeBottomGap) <= 1, `${engine} chatgpt thread-footer: disable restores native gap (${disabledGap} vs ${nativeBottomGap})`);
+
+    await patchConfig(page, { enabled: true, contentWidth: 'full' }, () => document.querySelector('#op-bottom-dock'));
+    await settle(page);
+    await page.evaluate(() => window.ObsidianPrismRuntime.stop());
+    await settle(page);
+    await assertNoRuntimeResidue(page, `${engine} chatgpt thread-footer stop()`);
+    const stoppedGap = await page.evaluate(sel => Math.round((window.innerHeight - document.querySelector(sel).getBoundingClientRect().bottom) * 10) / 10, COMPOSER_CARD.chatgpt);
+    assert.ok(Math.abs(stoppedGap - nativeBottomGap) <= 1, `${engine} chatgpt thread-footer: stop() restores native gap (${stoppedGap} vs ${nativeBottomGap})`);
+    assert.deepEqual(errors, []);
+    console.log(`PASS ${engine} chatgpt thread-footer bottom dock: lowered 5-10px gap, zero-overlap & clickable across 1280x900/820x900/820x500 x standard/wide/full, clean teardown`);
+  });
 }

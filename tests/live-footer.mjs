@@ -22,11 +22,17 @@ async function scrollToEnd(page) {
   await settle(page);
 }
 
-/** Footer positioning and its pseudo-element boxes as computed by the browser, plus the Composer Surface box. */
+/** Footer positioning, inner spacing metrics, outer wrapper paddings and Composer Surface / reading column boxes. */
 async function footerGeometry(page) {
-  return page.evaluate(({ threadFooter, composer: selector }) => {
+  return page.evaluate(({ threadFooter, threadScrollFooter, threadComposerBackdrop, outerThreadWrappers, threadFooterDisclaimer, threadFooterSpacer, composer: selector, paragraph }) => {
     const footer = document.querySelector(threadFooter);
+    const scrollFooter = document.querySelector(threadScrollFooter);
+    const backdrop = document.querySelector(threadComposerBackdrop);
+    const disclaimer = document.querySelector(threadFooterDisclaimer);
+    const spacer = document.querySelector(threadFooterSpacer);
+    const outerWrappers = [...document.querySelectorAll(outerThreadWrappers)];
     const composer = document.querySelector(selector).getBoundingClientRect();
+    const pRect = document.querySelector(paragraph).getBoundingClientRect();
     const footerRect = footer.getBoundingClientRect();
     const pick = (style, keys) => Object.fromEntries(keys.map(key => [key, style[key]]));
     const keys = ['position', 'top', 'right', 'bottom', 'left', 'zIndex', 'height', 'anchorScope'];
@@ -35,10 +41,22 @@ async function footerGeometry(page) {
       before: pick(getComputedStyle(footer, '::before'), ['top', 'right', 'bottom', 'left', 'height']),
       after: pick(getComputedStyle(footer, '::after'), ['top', 'right', 'bottom', 'left', 'height']),
       composerGap: Math.round((footerRect.bottom - composer.bottom) * 10) / 10,
-      composer: { left: composer.left, top: composer.top, width: composer.width, height: composer.height }
+      viewportBottomGap: Math.round((window.innerHeight - composer.bottom) * 10) / 10,
+      outerWrapperPaddings: outerWrappers.map(el => getComputedStyle(el).paddingBottom),
+      outerWrapperMarked: document.querySelectorAll('main [class*="--thread-content-"][data-op-thread-column="true"]').length,
+      scrollFooterAfterHeight: scrollFooter ? Math.round((parseFloat(getComputedStyle(scrollFooter, '::after').height) || 0) * 10) / 10 : 0,
+      disclaimerDisplay: disclaimer ? getComputedStyle(disclaimer).display : null,
+      disclaimerHeight: disclaimer ? Math.round(disclaimer.getBoundingClientRect().height * 10) / 10 : 0,
+      spacerHeight: spacer ? Math.round(spacer.getBoundingClientRect().height * 10) / 10 : 0,
+      backdropWidth: backdrop ? Math.round(backdrop.getBoundingClientRect().width * 10) / 10 : 0,
+      paragraph: { left: Math.round(pRect.left * 10) / 10, width: Math.round(pRect.width * 10) / 10 },
+      composer: { left: Math.round(composer.left * 10) / 10, top: Math.round(composer.top * 10) / 10, width: Math.round(composer.width * 10) / 10, height: Math.round(composer.height * 10) / 10 }
     };
-  }, { threadFooter: S.threadFooter, composer: S.composer });
+  }, S);
 }
+// Firefox's CSS Anchor Positioning reports `::before` `bottom` inconsistently after dynamic anchor resize even when
+// `top` and `height` (its rendered vertical box) match native identically; compare every other geometry field strictly.
+const restoredGeometry = ({ before: { bottom: _beforeBottom, ...before }, ...rest }) => ({ ...rest, before });
 
 /** A small area inside the Composer Surface, right of the empty editor's placeholder. */
 async function composerInterior(page) {
@@ -96,31 +114,48 @@ export async function checkChatGPTThreadFooter(suite) {
     await scrollToEnd(page);
     const native = { ...(await bandPixels(page)), geometry: await footerGeometry(page), attributes: await attributeSnapshot(page) };
     assert.ok(channelGap(native.below, { r: 14, g: 14, b: 14 }) <= 3 && channelGap(native.above, native.below) >= 12, `${engine} chatgpt thread footer native: opaque band below the composer (${fmt(native.below)} vs ${fmt(native.above)})`);
+    assert.ok(native.geometry.viewportBottomGap >= 64, `${engine} chatgpt thread footer native: viewportBottomGap >= 64px (got ${native.geometry.viewportBottomGap}px)`);
+    assert.deepEqual(native.geometry.outerWrapperPaddings, ['0px', '0px', '0px']);
+    assert.equal(native.geometry.scrollFooterAfterHeight, 24);
+    assert.ok(native.geometry.disclaimerHeight >= 32 && native.geometry.spacerHeight >= 10);
 
     await injectExtension(page, suite, { waitFor: '.op-vial-pill' });
     await settle(page);
     assert.equal(await page.evaluate(() => document.documentElement.getAttribute('data-op-home')), 'false', 'active conversation');
 
-    // Clearing the band moves nothing: without composer restyling the composer and footer boxes equal the native ones.
+    // Clearing the band moves nothing: without composer restyling the composer, footer spacing, disclaimer and outer wrappers equal native.
     // Crystal's light canvas is far from the dark footer surface, so a leftover band cannot pass unnoticed.
     await applyPalette(page, PALETTES[2]);
     await patchConfig(page, { composerRestyle: false }, () => document.documentElement.getAttribute('data-op-composer') === 'false');
     await scrollToEnd(page);
     await assertBandCleared(page, `${engine} chatgpt thread footer composerRestyle:false`);
-    assert.deepEqual(await footerGeometry(page), native.geometry, `${engine} chatgpt thread footer: composer position/size and footer positioning are unchanged`);
+    assert.deepEqual(restoredGeometry(await footerGeometry(page)), restoredGeometry(native.geometry), `${engine} chatgpt thread footer: composerRestyle:false preserves exact native geometry, spacing, and disclaimer`);
     await patchConfig(page, { composerRestyle: true }, () => document.documentElement.getAttribute('data-op-composer') === 'true');
 
     for (const pal of PALETTES) {
+      const composerWidths = {};
       for (const width of WIDTHS) {
         const label = `${engine} chatgpt thread footer ${pal.name} ${width}`;
         await applyPalette(page, pal, { contentWidth: width });
         await scrollToEnd(page);
         await assertBandCleared(page, label);
         const geometry = await footerGeometry(page);
-        // The footer's height follows the (restyled) composer; its positioning stays native.
+        composerWidths[width] = geometry.composer.width;
+        // The footer's height follows the (restyled) composer; its positioning, z-index and anchor scope stay native.
         const positioning = ({ top, height, ...rest }) => rest;
         assert.deepEqual(positioning(geometry.footer), positioning(native.geometry.footer), `${label}: the footer keeps its native position, inset, z-index and anchor scope`);
-        assert.ok(Math.abs(geometry.composerGap - native.geometry.composerGap) <= 1, `${label}: the composer keeps its native distance to the footer bottom (${geometry.composerGap} vs ${native.geometry.composerGap})`);
+        // v0.4.4 #46: outer --thread-content-* wrappers keep 0px bottom padding; Thread Footer ::after, spacer and disclaimer collapse;
+        // Composer Surface sits cleanly within 5-10px of the viewport bottom and aligns with the reading column.
+        assert.deepEqual(geometry.outerWrapperPaddings, ['0px', '0px', '0px'], `${label}: outer --thread-content-* wrappers keep 0px paddingBottom`);
+        assert.equal(geometry.outerWrapperMarked, 0, `${label}: outer --thread-content-* wrappers are never marked data-op-thread-column`);
+        assert.equal(geometry.scrollFooterAfterHeight, 0, `${label}: [data-thread-scroll-footer]::after inset collapses to 0px`);
+        assert.equal(geometry.disclaimerDisplay, 'none', `${label}: inner footer disclaimer is reversibly hidden`);
+        assert.equal(geometry.disclaimerHeight, 0, `${label}: hidden disclaimer takes 0px height`);
+        assert.equal(geometry.spacerHeight, 0, `${label}: empty footer spacer collapses to 0px`);
+        assert.ok(geometry.viewportBottomGap >= 5 && geometry.viewportBottomGap <= 10, `${label}: Composer Surface viewport bottom gap in 5-10px range (got ${geometry.viewportBottomGap}px)`);
+        assert.ok(geometry.composerGap >= 5 && geometry.composerGap <= 10, `${label}: Composer Surface footer bottom gap in 5-10px range (got ${geometry.composerGap}px)`);
+        assert.ok(Math.abs(geometry.composer.width - geometry.paragraph.width) <= 2, `${label}: Composer Surface width (${geometry.composer.width}) matches paragraph (${geometry.paragraph.width})`);
+        assert.ok(Math.abs(geometry.composer.left - geometry.paragraph.left) <= 2, `${label}: Composer Surface left (${geometry.composer.left}) aligns with paragraph (${geometry.paragraph.left})`);
         if (width === 'standard') {
           // Opaque Composer Surface: changing the ambient light behind it leaves its interior unchanged,
           // while the cleared band beside and below it now shows the light.
@@ -136,33 +171,38 @@ export async function checkChatGPTThreadFooter(suite) {
           await applyPalette(page, pal, { contentWidth: width });
         }
       }
-      // Native Palette restores the host footer paint.
+      assert.ok(composerWidths.standard < composerWidths.wide && composerWidths.wide < composerWidths.full, `${engine} chatgpt thread footer ${pal.name}: Composer Surface widens across standard (${composerWidths.standard}) < wide (${composerWidths.wide}) < full (${composerWidths.full})`);
+      // Native Palette restores the host footer paint, spacing, and disclaimer.
       await patchConfig(page, { ...pal.hostPatch, contentWidth: 'standard' }, () => document.documentElement.getAttribute('data-op-effective-palette') === 'host');
       await scrollToEnd(page);
       await assertNativeBand(page, native, `${engine} chatgpt thread footer ${pal.name} Native Palette`);
-      console.log(`PASS ${engine} chatgpt thread footer ${pal.name}: band cleared at standard/wide/full, opaque composer, native positioning, Native Palette restores`);
+      assert.deepEqual(restoredGeometry(await footerGeometry(page)), restoredGeometry(native.geometry), `${engine} chatgpt thread footer ${pal.name} Native Palette: restores native spacing & disclaimer`);
+      console.log(`PASS ${engine} chatgpt thread footer ${pal.name}: band cleared, 5-10px bottom gap, 0px outer wrappers, disclaimer hidden, standard<wide<full aligned, Native Palette restores`);
     }
 
     await applyPalette(page, PALETTES[0], { contentWidth: 'standard' });
-    // The host re-renders the footer: the band stays cleared.
+    // The host re-renders the footer: the band stays cleared and spacing stays compact.
     await applyChatGPTThreadFooter(page);
     await page.evaluate(() => ObsidianPrismRuntime.refresh());
     await page.waitForTimeout(150);
     await scrollToEnd(page);
     await assertBandCleared(page, `${engine} chatgpt thread footer re-rendered`);
+    const rerendered = await footerGeometry(page);
+    assert.ok(rerendered.viewportBottomGap >= 5 && rerendered.viewportBottomGap <= 10, `${engine} chatgpt thread footer re-rendered: compact 5-10px gap holds (got ${rerendered.viewportBottomGap}px)`);
 
     for (const off of [{ enableChatGPT: false }, { enabled: false }]) {
       const label = `${engine} chatgpt thread footer ${Object.keys(off)[0]}=false`;
       await patchConfig(page, off, () => !document.documentElement.hasAttribute('data-op-enabled'));
       await scrollToEnd(page);
       await assertNativeBand(page, native, label);
+      assert.deepEqual(restoredGeometry(await footerGeometry(page)), restoredGeometry(native.geometry), `${label}: restores native footer geometry & spacing`);
       assert.deepEqual(await attributeSnapshot(page), native.attributes, `${label}: no residue on the page`);
       await patchConfig(page, { enabled: true, enableChatGPT: true }, () => document.documentElement.getAttribute('data-op-enabled') === 'true');
       await scrollToEnd(page);
       await assertBandCleared(page, `${label} re-enabled`);
     }
 
-    // Home State: the conversation footer is left native.
+    // Home State: the conversation footer is left native (native paint, native spacing, native disclaimer, no data-op-thread-footer).
     const turns = await page.evaluate(() => {
       const nodes = [...document.querySelectorAll('[data-turn-key]')];
       window.__prismHomeTurns = { parent: nodes[0].parentElement, nodes };
@@ -172,8 +212,16 @@ export async function checkChatGPTThreadFooter(suite) {
     assert.ok(turns > 0);
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-home') === 'true');
     await settle(page);
-    const homeAfter = await page.evaluate(threadFooter => getComputedStyle(document.querySelector(threadFooter), '::after').backgroundColor, S.threadFooter);
-    assert.equal(homeAfter, 'rgb(14, 14, 14)', `${engine} chatgpt thread footer Home State: the conversation footer keeps its native paint`);
+    const homeState = await page.evaluate(({ threadFooter, threadFooterDisclaimer, composer }) => ({
+      afterBg: getComputedStyle(document.querySelector(threadFooter), '::after').backgroundColor,
+      threadFooterAttr: document.querySelector(threadFooter).getAttribute('data-op-thread-footer'),
+      disclaimerDisplay: getComputedStyle(document.querySelector(threadFooterDisclaimer)).display,
+      viewportBottomGap: Math.round((window.innerHeight - document.querySelector(composer).getBoundingClientRect().bottom) * 10) / 10
+    }), S);
+    assert.equal(homeState.afterBg, 'rgb(14, 14, 14)', `${engine} chatgpt thread footer Home State: the conversation footer keeps its native paint`);
+    assert.equal(homeState.threadFooterAttr, null, `${engine} chatgpt thread footer Home State: no data-op-thread-footer mark`);
+    assert.notEqual(homeState.disclaimerDisplay, 'none', `${engine} chatgpt thread footer Home State: disclaimer stays visible`);
+    assert.ok(homeState.viewportBottomGap >= 64, `${engine} chatgpt thread footer Home State: native bottom gap preserved (got ${homeState.viewportBottomGap}px)`);
     await page.evaluate(() => {
       const { parent, nodes } = window.__prismHomeTurns;
       parent.append(...nodes);
@@ -188,8 +236,9 @@ export async function checkChatGPTThreadFooter(suite) {
     await settle(page);
     await scrollToEnd(page);
     await assertNativeBand(page, native, `${engine} chatgpt thread footer stop()`);
+    assert.deepEqual(restoredGeometry(await footerGeometry(page)), restoredGeometry(native.geometry), `${engine} chatgpt thread footer stop(): restores native footer geometry & spacing`);
     assert.deepEqual(await attributeSnapshot(page), native.attributes, `${engine} chatgpt thread footer stop(): no residue on the page`);
     assert.deepEqual(errors, []);
-    console.log(`PASS ${engine} chatgpt thread footer: re-render, site/extension disable, Home State and stop() restore the native band with zero residue`);
+    console.log(`PASS ${engine} chatgpt thread footer: re-render, site/extension disable, Home State and stop() restore native band, spacing & disclaimer with zero residue`);
   });
 }

@@ -156,12 +156,31 @@ function makeMockDom(hostname, variant = 'default') {
     const contents = { display: 'contents' };
     const zero = { x: 0, y: 0, width: 0, height: 0 };
     const main = create('main', { rect: { x: 260, y: 0, width: 1280, height: 900 }, style: { position: 'relative' } });
-    const scroller = create('div', { classes: ['thread-scroll-container'], style: { overflowY: 'auto' } });
+    const outerShell1 = create('div', {
+      classes: ['app-shell-main-content', '[--thread-content-top-inset:0px]', '[--secret-token:68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13]', 'after:content-["Secret_private_phrase"]', 'hover:user-12345', '[--uid:987654321]'],
+      rect: { x: 260, y: 0, width: 1280, height: 900 },
+      style: { display: 'flex', overflowY: 'visible', paddingBottom: '24px', '--thread-content-top-inset': '0px' }
+    });
+    const outerShell2 = create('div', {
+      classes: ['[--thread-content-responsive-max-width:48rem]', '[--secret-bg:url("https://secret.example/shell.png")]'],
+      rect: { x: 260, y: 0, width: 1280, height: 876 },
+      style: { display: 'flex', overflowY: 'visible', paddingBottom: '24px', '--thread-content-responsive-max-width': '48rem' }
+    });
+    const scrollLayout = create('div', {
+      classes: ['group/thread-scroll-layout', '[--thread-content-x:initial]'],
+      rect: { x: 260, y: 0, width: 1280, height: 852 },
+      style: { position: 'relative', display: 'flex', overflowY: 'visible', paddingBottom: '0px', '--thread-content-x': 'initial' }
+    });
+    const scroller = create('div', {
+      classes: ['thread-scroll-container'],
+      rect: { x: 260, y: 52, width: 1280, height: 800 },
+      style: { overflowY: 'auto', paddingBottom: '0px' }
+    });
     const turn = create('div', { attrs: { 'data-turn-key': '68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13' } });
     const footer = create('div', {
       classes: ['footer-A8ZvKV'],
-      rect: { x: 260, y: 740, width: 1280, height: 160 },
-      style: { position: 'absolute', zIndex: '20', anchorScope: '--thread-composer' },
+      rect: { x: 260, y: 692, width: 1280, height: 160 },
+      style: { position: 'absolute', zIndex: '20', anchorScope: '--thread-composer', paddingBottom: '0px' },
       pseudos: {
         '::before': {
           content: '""', display: 'block', position: 'absolute', zIndex: '-1', top: '50px', bottom: '16px', left: '16px', right: '16px',
@@ -180,23 +199,51 @@ function makeMockDom(hostname, variant = 'default') {
       for (let i = 0; i < count; i++) { const next = create('div', { rect: zero, style: contents }); cur.append(next); cur = next; }
       return cur;
     };
-    const scrollFooter = create('div', { attrs: { 'data-thread-scroll-footer': 'true' }, rect: { x: 260, y: 740, width: 1280, height: 160 } });
+    const scrollFooter = create('div', {
+      attrs: { 'data-thread-scroll-footer': 'true' },
+      classes: ['after:block', 'after:h-(--thread-composer-bottom-inset)'],
+      rect: { x: 260, y: 692, width: 1280, height: 160 },
+      style: { '--thread-composer-bottom-inset': '24px' },
+      pseudos: {
+        '::before': { content: 'none' },
+        '::after': { content: '""', display: 'block', height: '24px', backgroundColor: 'rgba(0, 0, 0, 0)' }
+      }
+    });
     chain(footer, 5).append(scrollFooter);
-    const backdrop = create('div', { attrs: { 'data-thread-composer-backdrop': 'true', 'data-pip-obstacle': 'thread-footer' }, rect: { x: 260, y: 744, width: 1280, height: 156 } });
+    const backdrop = create('div', {
+      attrs: { 'data-thread-composer-backdrop': 'true', 'data-pip-obstacle': 'thread-footer' },
+      rect: { x: 496, y: 696, width: 808, height: 132 },
+      style: {
+        maxWidth: '808px', paddingLeft: '20px', paddingRight: '20px',
+        '--thread-content-max-width': '48rem',
+        '--thread-content-responsive-max-width': '48rem',
+        '--thread-body-max-width': '48rem'
+      }
+    });
     const secretButton = create('button', { attrs: { 'aria-label': 'Secret footer label', 'data-message-id': '5f2c9a81-0d3e-4b7a-9c61-2e8f0a6d13b4' } });
-    chain(scrollFooter, 4).append(backdrop, secretButton);
-    const column = create('div', { classes: ['composer-column'], rect: { x: 496, y: 744, width: 808, height: 140 } });
+    const footerSpacer = create('div', { classes: ['thread-footer-spacer_v4'], rect: { x: 496, y: 804, width: 808, height: 12 }, style: { height: '12px' } });
+    const footerDisclaimer = create('div', {
+      classes: ['disclaimer_v7rk'],
+      attrs: { 'data-testid': 'footer-disclaimer', 'data-secret-note': 'Private disclaimer prose' },
+      rect: { x: 496, y: 816, width: 808, height: 36 },
+      style: { minHeight: '36px', viewTransitionName: 'vt-5f2c9a81-0d3e-4b7a-9c61-2e8f0a6d13b4' }
+    });
+    chain(scrollFooter, 4).append(backdrop, secretButton, footerSpacer, footerDisclaimer);
+    const column = create('div', { classes: ['composer-column'], rect: { x: 516, y: 696, width: 768, height: 108 } });
     chain(backdrop, 4).append(column);
     const form = create('form', { attrs: { 'data-chatgpt-composer': '', 'data-secret': 'Private user text' }, style: { anchorName: '--thread-composer' } });
     chain(column, 5).append(form);
-    const layout = create('div', { attrs: { 'data-composer-layout': 'single-line', 'data-composer-body': '' }, rect: { x: 516, y: 744, width: 768, height: 100 } });
+    const layout = create('div', { attrs: { 'data-composer-layout': 'single-line', 'data-composer-body': '' }, rect: { x: 516, y: 728, width: 768, height: 100 } });
     const grid = create('div', { classes: ['composerGrid_h2vs'], style: { display: 'grid' } });
     const editor = create('div', { attrs: { contenteditable: 'true', role: 'textbox', id: 'prompt-textarea' }, contentEditable: true });
     grid.append(editor);
     layout.append(grid);
     form.append(layout);
     scroller.append(turn, footer);
-    main.append(scroller);
+    scrollLayout.append(scroller);
+    outerShell2.append(scrollLayout);
+    outerShell1.append(outerShell2);
+    main.append(outerShell1);
     body.append(main);
   } else if (hostname === 'chatgpt.com') {
     const page = create('div', { classes: ['page'] });
@@ -510,7 +557,7 @@ test('structure probe collects pseudo paint/mask, full ancestor depth, siblingsA
   assert.equal(chatgpt.targets.disclaimerShells.count, 4, 'disclaimerShells captures disclaimer classes, testids, and view-transition-name styles');
   assert.equal(chatgpt.targets.disclaimerShells.samples.length, 4);
 
-  assert.deepEqual(chatgpt.bottomOffsets, { dockBottomOffset: 56, composerBottomOffset: 70 });
+  assert.deepEqual(chatgpt.bottomOffsets, { dockBottomOffset: 56, threadFooterBottomOffset: null, composerBottomOffset: 70 });
 
   const mainAnc = chatgpt.targets.composerAncestors.samples.find(s => s.tag === 'main');
   assert.equal(mainAnc?.style['--thread-content-max-width'], '48rem', 'reads --thread-content-max-width on main');
@@ -555,12 +602,12 @@ test('structure probe collects pseudo paint/mask, full ancestor depth, siblingsA
   assert.ok(gemini.targets.inputAreaChildren.count >= 2, 'collects Gemini inputAreaChildren');
   assert.ok(gemini.targets.inputAreaChildren.samples.some(s => s.tag === 'input-area-v2'));
   assert.ok(gemini.targets.inputAreaChildren.samples.some(s => s.classes.includes('text-input-field')));
-  assert.deepEqual(gemini.bottomOffsets, { dockBottomOffset: 0, composerBottomOffset: 38 });
+  assert.deepEqual(gemini.bottomOffsets, { dockBottomOffset: 0, threadFooterBottomOffset: null, composerBottomOffset: 38 });
   assert.equal(gemini.targets.cornerFloats.count, 1, 'captures Gemini corner button while excluding input-area-v2 inner float');
   assert.deepEqual(gemini.targets.cornerFloats.samples[0].classes, ['host-corner-help']);
 
   const unknown = runProbe('unknown.example');
-  assert.deepEqual(unknown.bottomOffsets, { dockBottomOffset: null, composerBottomOffset: null });
+  assert.deepEqual(unknown.bottomOffsets, { dockBottomOffset: null, threadFooterBottomOffset: null, composerBottomOffset: null });
 });
 
 test('structure probe reports the painted composer footer: ancestor depth, boxless wrappers, pseudo paint and anchor positioning', () => {
@@ -568,9 +615,12 @@ test('structure probe reports the painted composer footer: ancestor depth, boxle
   const probeSource = fs.readFileSync(path.join(ROOT, PROBE), 'utf8');
   const result = JSON.parse(JSON.stringify(vm.runInNewContext(probeSource, makeMockDom('chatgpt.com', 'deep-footer'))));
   const json = JSON.stringify(result);
-  for (const secret of ['Private user text', 'Secret footer label', '5f2c9a81-0d3e-4b7a-9c61-2e8f0a6d13b4', '68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13', 'prompt-textarea', 'secret-conversation-id']) {
+  for (const secret of ['Private user text', 'Private disclaimer prose', 'Secret footer label', 'Secret_private_phrase', 'secret.example', '5f2c9a81-0d3e-4b7a-9c61-2e8f0a6d13b4', '68f0c2a1-4d3b-4e8a-9c71-2b5e8f0a6d13', 'prompt-textarea', 'secret-conversation-id', '12345', '987654321']) {
     assert.equal(json.includes(secret), false, `probe output omits ${secret}`);
   }
+  // v0.4.4 #46: bottomOffsets resolve from Thread Footer when #thread-bottom-container is absent.
+  assert.deepEqual(result.bottomOffsets, { dockBottomOffset: 48, threadFooterBottomOffset: 48, composerBottomOffset: 72 });
+
   const footer = result.targets.composerFooter;
   assert.equal(footer.count, 1, 'finds the painted footer above the composer');
   assert.deepEqual(footer.chains, {
@@ -594,11 +644,46 @@ test('structure probe reports the painted composer footer: ancestor depth, boxle
   assert.equal(sample.pseudos.before.top, '50px');
   assert.equal(sample.pseudos.after.bottom, '0px');
 
+  // v0.4.4 #46: Thread Footer internals (::after inset, width vars, internal spacers & disclaimers), outer wrappers & scroller overlap.
+  assert.equal(footer.scrollFooter?.style['--thread-composer-bottom-inset'], '24px');
+  assert.equal(footer.scrollFooter?.pseudos?.after?.height, '24px');
+  assert.equal(footer.composerBackdrop?.style['--thread-content-max-width'], '48rem');
+  assert.equal(footer.composerBackdrop?.style['--thread-content-responsive-max-width'], '48rem');
+  assert.equal(footer.composerBackdrop?.style['--thread-body-max-width'], '48rem');
+  assert.ok(footer.internalSpacers.some(s => s.classes.includes('thread-footer-spacer_v4') && s.childCount === 0 && s.hasInteractive === false), 'captures internal empty spacer inside Thread Footer');
+  assert.ok(footer.internalDisclaimers.some(s => s.classes.includes('disclaimer_v7rk') && s.style.viewTransitionName === '[id]' && s.data['data-secret-note'] === '[text]'), 'captures & redacts internal disclaimer inside Thread Footer');
+
+  const outer = result.targets.outerWrappers;
+  assert.ok(outer.count >= 3, 'captures outer non-scrolling wrappers above the scroller');
+  assert.ok(outer.samples.some(s => s.classes.includes('[--thread-content-top-inset:0px]') && s.style.paddingBottom === '24px' && s.classes.includes('[--secret-token:[id]]') && s.classes.includes('after:content-["[text]"]') && s.classes.includes('hover:[id]') && s.classes.includes('[--uid:[id]]')), 'captures outer wrapper 1 paddingBottom & redacts secrets and numeric IDs inside Tailwind arbitrary classes');
+  assert.ok(outer.samples.some(s => s.classes.includes('[--thread-content-responsive-max-width:48rem]') && s.style.paddingBottom === '24px' && s.style['--thread-content-responsive-max-width'] === '48rem' && s.classes.includes('[--secret-bg:url([url])]')), 'captures outer wrapper 2 paddingBottom & custom property');
+  assert.ok(outer.samples.some(s => s.classes.includes('[--thread-content-x:initial]') && s.style.paddingBottom === '0px'), 'captures scroll-layout wrapper');
+
+  assert.equal(result.targets.threadScrollFooter.count, 1);
+  assert.equal(result.targets.threadComposerBackdrop.count, 1);
+  assert.equal(result.targets.composerBackdropSiblings.count, 3, 'captures siblings after [data-thread-composer-backdrop]');
+  assert.ok(result.targets.composerBackdropSiblings.samples.some(s => s.classes.includes('thread-footer-spacer_v4')));
+  assert.ok(result.targets.composerBackdropSiblings.samples.some(s => s.classes.includes('disclaimer_v7rk')));
+
+  const overlap = result.targets.scrollerOverlap;
+  assert.equal(overlap.found, true, 'finds conversation scroller');
+  assert.equal(overlap.scroller.paddingBottom, '0px');
+  assert.equal(overlap.scroller.overflowY, 'auto');
+  assert.equal(overlap.scroller.containsFooter, true);
+  assert.equal(overlap.scroller.containsComposer, true);
+  assert.equal(overlap.scroller.rect.bottom, 852);
+  assert.equal(overlap.footerTop, 692);
+  assert.equal(overlap.composerTop, 728);
+  assert.equal(overlap.footerOverlapPx, 160);
+  assert.equal(overlap.composerOverlapPx, 124);
+
   const plain = JSON.parse(JSON.stringify(vm.runInNewContext(probeSource, makeMockDom('chatgpt.com'))));
   assert.equal(plain.targets.composerFooter.count, 1, 'the v0.4.2 in-flow dock also paints a ::before');
   assert.deepEqual(plain.targets.composerFooter.samples[0].classes, ['content-fade_b9xk']);
   assert.deepEqual(plain.targets.composerFooter.chains.form, { ancestors: 3, noBox: 0 }, 'the in-flow dock sits three boxed layers above the form');
   assert.deepEqual(plain.targets.composerFooter.markers, { scrollFooter: null, composerBackdrop: null }, 'no host footer markers on the v0.4.2 shape');
+  assert.equal(plain.targets.scrollerOverlap.found, true);
+  assert.equal(plain.targets.scrollerOverlap.scroller.containsFooter, false);
 });
 
 function makePNG(width, height, colorType, pixels) {

@@ -43,8 +43,11 @@ test('each site declares its native reading width and the elements that actually
     '#thread-bottom [class*="--thread-content-max-width"]',
     '#thread-bottom :has(form[data-chatgpt-composer]):not(:has(> form[data-chatgpt-composer]))',
     '#thread-bottom :has(> form[data-chatgpt-composer])',
-    '#thread-bottom > form[data-chatgpt-composer]'
-  ], 'ChatGPT: dock containers bridge --thread-content-max-width and nested/direct composer wrappers follow the reading width');
+    '#thread-bottom > form[data-chatgpt-composer]',
+    '[data-thread-composer-backdrop="true"]',
+    '[data-thread-composer-backdrop="true"] :has(form[data-chatgpt-composer])',
+    '[data-thread-composer-backdrop="true"] form[data-chatgpt-composer]'
+  ], 'ChatGPT: dock containers and Thread Footer [data-thread-composer-backdrop] bridge reading width onto composer wrappers');
   assert.deepEqual(gemini.targets, [
     'chat-window',
     '.md-content > *',

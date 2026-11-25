@@ -42,7 +42,6 @@
   let primarySurface = null;
   let dockObserver = null;
   let observedDock = null;
-  let dockScrim = null;
   let dockScroller = null;
   let dockOverlaidHost = null;
   let alphaFadeScroller = null;
@@ -66,6 +65,7 @@
     'data-op-code-icon-fill',
     'data-op-code-icon-stroke',
     'data-op-composer-dock',
+    'data-op-thread-footer',
     'data-op-composer-overlaid',
     'data-op-composer-scrim',
     'data-op-thread-scroller',
@@ -122,7 +122,7 @@
     if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = null;
     if (geometryFrame) cancelAnimationFrame(geometryFrame); geometryFrame = null;
     dockObserver?.disconnect(); dockObserver = null; observedDock = null;
-    dockScrim = dockScroller = dockOverlaidHost = alphaFadeScroller = alphaFadeDock = null;
+    dockScroller = dockOverlaidHost = alphaFadeScroller = alphaFadeDock = null;
     railSignature = ''; lastEstimate = 0; lastModelLabel = ''; lastAttachments = 0; activeTurn = -1;
     if (permanent) {
       stopped = true;
@@ -1003,7 +1003,7 @@
     };
     const isNativePalette = Schema.resolvePalette(cfg) === 'host';
     const isHome = !adapter.userTurns().length && !adapter.assistantTurns().length;
-    let dockHost = null, nextScrim = null, nextScroller = null, nextThreadScroller = null, nextOverlaidDock = null, nextAlphaFadeScroller = null, nextAlphaFadeDock = null, nextObservedDock = null;
+    let dockHost = null, threadFooter = null, nextScroller = null, nextThreadScroller = null, nextOverlaidDock = null, nextAlphaFadeScroller = null, nextAlphaFadeDock = null, nextObservedDock = null;
     const nextPrimary = adapter.primarySurface?.() || null;
     add(nextPrimary,'data-op-main-surface');
     for (const element of adapter.threadColumns?.() || []) add(element,'data-op-thread-column');
@@ -1017,17 +1017,15 @@
       }
       if (!isHome) {
         dockHost = adapter.composerScrimSurface?.(composer) || null;
+        threadFooter = !dockHost ? (adapter.threadFooterLayer?.(composer) || null) : null;
         add(dockHost, 'data-op-composer-dock');
+        if (cfg.composerRestyle) add(threadFooter, 'data-op-thread-footer');
         const turn = adapter.assistantTurns()[0] || adapter.userTurns()[0];
         const scroller = turn ? adapter.scrollContainer(turn) : null;
         const isOverlaid = dockHost ? Adapters.isComposerDockOverlaid(dockHost, scroller, global) : false;
         if (isOverlaid) {
           nextOverlaidDock = dockHost;
           add(dockHost, 'data-op-composer-overlaid');
-          if (adapter.usesOverlayScrim) {
-            nextScrim = dockHost;
-            add(nextScrim, 'data-op-composer-scrim');
-          }
           nextScroller = overlaidScroller(dockHost, scroller);
           add(nextScroller, 'data-op-thread-scroller');
           if (nextScroller) {
@@ -1042,7 +1040,7 @@
           add(scroller, 'data-op-scroller-fade');
         }
         if (cfg.composerRestyle) {
-          const below = adapter.composerBelowSiblings?.(composer, dockHost);
+          const below = adapter.composerBelowSiblings?.(composer, dockHost || threadFooter);
           for (const element of below?.empty || []) add(element, 'data-op-composer-empty-sibling');
           for (const element of below?.disclaimers || []) add(element, 'data-op-composer-disclaimer');
         }
@@ -1066,13 +1064,16 @@
         for (const element of adapter.composerAttachments?.(composer) || []) add(element,'data-op-composer-attachment');
         for (const element of adapter.composerChips?.(composer) || []) add(element,'data-op-composer-chip');
       }
+      // Backdrops belong to the page canvas, not the input card. Keep their
+      // reversible bridge independent of the optional composer restyling,
+      // while leaving conversation-only docks native in Home State and Native Palette.
+      if (!isHome || !adapter.conversationOnlyBackdrops) {
+        for (const element of adapter.composerBackdropSurfaces?.(composer) || []) {
+          add(element,'data-op-composer-backdrop');
+        }
+      }
     }
-    nextObservedDock = nextScrim || dockHost || composer || null;
-    // Backdrops belong to the page canvas, not the input card. Keep their
-    // reversible bridge independent of the optional composer restyling.
-    for (const element of adapter.composerBackdropSurfaces?.(composer) || []) {
-      add(element,'data-op-composer-backdrop');
-    }
+    nextObservedDock = dockHost || threadFooter || composer || null;
     if (cfg.sidebarStyle !== 'native') {
       const sidebars = adapter.sidebarSurfaces?.() || [];
       for (const element of sidebars) add(element,'data-op-sidebar-surface');
@@ -1116,7 +1117,7 @@
         dockObserver.observe(observedDock);
       }
     }
-    dockScrim = nextScrim; dockOverlaidHost = nextOverlaidDock; dockScroller = nextThreadScroller;
+    dockOverlaidHost = nextOverlaidDock; dockScroller = nextThreadScroller;
     alphaFadeScroller = nextAlphaFadeScroller; alphaFadeDock = nextAlphaFadeDock;
     const home = String(isHome);
     if (document.documentElement.getAttribute('data-op-home') !== home) document.documentElement.setAttribute('data-op-home',home);

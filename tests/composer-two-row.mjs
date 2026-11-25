@@ -159,6 +159,45 @@ function contrastRatio(foregroundValue, backgroundValue) {
   return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
 }
 
+function parseRgba(value) {
+  if (!value) return null;
+  const srgb = value.startsWith('color(srgb ');
+  if (!srgb && !/^rgba?\(/.test(value)) return null;
+  const numbers = value.match(/-?\d*\.?\d+/g)?.map(Number);
+  if (!numbers || numbers.length < 3) return null;
+  const scale = srgb ? 255 : value.includes('%') ? 2.55 : 1;
+  return {
+    r: numbers[0] * scale,
+    g: numbers[1] * scale,
+    b: numbers[2] * scale,
+    a: numbers.length > 3 ? numbers[3] : 1
+  };
+}
+
+function assertNeutralColor(value, label) {
+  const c = parseRgba(value);
+  assert.ok(c, `${label}: expected parseable color, got ${value}`);
+  const spread = Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b);
+  assert.ok(spread <= 45, `${label}: expected neutral low-saturation tone (channel spread ${spread.toFixed(1)} <= 45, got ${value})`);
+}
+
+function parseShadowLayers(boxShadow) {
+  if (!boxShadow || boxShadow === 'none') return [];
+  const parts = [];
+  let depth = 0, start = 0;
+  for (let i = 0; i < boxShadow.length; i++) {
+    const ch = boxShadow[i];
+    if (ch === '(') depth++;
+    else if (ch === ')') depth = Math.max(0, depth - 1);
+    else if (ch === ',' && depth === 0) {
+      parts.push(boxShadow.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(boxShadow.slice(start).trim());
+  return parts.filter(Boolean);
+}
+
 async function assertTwoRow(page, host, label) {
   const s = LIVE_SELECTORS[host];
   const geometry = await controlGeometry(page, CARD[host], controlsOf(host));
@@ -168,38 +207,81 @@ async function assertTwoRow(page, host, label) {
   assert.ok(editor && add && model && attachment && trailing, `${label}: editor, +, Model Capsule, trailing control and attachment exist`);
   const visual = await page.locator(CARD[host]).evaluate((node, sels) => {
     const style = getComputedStyle(node);
+    const cardBefore = getComputedStyle(node, '::before');
+    const surfaceNode = node.matches('[data-op-composer-surface="true"]') ? node : (node.closest('[data-op-composer-surface="true"]') || node);
+    const surfaceStyle = getComputedStyle(surfaceNode);
+    const surfaceBefore = getComputedStyle(surfaceNode, '::before');
+    const addNode = node.querySelector(sels.add);
     const modelNode = node.querySelector(sels.model);
     const before = modelNode ? getComputedStyle(modelNode, '::before') : null;
     const tierNode = modelNode?.querySelector('.model-tier, .mode-tier') || (modelNode?.hasAttribute('data-selected-reasoning-effort') ? modelNode.querySelector('span') : null);
-    const primaryNode = node.querySelector(sels.trailing);
+    const trailingNode = node.querySelector(sels.trailing);
     const attachmentNode = node.querySelector(sels.attachment);
     const dictateNode = sels.dictate ? node.querySelector(sels.dictate) : null;
     const read = (el, props) => el ? Object.fromEntries(props.map(p => [p, getComputedStyle(el)[p]])) : null;
     return {
       card: {
-        background: style.backgroundColor,
-        border: parseFloat(style.borderTopWidth),
-        borderTopWidth: style.borderTopWidth,
-        outlineStyle: style.outlineStyle,
-        borderRadius: style.borderRadius,
+        background: surfaceStyle.backgroundColor,
+        backgroundImage: surfaceStyle.backgroundImage,
+        backdropFilter: surfaceStyle.backdropFilter || surfaceStyle.webkitBackdropFilter || 'none',
+        border: parseFloat(surfaceStyle.borderTopWidth),
+        borders: [surfaceStyle.borderTopWidth, surfaceStyle.borderRightWidth, surfaceStyle.borderBottomWidth, surfaceStyle.borderLeftWidth],
+        borderStyles: [surfaceStyle.borderTopStyle, surfaceStyle.borderRightStyle, surfaceStyle.borderBottomStyle, surfaceStyle.borderLeftStyle],
+        borderColor: surfaceStyle.borderTopColor,
+        outlineStyle: surfaceStyle.outlineStyle,
+        borderRadius: surfaceStyle.borderRadius,
+        boxShadow: surfaceStyle.boxShadow,
+        beforeContent: surfaceBefore.content,
+        canvasCount: surfaceNode.querySelectorAll('canvas').length,
         left: parseFloat(style.borderLeftWidth) + parseFloat(style.paddingLeft)
       },
+      add: addNode ? {
+        ...read(addNode, ['backgroundColor', 'borderTopWidth', 'borderTopColor', 'boxShadow', 'borderRadius', 'width', 'height', 'color'])
+      } : null,
       model: modelNode ? {
-        color: getComputedStyle(modelNode).color,
+        ...read(modelNode, ['backgroundColor', 'borderTopWidth', 'borderTopColor', 'boxShadow', 'color', 'height', 'borderRadius']),
         before: { content: before.content, width: before.width, height: before.height, borderRadius: before.borderRadius, clipPath: before.clipPath, backgroundColor: before.backgroundColor },
         tier: read(tierNode, ['color', 'fontWeight'])
       } : null,
-      primary: read(primaryNode, ['backgroundColor', 'color', 'borderRadius', 'width', 'height']),
+      trailing: trailingNode ? {
+        primaryAttr: trailingNode.getAttribute('data-op-composer-primary-action'),
+        ...read(trailingNode, ['backgroundColor', 'borderTopColor', 'borderRadius', 'width', 'height', 'color'])
+      } : null,
       attachment: read(attachmentNode, ['borderRadius', 'borderTopWidth', 'backgroundColor', 'color']),
-      dictate: read(dictateNode, ['backgroundColor', 'borderTopWidth', 'borderTopColor'])
+      dictate: dictateNode ? {
+        primaryAttr: dictateNode.getAttribute('data-op-composer-primary-action'),
+        ...read(dictateNode, ['backgroundColor', 'borderTopColor', 'borderRadius', 'width', 'height'])
+      } : null
     };
-  }, { model: s.model, trailing: s[TRAILING[host]], attachment: s.attachment, dictate: s.dictate || null });
+  }, { add: s.add, model: s.model, trailing: s[TRAILING[host]], attachment: s.attachment, dictate: s.dictate || null });
 
   const { card } = visual;
-  assert.ok(card.border > 0 && card.background !== 'rgba(0, 0, 0, 0)', `${label}: the measured card is the painted, bordered Composer Surface (${card.background}, ${card.border}px)`);
-  assert.equal(card.borderTopWidth, '1px', `${label}: composer card has a crisp 1px border`);
+  const bg = parseRgba(card.background);
+  assert.ok(bg && bg.a >= 0.95, `${label}: Composer Surface card background is solid/near-solid opaque (got ${card.background})`);
+  assert.match(card.backgroundImage, /linear-gradient\(/, `${label}: Composer Surface card renders top sheen gradient`);
+  assert.equal(card.backdropFilter, 'none', `${label}: Composer Surface clears host backdrop-filter`);
+  assert.deepEqual(card.borders, ['1px', '1px', '1px', '1px'], `${label}: Composer Surface has 1px border on all four sides`);
+  assert.deepEqual(card.borderStyles, ['solid', 'solid', 'solid', 'solid'], `${label}: Composer Surface has solid border on all four sides`);
   assert.equal(card.outlineStyle, 'none', `${label}: composer card has no second outline`);
-  assert.equal(card.borderRadius, '16px', `${label}: composer card uses balanced 16px radius`);
+  assert.equal(card.borderRadius, '12px', `${label}: composer card uses balanced 12px optical radius`);
+  assert.match(card.boxShadow, /inset/, `${label}: composer card includes top specular inset highlight`);
+  assert.equal(card.beforeContent, 'none', `${label}: resting composer renders no prismatic ::before rim`);
+  assert.equal(card.canvasCount, 0, `${label}: ADR-0002 zero Canvas elements inside Composer Surface`);
+  for (const layer of parseShadowLayers(card.boxShadow)) {
+    if (layer.includes('inset')) continue;
+    const lengths = layer.replace(/(?:rgba?\([^)]+\)|color\([^)]+\))/g, '').trim().match(/-?\d*\.?\d+px/g)?.map(parseFloat) || [];
+    if (lengths.length >= 2) {
+      assert.ok(lengths[1] >= 0, `${label}: resting outer shadow must be downward drop shadow, not upward halo (${layer})`);
+    }
+    const colorMatch = layer.match(/(?:rgba?\([^)]+\)|color\([^)]+\))/);
+    if (colorMatch) {
+      const c = parseRgba(colorMatch[0]);
+      assert.ok(c, `${label}: expected parseable shadow color (${layer})`);
+      const spread = Math.max(c.r, c.g, c.b) - Math.min(c.r, c.g, c.b);
+      assert.ok(spread <= 45 || c.a <= 0.15, `${label}: resting outer shadow has no colored violet/cyan glow haze (${layer})`);
+    }
+  }
+
   for (const [name, control] of Object.entries({ add, model, trailing })) {
     assert.ok(editor.bottom <= control.top + 0.5, `${label}: editor (bottom ${editor.bottom}) sits above the toolbar ${name} (top ${control.top})`);
   }
@@ -212,12 +294,27 @@ async function assertTwoRow(page, host, label) {
   assert.ok(model.right <= trailing.left + 0.5, `${label}: Model Capsule (right ${model.right}) is left of ${TRAILING[host]} (left ${trailing.left})`);
   if (controls.dictate) {
     assert.ok(model.right < controls.dictate.left && controls.dictate.right <= trailing.left + 0.5, `${label}: dictate stays on the right ahead of ${TRAILING[host]}`);
+    assert.equal(visual.dictate.primaryAttr, null, `${label}: dictate never receives primary-action mark`);
     assert.equal(visual.dictate.backgroundColor, 'rgba(0, 0, 0, 0)', `${label}: secondary dictate icon uses clean transparent background`);
+    assert.equal(visual.dictate.borderTopColor, 'rgba(0, 0, 0, 0)', `${label}: secondary dictate icon uses transparent border`);
+    assert.ok(Math.abs(controls.dictate.width - 28) <= 1 && Math.abs(controls.dictate.height - 28) <= 1, `${label}: dictate is 28x28 ghost circle`);
   }
   assert.ok(Math.abs(add.centerY - model.centerY) <= 10 && Math.abs(model.centerY - trailing.centerY) <= 10, `${label}: +, Model Capsule and ${TRAILING[host]} share the toolbar row`);
   assert.ok(add.left - card.left <= 8, `${label}: + leads the toolbar row at the left edge (${add.left})`);
   assert.ok(container.width - trailing.right <= card.left + 8, `${label}: ${TRAILING[host]} trails at the right edge (${trailing.right} of ${container.width})`);
 
+  // Neutral low-saturation elevated pill hierarchy for + and Model Capsule (no accent wash on body/border).
+  assert.ok(Math.abs(add.width - 28) <= 1 && Math.abs(add.height - 28) <= 1, `${label}: + trigger is 28x28 circle`);
+  assert.equal(visual.add.borderTopWidth, '1px', `${label}: + trigger has 1px subtle border`);
+  assert.match(visual.add.boxShadow, /inset/, `${label}: + trigger has top inset specular`);
+  assertNeutralColor(visual.add.backgroundColor, `${label}: + trigger background`);
+  assertNeutralColor(visual.add.borderTopColor, `${label}: + trigger border`);
+
+  assert.equal(visual.model.height, '28px', `${label}: Model Capsule height is 28px`);
+  assert.equal(visual.model.borderTopWidth, '1px', `${label}: Model Capsule has 1px subtle border`);
+  assert.match(visual.model.boxShadow, /inset/, `${label}: Model Capsule has top inset specular`);
+  assert.equal(visual.model.backgroundColor, visual.add.backgroundColor, `${label}: Model Capsule shares neutral pill background with +`);
+  assert.equal(visual.model.borderTopColor, visual.add.borderTopColor, `${label}: Model Capsule shares neutral pill border with +`);
   assert.equal(visual.model.before.content, '""', `${label}: Model Capsule renders CSS ::before star`);
   assert.equal(visual.model.before.width, '11px', `${label}: star width is 11px`);
   assert.equal(visual.model.before.height, '11px', `${label}: star height is 11px`);
@@ -230,14 +327,234 @@ async function assertTwoRow(page, host, label) {
     assert.ok(Number(visual.model.tier.fontWeight) >= 600, `${label}: tier label is semibold`);
   }
 
-  assert.equal(visual.attachment.borderRadius, '12px', `${label}: attachment preview renders as compact rounded-square card`);
+  assert.equal(visual.attachment.borderRadius, '8px', `${label}: attachment preview renders with compact balanced 8px optical radius`);
   assert.equal(visual.attachment.borderTopWidth, '1px', `${label}: attachment card carries 1px border`);
 
-  assert.ok(Math.abs(trailing.width - 30) <= 1 && Math.abs(trailing.height - 30) <= 1, `${label}: primary action is 30px circle (${trailing.width}x${trailing.height})`);
-  assert.ok(parseFloat(visual.primary.borderRadius) >= 999, `${label}: primary action is circular`);
-  const ratio = contrastRatio(visual.primary.color, visual.primary.backgroundColor);
-  assert.ok(ratio >= 4.5, `${label}: primary action icon contrast >= 4.5:1 (got ${ratio.toFixed(2)}:1)`);
+  // Idle Start Voice (ChatGPT) & Microphone (Gemini) render as transparent 28x28 ghost circular buttons (never solid primary action).
+  assert.equal(visual.trailing.primaryAttr, null, `${label}: idle ${TRAILING[host]} never receives data-op-composer-primary-action`);
+  assert.equal(visual.trailing.backgroundColor, 'rgba(0, 0, 0, 0)', `${label}: idle ${TRAILING[host]} uses transparent ghost background`);
+  assert.equal(visual.trailing.borderTopColor, 'rgba(0, 0, 0, 0)', `${label}: idle ${TRAILING[host]} uses transparent ghost border`);
+  assert.ok(Math.abs(trailing.width - 28) <= 1 && Math.abs(trailing.height - 28) <= 1, `${label}: idle ${TRAILING[host]} is 28x28 ghost circle (${trailing.width}x${trailing.height})`);
+  assert.ok(parseFloat(visual.trailing.borderRadius) >= 999, `${label}: idle ${TRAILING[host]} is circular`);
   return geometry;
+}
+
+/**
+ * Verifies v0.4.4 #47 optical contract dynamically without modifying shared live fixture files:
+ * - Corner presets (sharp 6px/4px, balanced 12px/8px, soft 16px/10px)
+ * - 4-sided 1px solid border + backdrop-filter: none surviving host border:0 / blur(12px) stress overrides
+ * - Calm resting state vs :hover / :focus-within 1px prismatic ::before rim (glow on/off, motion off, reduced motion)
+ * - Active Send (enabled >= 4.5:1 contrast & disabled subdued) and Stop 30x30 solid circular primary actions,
+ *   while Start Voice (including [data-composer-voice-start] with white paint) & Mic remain transparent ghost buttons.
+ */
+async function assertOpticalStatesAndActions(page, host, label, { testPresetsAndGlow = false } = {}) {
+  const s = LIVE_SELECTORS[host];
+  const surfaceSel = '[data-op-composer-surface="true"]';
+
+  // 1) Host border:0 + backdrop-filter:blur(12px) stress resistance
+  await page.evaluate(sel => {
+    const style = document.createElement('style');
+    style.id = 'op-v044-stress-style';
+    style.textContent = '.op-v044-host-reset{border:0 !important;border-style:none !important;backdrop-filter:blur(12px) !important;-webkit-backdrop-filter:blur(12px) !important}.op-v044-voice-pill{background:#ffffff;color:#000000;border:1px solid #ffffff}';
+    document.head.append(style);
+    document.querySelector(sel)?.classList.add('op-v044-host-reset');
+  }, surfaceSel);
+  const stressed = await page.locator(surfaceSel).evaluate(node => {
+    const st = getComputedStyle(node);
+    return {
+      borders: [st.borderTopWidth, st.borderRightWidth, st.borderBottomWidth, st.borderLeftWidth],
+      styles: [st.borderTopStyle, st.borderRightStyle, st.borderBottomStyle, st.borderLeftStyle],
+      backdrop: st.backdropFilter || st.webkitBackdropFilter || 'none'
+    };
+  });
+  assert.deepEqual(stressed.borders, ['1px', '1px', '1px', '1px'], `${label}: 1px border survives host border:0 !important reset`);
+  assert.deepEqual(stressed.styles, ['solid', 'solid', 'solid', 'solid'], `${label}: solid border survives host border-style:none !important reset`);
+  assert.equal(stressed.backdrop, 'none', `${label}: backdrop-filter:none survives host blur(12px) !important`);
+
+  // 2) Active Send (enabled + disabled) & Stop 30x30 solid circles, while Voice/Mic remain ghost
+  const voiceOrMicSel = s[TRAILING[host]];
+  await page.evaluate(({ host, voiceOrMicSel }) => {
+    const trailing = document.querySelector('[data-op-composer-toolbar="true"]');
+    const idleBtn = trailing?.querySelector(voiceOrMicSel);
+    if (host === 'chatgpt' && idleBtn) {
+      idleBtn.setAttribute('data-composer-voice-start', 'true');
+      idleBtn.classList.add('op-v044-voice-pill');
+    }
+    const send = document.createElement('button');
+    send.type = 'button';
+    send.id = 'op-v044-test-send';
+    send.setAttribute(host === 'chatgpt' ? 'data-testid' : 'data-test-id', 'send-button');
+    send.setAttribute('aria-label', host === 'chatgpt' ? 'Send prompt' : 'Send message');
+    send.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>';
+    trailing.append(send);
+    ObsidianPrismRuntime.refresh();
+  }, { host, voiceOrMicSel });
+  await page.waitForFunction(() => document.getElementById('op-v044-test-send')?.getAttribute('data-op-composer-primary-action') === 'true');
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+  const sendState = await page.evaluate(sel => {
+    const send = document.getElementById('op-v044-test-send');
+    const idle = document.querySelector(sel);
+    const ss = getComputedStyle(send);
+    const sr = send.getBoundingClientRect();
+    const is = idle ? getComputedStyle(idle) : null;
+    return {
+      send: { bg: ss.backgroundColor, color: ss.color, radius: ss.borderRadius, w: sr.width, h: sr.height, attr: send.getAttribute('data-op-composer-primary-action') },
+      idle: idle ? { bg: is.backgroundColor, border: is.borderTopColor, attr: idle.getAttribute('data-op-composer-primary-action') } : null
+    };
+  }, voiceOrMicSel);
+  assert.equal(sendState.send.attr, 'true');
+  assert.ok(Math.abs(sendState.send.w - 30) <= 1 && Math.abs(sendState.send.h - 30) <= 1, `${label}: enabled Send is 30x30 circle (${sendState.send.w}x${sendState.send.h})`);
+  assert.ok(parseFloat(sendState.send.radius) >= 999, `${label}: enabled Send is circular`);
+  const sendRatio = contrastRatio(sendState.send.color, sendState.send.bg);
+  assert.ok(sendRatio >= 4.5, `${label}: enabled Send contrast >= 4.5:1 (got ${sendRatio.toFixed(2)}:1)`);
+  assert.equal(sendState.idle.attr, null, `${label}: Start Voice/Mic stays unmarked alongside Send`);
+  assert.equal(sendState.idle.bg, 'rgba(0, 0, 0, 0)', `${label}: Start Voice with host white paint stays transparent ghost button`);
+
+  // Disabled Send -> subdued low-contrast neutral circle
+  await page.evaluate(() => { document.getElementById('op-v044-test-send').disabled = true; });
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const disabledSend = await page.evaluate(() => {
+    const send = document.getElementById('op-v044-test-send');
+    const ss = getComputedStyle(send);
+    return { bg: ss.backgroundColor, color: ss.color, bgImage: ss.backgroundImage };
+  });
+  assert.notEqual(disabledSend.bg, sendState.send.bg, `${label}: disabled Send uses subdued neutral circle distinct from active Send`);
+  assert.equal(disabledSend.bgImage, 'none', `${label}: disabled Send drops top sheen`);
+  const disabledBg = parseRgba(disabledSend.bg);
+  assert.ok(disabledBg && disabledBg.a <= 0.25, `${label}: disabled Send background is subdued low-opacity neutral (got ${disabledSend.bg})`);
+
+  // Active Stop button -> 30x30 solid circle with >= 4.5:1 contrast
+  await page.evaluate(({ host }) => {
+    const trailing = document.querySelector('[data-op-composer-toolbar="true"]');
+    const stop = document.createElement('button');
+    stop.type = 'button';
+    stop.id = 'op-v044-test-stop';
+    stop.setAttribute(host === 'chatgpt' ? 'data-testid' : 'data-test-id', 'stop-button');
+    stop.setAttribute('aria-label', host === 'chatgpt' ? 'Stop streaming' : 'Stop response');
+    stop.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="7" y="7" width="10" height="10" rx="2"/></svg>';
+    trailing.append(stop);
+    ObsidianPrismRuntime.refresh();
+  }, { host });
+  await page.waitForFunction(() => document.getElementById('op-v044-test-stop')?.getAttribute('data-op-composer-primary-action') === 'true');
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const stopState = await page.evaluate(() => {
+    const stop = document.getElementById('op-v044-test-stop');
+    const send = document.getElementById('op-v044-test-send');
+    const ss = getComputedStyle(stop);
+    const sr = stop.getBoundingClientRect();
+    return {
+      bg: ss.backgroundColor, color: ss.color, radius: ss.borderRadius, w: sr.width, h: sr.height,
+      sendAttr: send.getAttribute('data-op-composer-primary-action')
+    };
+  });
+  assert.ok(Math.abs(stopState.w - 30) <= 1 && Math.abs(stopState.h - 30) <= 1, `${label}: active Stop is 30x30 circle (${stopState.w}x${stopState.h})`);
+  assert.ok(parseFloat(stopState.radius) >= 999, `${label}: active Stop is circular`);
+  const stopRatio = contrastRatio(stopState.color, stopState.bg);
+  assert.ok(stopRatio >= 4.5, `${label}: active Stop contrast >= 4.5:1 (got ${stopRatio.toFixed(2)}:1)`);
+  assert.equal(stopState.sendAttr, null, `${label}: Send mark clears when Stop takes primary action`);
+
+  // Clean up dynamic stress/action test nodes
+  await page.evaluate(({ surfaceSel, voiceOrMicSel }) => {
+    document.getElementById('op-v044-test-send')?.remove();
+    document.getElementById('op-v044-test-stop')?.remove();
+    document.getElementById('op-v044-stress-style')?.remove();
+    const surf = document.querySelector(surfaceSel);
+    if (surf) {
+      surf.classList.remove('op-v044-host-reset');
+      if (!surf.getAttribute('class')) surf.removeAttribute('class');
+    }
+    const idleBtn = document.querySelector(voiceOrMicSel);
+    if (idleBtn) {
+      idleBtn.removeAttribute('data-composer-voice-start');
+      idleBtn.classList.remove('op-v044-voice-pill');
+      if (!idleBtn.getAttribute('class')) idleBtn.removeAttribute('class');
+    }
+    ObsidianPrismRuntime.refresh();
+  }, { surfaceSel, voiceOrMicSel });
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+  if (!testPresetsAndGlow) return;
+
+  // 3) Corner presets: sharp (6px/4px), balanced (12px/8px), soft (16px/10px)
+  for (const [preset, cardRadius, attachRadius] of [['sharp', '6px', '4px'], ['soft', '16px', '10px'], ['balanced', '12px', '8px']]) {
+    await patchConfig(page, { cornerStyle: preset });
+    await page.waitForFunction(p => document.documentElement.getAttribute('data-op-corners') === p, preset);
+    await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+    const radii = await page.evaluate(({ surfaceSel, attachSel }) => ({
+      card: getComputedStyle(document.querySelector(surfaceSel)).borderRadius,
+      attachment: getComputedStyle(document.querySelector(attachSel)).borderRadius
+    }), { surfaceSel, attachSel: s.attachment });
+    assert.equal(radii.card, cardRadius, `${label} corners=${preset}: card border-radius is ${cardRadius}`);
+    assert.equal(radii.attachment, attachRadius, `${label} corners=${preset}: attachment border-radius is ${attachRadius}`);
+  }
+
+  // 4) Prismatic 1px ::before rim & focus border feedback (motion enabled vs glow off vs motion off vs reduced motion)
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await patchConfig(page, { motionLevel: 'subtle', composerGlow: true });
+  await page.waitForFunction(() => document.documentElement.getAttribute('data-op-motion') === 'subtle' && document.documentElement.getAttribute('data-op-composer-glow') === 'true');
+  await page.mouse.move(2, 2);
+  await page.evaluate(() => document.activeElement?.blur?.());
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+
+  const readSurfaceState = () => page.evaluate(sel => {
+    const el = document.querySelector(sel);
+    const st = getComputedStyle(el);
+    const bf = getComputedStyle(el, '::before');
+    return {
+      borderColor: st.borderTopColor,
+      boxShadow: st.boxShadow,
+      beforeContent: bf.content,
+      beforeOpacity: bf.opacity,
+      beforePointerEvents: bf.pointerEvents,
+      beforeBgImage: bf.backgroundImage,
+      beforeMaskComposite: bf.maskComposite || bf.webkitMaskComposite || ''
+    };
+  }, surfaceSel);
+
+  const resting = await readSurfaceState();
+  assert.equal(resting.beforeContent, 'none', `${label}: resting state with motion+glow enabled still renders no ::before prismatic rim`);
+
+  await page.locator(surfaceSel).hover();
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const hovered = await readSurfaceState();
+  assert.equal(hovered.beforeContent, '""', `${label}: hovering with composerGlow=true renders 1px prismatic ::before rim`);
+  assert.equal(hovered.beforePointerEvents, 'none', `${label}: prismatic ::before rim never blocks clicks`);
+  assert.match(hovered.beforeBgImage, /gradient\(/, `${label}: prismatic ::before rim paints spectrum gradient`);
+  assert.match(hovered.beforeMaskComposite, /exclude|xor/i, `${label}: prismatic ::before rim punches out interior`);
+  assert.ok(parseFloat(hovered.beforeOpacity) > 0, `${label}: hovered prismatic ::before rim is visible`);
+
+  await page.mouse.move(2, 2);
+  await page.locator(`${CARD[host]} ${s.editor}`).click();
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const focusedGlow = await readSurfaceState();
+  assert.notEqual(focusedGlow.borderColor, resting.borderColor, `${label}: :focus-within blends accent into 1px border`);
+  assert.doesNotMatch(focusedGlow.boxShadow, /0px\s+0px\s+0px\s+3px/, `${label}: :focus-within never paints a 3px outer ring`);
+  assert.equal(focusedGlow.beforeContent, '""', `${label}: focused with composerGlow=true renders 1px prismatic ::before rim`);
+  assert.equal(focusedGlow.beforeOpacity, '1', `${label}: focused prismatic ::before rim reaches full visibility`);
+
+  await patchConfig(page, { composerGlow: false });
+  await page.waitForFunction(() => document.documentElement.getAttribute('data-op-composer-glow') === 'false');
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  const focusedNoGlow = await readSurfaceState();
+  assert.equal(focusedNoGlow.beforeContent, 'none', `${label}: composerGlow=false removes prismatic ::before rim on focus`);
+  assert.notEqual(focusedNoGlow.borderColor, resting.borderColor, `${label}: composerGlow=false keeps calm static accent focus border`);
+
+  await patchConfig(page, { composerGlow: true, motionLevel: 'off' });
+  await page.waitForFunction(() => document.documentElement.getAttribute('data-op-motion') === 'off');
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  assert.equal((await readSurfaceState()).beforeContent, 'none', `${label}: motionLevel=off suppresses prismatic ::before rim`);
+
+  await patchConfig(page, { motionLevel: 'subtle' });
+  await page.waitForFunction(() => document.documentElement.getAttribute('data-op-motion') === 'subtle');
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.waitForFunction(() => document.documentElement.getAttribute('data-op-motion') === 'off');
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
+  assert.equal((await readSurfaceState()).beforeContent, 'none', `${label}: prefers-reduced-motion:reduce suppresses prismatic ::before rim`);
+
+  await page.evaluate(() => document.activeElement?.blur?.());
+  await page.mouse.move(2, 2);
+  await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
 }
 
 /**
@@ -280,9 +597,25 @@ async function assertCompactEmptyHeaderAndGrowth(page, host, label, screenshotPa
 
   const single = await measureState();
   assert.ok(single.headerH <= 0.5, `${label}: empty attachment header collapses to 0px (got ${single.headerH}px)`);
-  assert.ok(single.cardH <= 86, `${label}: empty-header single-line composer card <= 86px (got ${single.cardH}px)`);
-  assert.ok(single.topGap <= 14, `${label}: editor sits cleanly below top padding (${single.topGap}px <= 14px)`);
-  assert.ok(single.toolbarGap >= 0 && single.toolbarGap <= 10, `${label}: tight gap between editor and toolbar (${single.toolbarGap}px)`);
+  assert.ok(single.editorH >= 36, `${label}: single-line editor has comfortable >= 36px height (got ${single.editorH}px)`);
+  assert.ok(single.cardH <= 108, `${label}: empty-header single-line composer card stays compact <= 108px (got ${single.cardH}px)`);
+  assert.ok(single.topGap <= 16, `${label}: editor sits cleanly below top padding (${single.topGap}px <= 16px)`);
+  assert.ok(single.toolbarGap >= 4 && single.toolbarGap <= 10, `${label}: balanced breathing gap between editor and toolbar (${single.toolbarGap}px)`);
+
+  // Placeholder uses muted low-saturation palette token (--op-placeholder).
+  const placeholderColors = await page.evaluate(({ host }) => {
+    const probe = document.createElement('span');
+    probe.style.color = 'var(--op-placeholder)';
+    document.body.append(probe);
+    const expected = getComputedStyle(probe).color;
+    probe.remove();
+    const target = host === 'chatgpt'
+      ? document.querySelector('#prompt-textarea p.placeholder')
+      : document.querySelector('.ql-editor.ql-blank');
+    const actual = target ? getComputedStyle(target, '::before').color : null;
+    return { expected, actual };
+  }, { host });
+  assert.equal(placeholderColors.actual, placeholderColors.expected, `${label}: empty editor placeholder uses muted --op-placeholder`);
 
   // Empty wrapper inside header also collapses cleanly.
   await page.evaluate(sel => {
@@ -418,6 +751,7 @@ export async function checkTwoRowComposer(suite) {
           [theme, palette]);
         await waitForShape(page, host, 'two-row', label);
         await assertTwoRow(page, host, label);
+        await assertOpticalStatesAndActions(page, host, label, { testPresetsAndGlow: palette === 'obsidian' || palette === 'crystal' });
         await assertHostNodesUnchanged(page, label);
         if (palette === 'obsidian') {
           // caret: 'initial' keeps Playwright from leaving an empty style attribute on the native editor.
@@ -657,7 +991,7 @@ async function checkWrappedChatGPTTrailing(suite) {
         });
         assert.equal(wrappedCompact.hdrEmptyAttr, 'true', `${label}: empty header gets data-op-composer-header-empty`);
         assert.ok(wrappedCompact.hdrH <= 0.5, `${label}: empty header collapses to 0px (got ${wrappedCompact.hdrH}px)`);
-        assert.ok(wrappedCompact.cardH <= 86, `${label}: wrapped compact card <= 86px (got ${wrappedCompact.cardH}px)`);
+        assert.ok(wrappedCompact.cardH <= 108, `${label}: wrapped compact card <= 108px (got ${wrappedCompact.cardH}px)`);
         await page.evaluate(() => {
           const hdr = document.querySelector('.composer-header');
           hdr.replaceChildren(...(window.__savedWrappedHdr || []));

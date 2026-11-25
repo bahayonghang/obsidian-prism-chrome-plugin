@@ -864,18 +864,26 @@ test('v0.4.0 #26: ChatGPT adapter resolves composerGrid.trailing, modelCapsuleSl
   assert.equal(resolvedGrid.trailing, trailing);
   assert.equal(adapter.modelCapsuleSlot(resolvedGrid.trailing, modelBtn), modelBtn);
   assert.deepEqual([...adapter.composerAttachments(composer)], [tile]);
-  assert.equal(adapter.composerPrimaryAction(composer), voiceBtn);
+  assert.equal(adapter.composerPrimaryAction(composer), null, 'idle Start Voice and Dictate never receive primary action');
 
-  // Exclude dictate (English & Chinese) and prefer send button over voice button when both exist.
+  // Strictly match real Send and Stop buttons only; never fall back to voice, dictate, or arbitrary buttons.
   const sendBtn = el('button', { type: 'button', 'data-testid': 'send-button', 'aria-label': 'Send prompt' });
   trailing.append(sendBtn);
   assert.equal(adapter.composerPrimaryAction(composer), sendBtn);
 
+  const stopBtn = el('button', { type: 'button', 'data-testid': 'stop-button', 'aria-label': 'Stop streaming' });
+  trailing.append(stopBtn);
+  assert.equal(adapter.composerPrimaryAction(composer), stopBtn, 'active Stop button resolves as primary action');
+
+  stopBtn.style.display = 'none';
+  assert.equal(adapter.composerPrimaryAction(composer), sendBtn);
+
   sendBtn.style.display = 'none';
-  voiceBtn.style.display = 'none';
   const zhDictate = el('button', { type: 'button', 'aria-label': '听写' });
-  trailing.append(zhDictate);
-  assert.equal(adapter.composerPrimaryAction(composer), null, 'never falls back to dictate, model, add, or attachment remove buttons');
+  const speechBtn = el('button', { type: 'button', 'data-testid': 'composer-speech-button', 'data-composer-voice-start': 'true', 'aria-label': 'Start Voice' });
+  const arbitraryBtn = el('button', { type: 'button', 'aria-label': 'Custom audio tool' });
+  trailing.append(zhDictate, speechBtn, arbitraryBtn);
+  assert.equal(adapter.composerPrimaryAction(composer), null, 'never falls back to voice, dictate, model, add, attachment remove, or arbitrary trailing buttons');
 
   // Positional grid (unnamed children) returns trailing === slots.trailing.
   for (const child of [header, leading, primary, trailing]) {
@@ -893,7 +901,7 @@ test('v0.4.0 #26: ChatGPT adapter resolves composerGrid.trailing, modelCapsuleSl
   assert.equal(adapter.modelCapsuleSlot(trailing, externalModel), null);
 });
 
-test('v0.4.0 #26: Gemini adapter resolves bard-mode-switcher capsule slot, trailing microphone fallback, and uploader-file-preview attachments', () => {
+test('v0.4.0 #26 / v0.4.4 #47: Gemini adapter resolves bard-mode-switcher capsule slot, uploader-file-preview attachments, and strict Send/Stop primary action', () => {
   const A = adapters();
   const { doc, body, el } = makeDoc('gemini');
   const chatWindow = el('chat-window');
@@ -918,9 +926,9 @@ test('v0.4.0 #26: Gemini adapter resolves bard-mode-switcher capsule slot, trail
   const modelBtn = el('button', { type: 'button', 'aria-label': 'Open mode picker, currently Neon High' }, { textContent: 'Neon High' });
   switcher.append(modelBtn);
   const chip = el('button', { type: 'button', class: 'toolbox-drawer-item-button' }, { textContent: 'Deep Research' });
-  // Unlabeled / localized fallback button inside trailing still resolves as primary action when not model/chip/dictate.
-  const idleMicFallback = el('button', { type: 'button', 'aria-label': 'Use audio input' });
-  trailing.append(switcher, chip, idleMicFallback);
+  const idleMicBtn = el('button', { type: 'button', 'aria-label': 'Microphone' });
+  const idleAudioBtn = el('button', { type: 'button', 'aria-label': 'Use audio input' });
+  trailing.append(switcher, chip, idleMicBtn, idleAudioBtn);
 
   grid.append(fileRow, leading, textWrap, trailing);
   inputArea.append(grid);
@@ -934,18 +942,25 @@ test('v0.4.0 #26: Gemini adapter resolves bard-mode-switcher capsule slot, trail
   assert.equal(resolvedGrid.trailing, trailing);
   assert.equal(adapter.modelCapsuleSlot(resolvedGrid.trailing, modelBtn), switcher);
   assert.deepEqual([...adapter.composerAttachments(inputArea)], [preview]);
-  assert.equal(adapter.composerPrimaryAction(inputArea), idleMicFallback);
+  assert.equal(adapter.composerPrimaryAction(inputArea), null, 'idle Microphone and unlabeled audio buttons never receive primary action');
 
   const sendBtn = el('button', { type: 'button', 'data-test-id': 'send-button', 'aria-label': 'Send message' });
   trailing.append(sendBtn);
   assert.equal(adapter.composerPrimaryAction(inputArea), sendBtn);
+
+  const stopBtn = el('button', { type: 'button', 'data-test-id': 'stop-response-button', 'aria-label': 'Stop response' });
+  trailing.append(stopBtn);
+  assert.equal(adapter.composerPrimaryAction(inputArea), stopBtn);
+
+  stopBtn.style.display = 'none';
+  assert.equal(adapter.composerPrimaryAction(inputArea), sendBtn);
   assert.equal(adapter.composerCardSurface(grid), inputArea, 'Gemini composerCardSurface resolves enclosing input-area-v2');
 });
 
-test('primaryAction tier priority: Send beats Voice and Microphone even when Send precedes them in DOM order', () => {
+test('v0.4.4 #47 primaryAction strict matching: only real Send and Stop/Cancel buttons match across ChatGPT and Gemini', () => {
   const A = adapters();
 
-  // ChatGPT: [sendBtn, voiceBtn, micBtn] in DOM order -> Send must win over Voice & Microphone.
+  // ChatGPT: Stop > Send, while Voice, Start Voice, Stop Voice, Microphone, Dictate and arbitrary buttons return null.
   {
     const { doc, body, el } = makeDoc('chatgpt');
     const composer = el('div', { 'data-composer-layout': 'single-line' });
@@ -955,23 +970,27 @@ test('primaryAction tier priority: Send beats Voice and Microphone even when Sen
     primary.append(el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' }));
     const trailing = el('div', {}, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridColumnStart: 'trailing' } });
     const sendBtn = el('button', { type: 'button', 'data-testid': 'send-button', 'aria-label': 'Send prompt' });
-    const voiceBtn = el('button', { type: 'button', 'data-testid': 'composer-speech-button', 'aria-label': 'Start Voice' });
+    const stopBtn = el('button', { type: 'button', 'data-testid': 'stop-button', 'aria-label': 'Stop generating' });
+    const voiceBtn = el('button', { type: 'button', 'data-testid': 'composer-speech-button', 'data-composer-voice-start': 'true', 'aria-label': 'Start Voice' });
+    const stopVoiceBtn = el('button', { type: 'button', 'aria-label': 'Stop Voice' });
     const micBtn = el('button', { type: 'button', 'aria-label': 'Microphone' });
-    trailing.append(sendBtn, voiceBtn, micBtn);
+    const dictateBtn = el('button', { type: 'button', 'aria-label': 'Dictate' });
+    const zhVoiceBtn = el('button', { type: 'button', 'aria-label': '开始语音对话' });
+    trailing.append(sendBtn, stopBtn, voiceBtn, stopVoiceBtn, micBtn, dictateBtn, zhVoiceBtn);
     grid.append(leading, primary, trailing);
     composer.append(grid);
     body.append(composer);
 
     const adapter = A.forHost('chatgpt', doc);
     assert.equal(adapter.composerCardSurface(composer), composer);
-    assert.equal(adapter.composerPrimaryAction(composer), sendBtn, 'ChatGPT Tier 1 Send beats later Tier 2 Voice and Tier 3 Microphone');
+    assert.equal(adapter.composerPrimaryAction(composer), stopBtn, 'ChatGPT active Stop beats Send, Voice and Microphone');
+    stopBtn.style.display = 'none';
+    assert.equal(adapter.composerPrimaryAction(composer), sendBtn, 'ChatGPT active Send beats Voice and Microphone');
     sendBtn.style.display = 'none';
-    assert.equal(adapter.composerPrimaryAction(composer), voiceBtn, 'ChatGPT Tier 2 Voice beats later Tier 3 Microphone');
-    voiceBtn.style.display = 'none';
-    assert.equal(adapter.composerPrimaryAction(composer), micBtn, 'ChatGPT falls back to Tier 3 Microphone when Send/Voice hidden');
+    assert.equal(adapter.composerPrimaryAction(composer), null, 'ChatGPT returns null when only Voice, Stop Voice, Microphone, or Dictate are visible');
   }
 
-  // Gemini: [sendBtn, micBtn] in DOM order -> Send must win over Microphone.
+  // Gemini: Stop > Send, while Microphone, Voice, Dictate and arbitrary buttons return null.
   {
     const { doc, body, el } = makeDoc('gemini');
     const inputArea = el('input-area-v2');
@@ -981,17 +1000,22 @@ test('primaryAction tier priority: Send beats Voice and Microphone even when Sen
     textWrap.append(el('div', { class: 'ql-editor', contenteditable: 'true', role: 'textbox' }));
     const trailing = el('div', {}, { style: { display: 'flex', visibility: 'visible', opacity: '1', gridColumnStart: 'trailing-actions' } });
     const sendBtn = el('button', { type: 'button', 'data-test-id': 'send-button', 'aria-label': 'Send message' });
+    const stopBtn = el('button', { type: 'button', 'data-test-id': 'stop-button', 'aria-label': 'Stop response' });
     const micBtn = el('button', { type: 'button', 'aria-label': 'Microphone' });
-    trailing.append(sendBtn, micBtn);
+    const zhMicBtn = el('button', { type: 'button', 'aria-label': '麦克风' });
+    const voiceBtn = el('button', { type: 'button', 'aria-label': 'Use voice' });
+    trailing.append(sendBtn, stopBtn, micBtn, zhMicBtn, voiceBtn);
     grid.append(leading, textWrap, trailing);
     inputArea.append(grid);
     body.append(inputArea);
 
     const adapter = A.forHost('gemini', doc);
     assert.equal(adapter.composerCardSurface(grid), inputArea);
-    assert.equal(adapter.composerPrimaryAction(inputArea), sendBtn, 'Gemini Tier 1 Send beats later Tier 3 Microphone');
+    assert.equal(adapter.composerPrimaryAction(inputArea), stopBtn, 'Gemini active Stop beats Send and Microphone');
+    stopBtn.style.display = 'none';
+    assert.equal(adapter.composerPrimaryAction(inputArea), sendBtn, 'Gemini active Send beats Microphone');
     sendBtn.style.display = 'none';
-    assert.equal(adapter.composerPrimaryAction(inputArea), micBtn, 'Gemini falls back to Tier 3 Microphone when Send hidden');
+    assert.equal(adapter.composerPrimaryAction(inputArea), null, 'Gemini returns null when only Microphone or Voice are visible');
   }
 
   assert.deepEqual(JSON.parse(JSON.stringify(A.dockEdgeMargin(1280))), { right: 20, bottom: 18 });
@@ -1473,7 +1497,7 @@ test('v0.4.1 #30: findComposerBackdrops covers depth<=14, fade-mask, container f
   {
     const g = makeDoc('gemini');
     const gMain = g.el('chat-window');
-    const inputContainer = g.el('input-container', { class: 'input-gradient' }, { rect: { left: 0, right: 1280, top: 760, bottom: 900, width: 1280, height: 140 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'absolute' } });
+    const inputContainer = g.el('input-container', { class: 'input-gradient input-gradient-overlay edge-to-edge' }, { rect: { left: 0, right: 1280, top: 760, bottom: 900, width: 1280, height: 140 }, style: { display: 'block', visibility: 'visible', opacity: '1', position: 'absolute' } });
     const areaContainer = g.el('div', { class: 'input-area-container' }, { rect: { left: 310, right: 970, top: 780, bottom: 880, width: 660, height: 100 } });
     const inputAreaCard = g.el('input-area-v2', {}, { rect: { left: 310, right: 970, top: 780, bottom: 880, width: 660, height: 100 } });
     const textInputField = g.el('div', { class: 'text-input-field' }, { rect: { left: 322, right: 958, top: 788, bottom: 872, width: 636, height: 84 } });
@@ -1488,6 +1512,7 @@ test('v0.4.1 #30: findComposerBackdrops covers depth<=14, fade-mask, container f
     const gemBackdrops = gemAdapter.composerBackdropSurfaces(textInputField);
     assert.equal(gemBackdrops.includes(inputAreaCard), false, 'never returns composerCard (input-area-v2) as backdrop');
     assert.equal(gemBackdrops.includes(textInputField), false, 'never returns composer (.text-input-field) as backdrop');
+    assert.equal(gemBackdrops.includes(areaContainer), true, 'collects inner .input-area-container dock wrapper');
     assert.equal(gemBackdrops.includes(inputContainer), true, 'still collects outer input-container');
     assert.equal(gemAdapter.composerScrimSurface(textInputField), inputContainer, 'composerScrimSurface still resolves outer input-container');
   }
@@ -1868,14 +1893,16 @@ test('v0.4.1 #28: composerBelowSiblings collapses hidden-content shells (hidden 
   assert.deepEqual([...res.disclaimers], []);
 });
 
-test('v0.4.1 review: adapters expose per-host scrim and scroller Alpha fade capability flags', () => {
+test('v0.4.4 #45: adapters unify both hosts on transparent docks (usesOverlayScrim: false) and scope Gemini backdrops to active conversations', () => {
   const A = adapters();
   const chatgpt = A.forHost('chatgpt', {});
   const gemini = A.forHost('gemini', {});
   assert.equal(chatgpt.usesOverlayScrim, false);
   assert.equal(chatgpt.usesScrollerAlphaFade, true);
-  assert.equal(gemini.usesOverlayScrim, true);
+  assert.equal(chatgpt.conversationOnlyBackdrops, false);
+  assert.equal(gemini.usesOverlayScrim, false);
   assert.equal(gemini.usesScrollerAlphaFade, false);
+  assert.equal(gemini.conversationOnlyBackdrops, true);
 });
 
 test('v0.4.1 review: adapters own ChatGPT .code-shell and Gemini well/header/surface resolution without sibling leakage', () => {
@@ -1937,4 +1964,97 @@ test('v0.4.1 review: adapters own ChatGPT .code-shell and Gemini well/header/sur
   assert.equal(gmAdapter.codeSurfaceFor(gmBarePre), gmBarePre);
   assert.equal(gmAdapter.codeHeaderFor(gmBarePre, gmBarePre), null);
   assert.equal(gmAdapter.codeWellFor(gmBarePre, gmBarePre), gmBarePre);
+});
+
+test('v0.4.4 #46: ChatGPT threadColumns ignores outer --thread-content-* app-shell wrappers and wrappers containing the scroller while keeping real columns', () => {
+  const A = adapters();
+  const { doc, body, el } = makeDoc('chatgpt');
+  const block = (extra = {}) => ({ display: 'block', visibility: 'visible', opacity: '1', position: 'static', ...extra });
+  const main = el('main', { id: 'main' }, { style: block({ position: 'relative' }) });
+  const outer1 = el('div', { class: 'app-shell-main-content [--thread-content-top-inset:0px]' }, { style: block({ display: 'flex' }) });
+  const outer2 = el('div', { class: '[--thread-content-responsive-max-width:48rem]' }, { style: block({ display: 'flex' }) });
+  const outer3 = el('div', { class: 'group/thread-scroll-layout [--thread-content-x:initial]' }, { style: block({ display: 'flex', position: 'relative' }) });
+  const outerRealClass = el('div', { class: 'thread-content' }, { style: block({ display: 'flex' }) });
+  const scroller = el('div', { class: 'thread-scroll-container' }, { style: block({ overflowY: 'auto' }) });
+  const innerVarShell = el('div', { class: 'flex max-w-(--thread-content-max-width) [--thread-content-max-width:48rem]' }, { style: block() });
+  const transcript = el('div', { class: 'transcriptContent_q8xz [--thread-content-max-width:48rem]' }, { style: block() });
+  const turn = el('div', { 'data-turn-key': 't1' });
+  turn.append(el('div', { 'data-content-search-unit-key': 'c:0:assistant', 'data-markdown-text-style': 'assistant-message' }, { textContent: 'Answer' }));
+  transcript.append(turn);
+  innerVarShell.append(transcript);
+  scroller.append(innerVarShell);
+  outerRealClass.append(scroller);
+  outer3.append(outerRealClass);
+  outer2.append(outer3);
+  outer1.append(outer2);
+  main.append(outer1);
+  body.append(main);
+
+  const adapter = A.forHost('chatgpt', doc);
+  const cols = [...adapter.threadColumns()];
+  assert.deepEqual(cols, [transcript], 'only genuine transcriptContent inside scroller is marked; outer --thread-content-* and scroller-wrapping nodes are excluded');
+
+  // Genuine .thread-content inside the scroller STILL matches.
+  const genuine = el('div', { class: 'thread-content_real' }, { style: block() });
+  transcript.setAttribute('class', 'plain-box');
+  genuine.append(turn);
+  scroller.append(genuine);
+  assert.deepEqual([...adapter.threadColumns()], [genuine], 'genuine thread-content class inside scroller still matches');
+
+  // Home State (no turns): outer --thread-content-* wrappers still excluded.
+  genuine.children.length = 0;
+  assert.equal(adapter.threadColumns().includes(outer1), false);
+  assert.equal(adapter.threadColumns().includes(outer2), false);
+  assert.equal(adapter.threadColumns().includes(outer3), false);
+});
+
+test('v0.4.4 #46: threadFooterLayer resolves live Thread Footer for spacing/disclaimer scanning without making it the dock host', () => {
+  const t = liveThreadFooterDoc({ markers: true, conversation: true });
+  const block = { display: 'block', visibility: 'visible', opacity: '1', position: 'static' };
+  assert.equal(t.adapter.composerScrimSurface(t.composer), null, 'Thread Footer never becomes data-op-composer-dock');
+  assert.equal(t.adapter.threadFooterLayer(t.composer), t.footer, 'threadFooterLayer resolves outermost Thread Footer layer in active conversation');
+
+  // Home State returns null.
+  const home = liveThreadFooterDoc({ markers: true, conversation: false });
+  assert.equal(home.adapter.threadFooterLayer(home.composer), null, 'Home State leaves threadFooterLayer null');
+
+  // Markerless absolute footer inside conversation scroller still resolves via fallback.
+  const noMarkers = liveThreadFooterDoc({ markers: false, conversation: true });
+  assert.equal(noMarkers.adapter.threadFooterLayer(noMarkers.composer), noMarkers.footer, 'markerless Thread Footer fallback resolves footer layer');
+
+  // Inner empty spacer & disclaimer inside Thread Footer are detected while preserving menu/dialog/turns.
+  const { doc, body, el } = makeDoc('chatgpt');
+  const band = { left: 0, right: 1280, top: 740, bottom: 900, width: 1280, height: 160 };
+  const main = el('main', { id: 'main' }, { rect: { left: 0, right: 1280, top: 0, bottom: 900, width: 1280, height: 900 }, style: { ...block, position: 'relative' } });
+  const scroller = el('div', { class: 'thread-scroll-container' }, { rect: { left: 0, right: 1280, top: 52, bottom: 900, width: 1280, height: 848 }, style: { ...block, overflowY: 'auto' } });
+  const turn = el('div', { 'data-turn-key': 't1' });
+  turn.append(el('div', { 'data-content-search-unit-key': 'c:1:assistant', 'data-markdown-text-style': 'assistant-message' }, { textContent: 'Reply' }));
+  const footer = el('div', { class: 'footer-A8ZvKV' }, { rect: band, style: { ...block, position: 'absolute', zIndex: '20' } });
+  const scrollFooter = el('div', { 'data-thread-scroll-footer': 'true' }, { rect: band, style: block });
+  const backdrop = el('div', { 'data-thread-composer-backdrop': 'true' }, { rect: { left: 236, right: 1044, top: 744, bottom: 844, width: 808, height: 100 }, style: block });
+  const innerSpacer = el('div', { class: 'thread-footer-spacer_v4' }, { rect: { left: 236, right: 1044, top: 844, bottom: 856, width: 808, height: 12 }, style: block });
+  const innerDisclaimer = el('div', { class: 'disclaimer_v7rk' }, { textContent: 'ChatGPT can make mistakes. Check important info.', rect: { left: 236, right: 1044, top: 856, bottom: 892, width: 808, height: 36 }, style: block });
+  const innerMenu = el('div', { role: 'menu' }, { textContent: 'Model menu', rect: { left: 300, right: 500, top: 600, bottom: 720, width: 200, height: 120 }, style: { ...block, position: 'absolute' } });
+  const innerDialog = el('div', { role: 'dialog' }, { textContent: 'Upload dialog', rect: { left: 400, right: 800, top: 300, bottom: 500, width: 400, height: 200 }, style: { ...block, position: 'fixed' } });
+  const form = el('form', { 'data-chatgpt-composer': '' }, { rect: { left: 256, right: 1024, top: 744, bottom: 844, width: 768, height: 100 }, style: block });
+  const composer = el('div', { 'data-composer-layout': 'single-line' }, { rect: { left: 256, right: 1024, top: 744, bottom: 844, width: 768, height: 100 }, style: { ...block, backgroundColor: 'rgb(48, 48, 48)' } });
+  composer.append(el('div', { id: 'prompt-textarea', contenteditable: 'true', role: 'textbox' }, { rect: { left: 300, right: 900, top: 780, bottom: 810, width: 600, height: 30 } }));
+  form.append(composer);
+  backdrop.append(form);
+  scrollFooter.append(backdrop, innerSpacer, innerDisclaimer, innerMenu, innerDialog);
+  footer.append(scrollFooter);
+  scroller.append(turn, footer);
+  main.append(scroller);
+  body.append(main);
+
+  const adapter = adapters().forHost('chatgpt', doc);
+  const layer = adapter.threadFooterLayer(composer);
+  assert.equal(layer, footer);
+  const below = adapter.composerBelowSiblings(composer);
+  assert.equal(below.empty.includes(innerSpacer), true, 'detects empty spacer inside Thread Footer');
+  assert.equal(below.disclaimers.includes(innerDisclaimer), true, 'detects inner disclaimer inside Thread Footer');
+  for (const safe of [innerMenu, innerDialog, turn, composer, form]) {
+    assert.equal(below.empty.includes(safe), false);
+    assert.equal(below.disclaimers.includes(safe), false);
+  }
 });

@@ -695,17 +695,17 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
   const snap = await composerControlsSnapshot(page);
   assert.ok(snap.composer && snap.editor && snap.tools && snap.addBtn && snap.modelBtn && snap.primaryAction && snap.chip, `${host} ${palette}: all composer & capsule nodes must exist`);
 
-  assert.equal(snap.composer.style.paddingTop, '8px');
+  assert.equal(snap.composer.style.paddingTop, '10px');
   assert.equal(snap.composer.style.paddingRight, '12px');
-  assert.equal(snap.composer.style.paddingBottom, '7px');
+  assert.equal(snap.composer.style.paddingBottom, '8px');
   assert.equal(snap.composer.style.paddingLeft, '12px');
-  assert.equal(snap.composer.style.borderRadius, '16px');
+  assert.equal(snap.composer.style.borderRadius, '12px');
   assert.equal(snap.composer.style.borderTopWidth, '1px');
   assert.equal(snap.composer.style.outlineStyle, 'none');
   assert.match(snap.composer.style.boxShadow, /inset/);
   assert.equal(snap.composer.parentTag, nativeControls.composer.parentTag);
 
-  assert.ok(parseFloat(snap.editor.style.minHeight) >= 24 && parseFloat(snap.editor.style.minHeight) <= 28, `${host} ${palette}: editor min-height in [24, 28]`);
+  assert.ok(parseFloat(snap.editor.style.minHeight) >= 36 && parseFloat(snap.editor.style.minHeight) <= 44, `${host} ${palette}: editor min-height in [36, 44]`);
   assert.equal(snap.editor.style.paddingBottom, '2px', `${host} ${palette}: editor padding-bottom is 2px`);
   assert.notEqual(snap.editor.style.caretColor, nativeControls.editor.style.caretColor);
   assert.equal(snap.tools.style.marginTop, '6px');
@@ -727,11 +727,11 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
   assert.ok(parseFloat(snap.modelBtn.style.borderTopWidth) >= 1);
   assert.ok(['inline-flex', 'flex'].includes(snap.modelBtn.style.display), `${host} ${palette}: model capsule uses flex layout, got ${snap.modelBtn.style.display}`);
   assert.equal(snap.modelBtn.style.alignItems, 'center');
-  assert.equal(snap.modelBtn.style.paddingTop, '3px');
-  assert.equal(snap.modelBtn.style.paddingLeft, '9px');
+  assert.equal(snap.modelBtn.style.paddingLeft, '8px');
   assert.equal(snap.modelBtn.style.minHeight, '28px');
   assert.equal(snap.modelBtn.style.height, '28px');
   assert.equal(snap.modelBtn.style.gap, '6px');
+  assert.equal(snap.modelBtn.style.backgroundColor, snap.addBtn.style.backgroundColor, `${host} ${palette}: model capsule shares neutral pill fill with +`);
   assert.notEqual(snap.modelBtn.style.backgroundColor, nativeControls.modelBtn.style.backgroundColor);
   assert.equal(snap.modelBtn.before.content, '""');
   assert.equal(snap.modelBtn.before.width, '11px');
@@ -910,13 +910,27 @@ async function exerciseHomeEffects(browser, host) {
 
     const editor = page.locator('[data-fixture-composer] [contenteditable="true"]');
     await editor.click();
-    const focusedGlow = await settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow');
+    const readRim = () => page.evaluate(() => {
+      const el = document.querySelector('[data-fixture-composer]');
+      const bf = getComputedStyle(el, '::before');
+      return {
+        focused: el.matches(':focus-within'),
+        content: bf.content,
+        opacity: bf.opacity,
+        bgImage: bf.backgroundImage,
+        maskComposite: bf.maskComposite || bf.webkitMaskComposite || ''
+      };
+    });
+    const focusedGlow = await readRim();
     assert.equal(focusedGlow.focused, true);
+    assert.equal(focusedGlow.content, '""', 'composerGlow=true renders 1px prismatic ::before rim on focus');
+    assert.match(focusedGlow.maskComposite, /exclude|xor/i, 'prismatic ::before rim uses exclude/xor mask-composite');
     await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-home-focused.png`) });
     await page.evaluate(() => __prismFixture.patch({ composerGlow: false }));
-    const focusedPlain = await settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow');
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-composer-glow') === 'false');
+    const focusedPlain = await readRim();
     assert.equal(focusedPlain.focused, true, 'changing glow preserves native editor focus');
-    assert.notEqual(focusedGlow.value, focusedPlain.value, 'composer glow switch changes the settled focused shell shadow');
+    assert.equal(focusedPlain.content, 'none', 'composerGlow=false removes the prismatic ::before rim');
     await page.evaluate(() => __prismFixture.patch({ composerGlow: true }));
     await exerciseNativeComposer(page);
 
@@ -1340,7 +1354,7 @@ async function exerciseFixture(browser, host) {
     assert.equal(stopped.formulaBlocks, 0);
     assert.equal(stopped.thoughtBlocks, 0);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
-    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-sidebar-active-tile="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-code-icon-fill="true"],[data-op-code-icon-stroke="true"],[data-op-formula-source-hidden="true"],[data-op-composer-dock="true"],[data-op-composer-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"],[data-op-composer-grid="true"],[data-op-composer-header-empty="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-sidebar-active-tile="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-code-icon-fill="true"],[data-op-code-icon-stroke="true"],[data-op-formula-source-hidden="true"],[data-op-composer-dock="true"],[data-op-thread-footer="true"],[data-op-composer-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"],[data-op-composer-grid="true"],[data-op-composer-header-empty="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-enabled')), false);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-instance')), false);
