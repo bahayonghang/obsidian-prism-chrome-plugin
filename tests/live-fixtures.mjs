@@ -307,16 +307,68 @@ async function assertNativeBelowComposer(page, host) {
   const s = LIVE_SELECTORS[host];
   const below = await sampleBelow(page, s.composer, { offsetX: 6, offsetY: 6 });
   if (host === 'gemini') {
-    const layer = await page.locator(s.inputGradient).evaluate(node => {
+    const layer = await page.locator(s.inputGradient).evaluate((node, { mainSel, areaSel }) => {
       const style = getComputedStyle(node);
-      return { position: style.position, image: style.backgroundImage, height: node.getBoundingClientRect().height };
-    });
+      const before = getComputedStyle(node, '::before');
+      const after = getComputedStyle(node, '::after');
+      const rect = node.getBoundingClientRect();
+      const mainRect = document.querySelector(mainSel).getBoundingClientRect();
+      const areaRect = document.querySelector(areaSel).getBoundingClientRect();
+      return {
+        classes: [...node.classList],
+        position: style.position,
+        image: style.backgroundImage,
+        beforeImage: before.backgroundImage,
+        afterBg: after.backgroundColor,
+        height: rect.height,
+        top: rect.top,
+        bottom: rect.bottom,
+        width: rect.width,
+        mainWidth: mainRect.width,
+        leftWing: areaRect.left - rect.left,
+        rightWing: rect.right - areaRect.right,
+        leftSample: { x: Math.round(rect.left + (areaRect.left - rect.left) / 2) - 8, y: Math.round(areaRect.top + areaRect.height / 2) - 4, width: 16, height: 8 },
+        rightSample: { x: Math.round(areaRect.right + (rect.right - areaRect.right) / 2) - 8, y: Math.round(areaRect.top + areaRect.height / 2) - 4, width: 16, height: 8 },
+        aboveSample: { x: Math.round(rect.left + (areaRect.left - rect.left) / 2) - 8, y: Math.round(rect.top - 28), width: 16, height: 8 }
+      };
+    }, { mainSel: s.main, areaSel: s.inputAreaContainer });
+    assert.ok(
+      layer.classes.includes('input-gradient-overlay') && layer.classes.includes('edge-to-edge'),
+      `gemini: native input-container reproduces full-width edge-to-edge gradient overlay classes (${layer.classes.join(' ')})`
+    );
     assert.equal(layer.position, 'absolute', 'gemini: native input gradient is absolutely positioned');
     assert.match(layer.image, /linear-gradient/, 'gemini: native input layer paints a gradient');
+    assert.match(layer.beforeImage, /linear-gradient/, 'gemini: native input layer ::before paints a gradient');
+    assert.equal(layer.afterBg, 'rgb(19, 19, 20)', 'gemini: native input layer ::after paints near-black base');
     // ~133px without attachments (probe); the fixture's attachment row makes it taller.
     assert.ok(layer.height >= NATIVE_BASELINES.gemini.gradientHeight - 2, `gemini: native input gradient is at least ~133px tall, got ${layer.height}`);
+    near(layer.width, layer.mainWidth, 1, 'gemini: edge-to-edge input-container spans full chat-window width');
+    assert.ok(layer.leftWing >= 200 && layer.rightWing >= 200, `gemini: narrow 660px input area leaves wide left/right wings (${layer.leftWing}/${layer.rightWing}px)`);
     const { r, g, b, a } = below.pixel;
     assert.ok(a === 255 && Math.max(r, g, b) <= 32, `gemini: native paint below the composer is opaque near-black, got rgba(${r},${g},${b},${a})`);
+
+    // Prove without extension that the native dark gradient band occludes both left/right wings and below the composer.
+    await page.locator(s.main).evaluate((main, top) => {
+      const probe = document.createElement('div');
+      probe.id = 'prism-native-wing-probe';
+      probe.style.cssText = `position:fixed;left:0;right:0;top:${Math.round(top - 48)}px;bottom:0;z-index:0;pointer-events:none;background:#ffffff`;
+      main.prepend(probe);
+    }, layer.top);
+    try {
+      await settle(page);
+      const aboveMean = (await regionStats(page, layer.aboveSample)).mean;
+      const leftMean = (await regionStats(page, layer.leftSample)).mean;
+      const rightMean = (await regionStats(page, layer.rightSample)).mean;
+      const belowProbe = await sampleBelow(page, s.composer, { offsetX: 6, offsetY: 6 });
+      assert.ok(Math.min(aboveMean.r, aboveMean.g, aboveMean.b) >= 245, `gemini native probe above input-container stays unoccluded (${JSON.stringify(aboveMean)})`);
+      for (const [wingName, mean] of [['left wing', leftMean], ['right wing', rightMean]]) {
+        assert.ok(Math.max(mean.r, mean.g, mean.b) <= 32, `gemini native ${wingName} paints opaque dark gradient band (${JSON.stringify(mean)})`);
+      }
+      assert.ok(Math.max(belowProbe.pixel.r, belowProbe.pixel.g, belowProbe.pixel.b) <= 32, `gemini native below composer paints opaque dark gradient band (${JSON.stringify(belowProbe.pixel)})`);
+    } finally {
+      await page.evaluate(() => document.getElementById('prism-native-wing-probe')?.remove());
+      await settle(page);
+    }
   } else {
     const dock = await page.evaluate(({ bottomDock, scroller, composer, belowSpacer }) => {
       const dockNode = document.querySelector(bottomDock);
