@@ -1,7 +1,13 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const vm = require('node:vm');
 const { harness } = require('./helpers.cjs');
+
+function clearRuntimeGlobal(ctx) {
+  vm.runInContext('delete globalThis.ObsidianPrismRuntime;', ctx.h.context);
+  delete ctx.h.context.ObsidianPrismRuntime;
+}
 
 function createRuntimeDom(initialConfig = {}, options = {}) {
   const host = options.host || 'chatgpt';
@@ -924,7 +930,7 @@ test('v0.4.0 #27: runtime prunes orphan roots, hands over singleton ownership wi
 
   // Pre-seed orphan nodes before a new runtime boots (reset state by loading a fresh runtime below).
   ctx.runtime.stop();
-  delete ctx.h.context.ObsidianPrismRuntime;
+  clearRuntimeGlobal(ctx);
 
   const makeOrphan = (tag, id, cls) => {
     const n = ctx.h.context.document.createElement(tag);
@@ -975,7 +981,7 @@ test('v0.4.0 #27: runtime prunes orphan roots, hands over singleton ownership wi
   const ambient1 = primary.querySelector('#op-ambient-stage');
 
   // Inject second runtime instance (simulating extension reload / re-injection).
-  delete ctx.h.context.ObsidianPrismRuntime;
+  clearRuntimeGlobal(ctx);
   ctx.h.load('src/content.js');
   await new Promise(resolve => setTimeout(resolve, 25));
 
@@ -1055,7 +1061,7 @@ test('v0.4.0 #27: runtime wires syncDockAvoidance and syncDockPopoverPosition wi
 
   // Replace runtime with a fresh one using our cornerFloatingObstacles hook.
   ctx.runtime.stop();
-  delete ctx.h.context.ObsidianPrismRuntime;
+  clearRuntimeGlobal(ctx);
   const baseAdapter = realAdapters.forHost('chatgpt');
   ctx.h.context.ObsidianPrismAdapters = {
     ...realAdapters,
@@ -1179,7 +1185,7 @@ test('v0.4.0 handover: same-realm double-injection keeps active marks flicker-fr
   };
 
   // Second instance takes over (same-realm double injection).
-  delete ctx.h.context.ObsidianPrismRuntime;
+  clearRuntimeGlobal(ctx);
   ctx.h.load('src/content.js');
   await new Promise(resolve => setTimeout(resolve, 25));
 
@@ -1233,7 +1239,7 @@ test('v0.4.0 handover: same-realm double-injection keeps active marks flicker-fr
   // Re-enable -> double-inject again -> stop() also leaves zero residue.
   await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', { [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'obsidian', themeMode: 'dark', contentWidth: 'full' } });
   await new Promise(resolve => setTimeout(resolve, 15));
-  delete ctx.h.context.ObsidianPrismRuntime;
+  clearRuntimeGlobal(ctx);
   ctx.h.load('src/content.js');
   await new Promise(resolve => setTimeout(resolve, 25));
   ctx.h.context.ObsidianPrismRuntime.stop();
@@ -2254,7 +2260,7 @@ test('v0.4.5 #51: scroll ignores sidebar/code scrollers, decouples cornerFloatin
   const e = Object.fromEntries(ctx.elements);
   // Recreate fresh runtime with captured scroll listener & controllable rAF
   ctx.runtime.stop();
-  delete ctx.h.context.ObsidianPrismRuntime;
+  clearRuntimeGlobal(ctx);
 
   e.primary.append(e.scrollerEl);
   e.scrollerEl.append(e.assistantTurn);
