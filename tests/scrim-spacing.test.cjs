@@ -5,8 +5,22 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { ROOT } = require('./helpers.cjs');
 
-const hostsCss = fs.readFileSync(path.join(ROOT, 'styles/hosts.css'), 'utf8');
+const CSS_FILES = ['styles/common.css', 'styles/host-chatgpt.css', 'styles/host-gemini.css'].map(rel =>
+  fs.readFileSync(path.join(ROOT, rel), 'utf8')
+);
+const hostsCss = CSS_FILES.join('\n');
 const SECTION_MARKER = '/* === Bottom Spacing & Composer Scrim (v0.3.0) === */';
+
+function collectSection(marker) {
+  const parts = [];
+  for (const css of CSS_FILES) {
+    const idx = css.indexOf(marker);
+    if (idx === -1) continue;
+    const nextIdx = css.indexOf('/* === ', idx + marker.length);
+    parts.push(nextIdx === -1 ? css.slice(idx) : css.slice(idx, nextIdx));
+  }
+  return parts.join('\n');
+}
 
 function splitTopLevelCommas(text) {
   const parts = [];
@@ -40,10 +54,8 @@ function parseRuleBlocks(css) {
 }
 
 test('hosts.css includes Bottom Spacing & Composer Scrim section strictly gated off host palette and disabled mode', () => {
-  const idx = hostsCss.indexOf(SECTION_MARKER);
-  assert.notEqual(idx, -1, 'hosts.css must include Bottom Spacing & Composer Scrim (v0.3.0) marker');
-  const nextIdx = hostsCss.indexOf('/* === ', idx + SECTION_MARKER.length);
-  const section = nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx);
+  const section = collectSection(SECTION_MARKER);
+  assert.ok(section.length > 0, 'split stylesheets must include Bottom Spacing & Composer Scrim (v0.3.0) marker');
   const blocks = parseRuleBlocks(section);
   assert.ok(blocks.length >= 5, 'scrim & spacing section must define all layout and backdrop-clearing rules');
 
@@ -59,10 +71,9 @@ test('hosts.css includes Bottom Spacing & Composer Scrim section strictly gated 
 });
 
 test('hosts.css tightens ChatGPT active conversation bottom spacer, thread column, and composer container/hint', () => {
-  const idx = hostsCss.indexOf(SECTION_MARKER);
-  assert.notEqual(idx, -1);
-  const nextIdx = hostsCss.indexOf('/* === ', idx + SECTION_MARKER.length);
-  const blocks = parseRuleBlocks(nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx));
+  const section = collectSection(SECTION_MARKER);
+  assert.ok(section.length > 0);
+  const blocks = parseRuleBlocks(section);
   const chatgptPrefix = 'html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"])';
 
   const findRule = selectorPredicate => blocks.find(b => b.selectors.some(selectorPredicate));
@@ -77,8 +88,8 @@ test('hosts.css tightens ChatGPT active conversation bottom spacer, thread colum
   assert.ok(threadRule, 'must define ChatGPT active conversation rule for [data-op-thread-column="true"]');
   assert.match(threadRule.body, /padding-bottom:\s*24px\s*!important/);
 
-  const overlaidThreadRule = findRule(s => s.startsWith(chatgptPrefix) && s.includes(':has([data-op-composer-overlaid="true"])') && s.includes('[data-op-thread-column="true"]'));
-  assert.ok(overlaidThreadRule, 'must preserve bottom scroll clearance when ChatGPT dock is overlaid');
+  const overlaidThreadRule = findRule(s => s.startsWith(chatgptPrefix) && s.includes('[data-op-thread-column="true"][data-op-thread-overlaid="true"]'));
+  assert.ok(overlaidThreadRule, 'must preserve bottom scroll clearance when ChatGPT dock is overlaid via reversible data-op-thread-overlaid mark');
   assert.match(overlaidThreadRule.body, /padding-bottom:\s*max\(24px,\s*var\(--op-dock-clearance,\s*96px\)\)\s*!important/);
 
   const scrollerFadeRule = findRule(s => s.startsWith(chatgptPrefix) && s.endsWith('[data-op-scroller-fade="true"]'));
@@ -250,10 +261,8 @@ test('hosts.css clears backdrop layers, shadows, sharp-edge vars, backdrop-filte
     assert.match(baseBackdropRule.body, prop);
   }
 
-  const idx = hostsCss.indexOf(SECTION_MARKER);
-  assert.notEqual(idx, -1);
-  const nextIdx = hostsCss.indexOf('/* === ', idx + SECTION_MARKER.length);
-  const blocks = parseRuleBlocks(nextIdx === -1 ? hostsCss.slice(idx) : hostsCss.slice(idx, nextIdx));
+  const blocks = parseRuleBlocks(collectSection(SECTION_MARKER));
+  assert.ok(blocks.length > 0);
 
   const fadeRule = blocks.find(b => b.selectors.some(s => s.startsWith(dualPrefix) && s.includes('.native-composer-fade')));
   assert.ok(fadeRule, 'must keep .native-composer-fade transparent');

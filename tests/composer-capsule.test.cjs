@@ -5,7 +5,10 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { ROOT } = require('./helpers.cjs');
 
-const HOSTS_CSS = fs.readFileSync(path.join(ROOT, 'styles/hosts.css'), 'utf8');
+const CSS_FILES = ['styles/common.css', 'styles/host-chatgpt.css', 'styles/host-gemini.css'].map(rel =>
+  fs.readFileSync(path.join(ROOT, rel), 'utf8')
+);
+const HOSTS_CSS = CSS_FILES.join('\n');
 const SECTION_MARKER = '/* === Reference Composer Surface & Model Capsule (v0.3.0) === */';
 
 function splitTopLevelSelectors(selectorText) {
@@ -70,10 +73,15 @@ function flattenRules(rules) {
 }
 
 function sliceSection(marker = SECTION_MARKER) {
-  const idx = HOSTS_CSS.indexOf(marker);
-  assert.notEqual(idx, -1, `hosts.css must contain the ${marker} section`);
-  const nextIdx = HOSTS_CSS.indexOf('/* === ', idx + marker.length);
-  return nextIdx === -1 ? HOSTS_CSS.slice(idx) : HOSTS_CSS.slice(idx, nextIdx);
+  const parts = [];
+  for (const css of CSS_FILES) {
+    const idx = css.indexOf(marker);
+    if (idx === -1) continue;
+    const nextIdx = css.indexOf('/* === ', idx + marker.length);
+    parts.push(nextIdx === -1 ? css.slice(idx) : css.slice(idx, nextIdx));
+  }
+  assert.ok(parts.length > 0, `split stylesheets must contain the ${marker} section`);
+  return parts.join('\n');
 }
 
 const TWO_ROW_MARKER = '/* === v0.3.1 #19 two-row composer';

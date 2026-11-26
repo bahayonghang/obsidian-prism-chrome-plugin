@@ -202,7 +202,7 @@ async function assertPopoverInsideViewport(page, label) {
 const RUNTIME_SURFACE_ATTRS = [
   'data-op-main-surface', 'data-op-thread-column', 'data-op-composer-column', 'data-op-code-surface',
   'data-op-code-header', 'data-op-code-icon-fill', 'data-op-code-icon-stroke',
-  'data-op-composer-dock', 'data-op-thread-footer', 'data-op-composer-overlaid', 'data-op-composer-scrim', 'data-op-thread-scroller', 'data-op-scroller-fade',
+  'data-op-composer-dock', 'data-op-thread-footer', 'data-op-composer-overlaid', 'data-op-thread-overlaid', 'data-op-composer-scrim', 'data-op-thread-scroller', 'data-op-scroller-fade',
   'data-op-composer-empty-sibling', 'data-op-composer-disclaimer', 'data-op-thread-spacer',
   'data-op-composer-surface', 'data-op-composer-grid', 'data-op-composer-header-empty', 'data-op-composer-leading', 'data-op-composer-primary',
   'data-op-composer-trailing', 'data-op-composer-toolbar', 'data-op-composer-add', 'data-op-model-capsule',

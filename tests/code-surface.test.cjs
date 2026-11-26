@@ -6,7 +6,21 @@ const path = require('node:path');
 const { ROOT } = require('./helpers.cjs');
 
 const TOKENS_CSS = fs.readFileSync(path.join(ROOT, 'styles/prism-tokens.css'), 'utf8');
-const HOSTS_CSS = fs.readFileSync(path.join(ROOT, 'styles/hosts.css'), 'utf8');
+const CSS_FILES = ['styles/common.css', 'styles/host-chatgpt.css', 'styles/host-gemini.css'].map(rel =>
+  fs.readFileSync(path.join(ROOT, rel), 'utf8')
+);
+const HOSTS_CSS = CSS_FILES.join('\n');
+
+function collectSection(marker) {
+  const parts = [];
+  for (const css of CSS_FILES) {
+    const idx = css.indexOf(marker);
+    if (idx === -1) continue;
+    const nextIdx = css.indexOf('/* === ', idx + marker.length);
+    parts.push(nextIdx === -1 ? css.slice(idx) : css.slice(idx, nextIdx));
+  }
+  return parts.join('\n');
+}
 
 const OPTICAL_PALETTES = ['obsidian', 'warm', 'crystal', 'alabaster'];
 const BASE_CODE_TOKENS = [
@@ -170,11 +184,8 @@ test('all 4 optical palettes satisfy WCAG AA (>= 4.5:1) contrast for code text, 
 
 test('hosts.css Code Surface Readability section gates every rule against host palette and preserves sticky/fold behavior', () => {
   const marker = '/* === Code Surface Readability (v0.3.0) === */';
-  const idx = HOSTS_CSS.indexOf(marker);
-  assert.notEqual(idx, -1, 'hosts.css must contain the Code Surface Readability (v0.3.0) section');
-
-  const nextIdx = HOSTS_CSS.indexOf('/* === ', idx + marker.length);
-  const section = nextIdx === -1 ? HOSTS_CSS.slice(idx) : HOSTS_CSS.slice(idx, nextIdx);
+  const section = collectSection(marker);
+  assert.ok(section.length > 0, 'split stylesheets must contain the Code Surface Readability (v0.3.0) section');
   const rules = parseCssRules(section);
   assert.ok(rules.length >= 6, 'Code Surface Readability section must define surface, well, header, syntax, and inline rules');
 
@@ -218,10 +229,8 @@ test('hosts.css Code Surface Readability section gates every rule against host p
 
 test('v0.4.1 #33: hosts.css resets outer code-block:has(.code-block), colors Material/font icons and computed SVG icon attrs, and scopes Native Math Surface', () => {
   const codeMarker = '/* === Code Surface Readability (v0.3.0) === */';
-  const codeIdx = HOSTS_CSS.indexOf(codeMarker);
-  assert.notEqual(codeIdx, -1);
-  const codeNextIdx = HOSTS_CSS.indexOf('/* === ', codeIdx + codeMarker.length);
-  const codeSection = codeNextIdx === -1 ? HOSTS_CSS.slice(codeIdx) : HOSTS_CSS.slice(codeIdx, codeNextIdx);
+  const codeSection = collectSection(codeMarker);
+  assert.ok(codeSection.length > 0);
   const codeRules = parseCssRules(codeSection);
 
   const outerResetRule = codeRules.find(rule => !rule.isAtRule && /code-block:has\(\.code-block\)/.test(rule.selector) && !/\.code-block\s*>|>\s*\.code-block/.test(rule.selector));
@@ -238,10 +247,8 @@ test('v0.4.1 #33: hosts.css resets outer code-block:has(.code-block), colors Mat
   assert.match(codeSection, /\[data-op-code-icon-stroke="true"\]:not\(\[stroke="none"\]\)/, 'Code Surface Readability must style computed stroke SVG marks');
 
   const mathMarker = '/* === Native Math Surface Readability & Overflow (v0.4.1 #33) === */';
-  const mathIdx = HOSTS_CSS.indexOf(mathMarker);
-  assert.notEqual(mathIdx, -1, 'hosts.css must contain the Native Math Surface Readability & Overflow (v0.4.1 #33) section');
-  const mathNextIdx = HOSTS_CSS.indexOf('/* === ', mathIdx + mathMarker.length);
-  const mathSection = mathNextIdx === -1 ? HOSTS_CSS.slice(mathIdx) : HOSTS_CSS.slice(mathIdx, mathNextIdx);
+  const mathSection = collectSection(mathMarker);
+  assert.ok(mathSection.length > 0, 'split stylesheets must contain the Native Math Surface Readability & Overflow (v0.4.1 #33) section');
   const mathRules = parseCssRules(mathSection);
   assert.ok(mathRules.length >= 2, 'Native Math Surface section must define color/background and display overflow rules');
 
@@ -267,10 +274,8 @@ test('v0.4.1 #33: hosts.css resets outer code-block:has(.code-block), colors Mat
 
 test('v0.4.1 #34: hosts.css scopes Formula Preview rules, hides source cleanly, and inherits host colors under Native Palette', () => {
   const formulaMarker = '/* === Formula Preview (v0.4.1 #34) === */';
-  const idx = HOSTS_CSS.indexOf(formulaMarker);
-  assert.notEqual(idx, -1, 'hosts.css must contain the Formula Preview (v0.4.1 #34) section');
-  const nextIdx = HOSTS_CSS.indexOf('/* === ', idx + formulaMarker.length);
-  const section = nextIdx === -1 ? HOSTS_CSS.slice(idx) : HOSTS_CSS.slice(idx, nextIdx);
+  const section = collectSection(formulaMarker);
+  assert.ok(section.length > 0, 'split stylesheets must contain the Formula Preview (v0.4.1 #34) section');
   const rules = parseCssRules(section);
   assert.ok(rules.length >= 6, 'Formula Preview section must define source-hidden, preview card, caption, math, fallback, toggle, and Native Palette rules');
 

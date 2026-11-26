@@ -58,8 +58,25 @@
         "https://chat.openai.com/*",
         "https://gemini.google.com/*"
       ],
-      "css": ["styles/prism-tokens.css", "styles/hosts.css"],
+      "css": ["styles/prism-tokens.css", "styles/common.css"],
       "js": ["src/config-schema.js", "src/early-boot.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://chatgpt.com/*",
+        "https://chat.openai.com/*"
+      ],
+      "css": ["styles/host-chatgpt.css"],
+      "run_at": "document_start",
+      "all_frames": false
+    },
+    {
+      "matches": [
+        "https://gemini.google.com/*"
+      ],
+      "css": ["styles/host-gemini.css"],
       "run_at": "document_start",
       "all_frames": false
     },
@@ -70,7 +87,7 @@
         "https://gemini.google.com/*"
       ],
       "css": ["vendor/temml/temml-local.css"],
-      "js": ["vendor/temml/temml.js", "src/formula.js", "src/adapters.js", "src/content.js"],
+      "js": ["vendor/temml/temml.min.js", "src/formula.js", "src/adapters.js", "src/content.js"],
       "run_at": "document_idle",
       "all_frames": false
     }

@@ -301,7 +301,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
   if (options.contextExtra) Object.assign(h.context, options.contextExtra);
   if (options.loadFormula) {
     h.context.globalThis = h.context;
-    h.load('vendor/temml/temml.js');
+    h.load('vendor/temml/temml.min.js');
     h.load('src/formula.js');
   }
   h.load('src/adapters.js');
@@ -2497,4 +2497,45 @@ test('v0.4.5 #52: MutationObserver gates characterDataOldValue on streamChoreogr
   assert.equal(createdRanges, 1, 'subsequent rAF paintHighlights frames must reuse existing Range without calling createRange again');
 
   ctx.runtime.stop();
+});
+
+test('v0.4.5 #53: Ambient Stage uses zero glyph text nodes and scopes data-op-aura to #op-ambient-stage; overlaid dock marks data-op-thread-overlaid reversibly', async () => {
+  let aTurnRef = null;
+  const ctx = createRuntimeDom({ ambientTexture: 'glyphs', ambientStyle: 'aurora', ambientIntensity: 65, semanticAura: true }, {
+    host: 'chatgpt',
+    isAssistantNode: node => Boolean(aTurnRef && (node === aTurnRef || aTurnRef.contains?.(node) || (node?.parentElement && aTurnRef.contains?.(node.parentElement))))
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const e = Object.fromEntries(ctx.elements);
+  aTurnRef = e.assistantTurn;
+
+  const stage = e.primary.querySelector('#op-ambient-stage');
+  assert.ok(stage, '#op-ambient-stage should be mounted');
+  const glyphs = stage.querySelector('.op-ambient-glyphs');
+  assert.ok(glyphs, '.op-ambient-glyphs should be mounted');
+  assert.equal(glyphs.textContent || '', '', '.op-ambient-glyphs must not inject 5,587-char DOM text node');
+  assert.equal(stage.getAttribute('data-op-ambient-active'), 'true');
+
+  // Overlaid dock must mark thread column directly (eliminating html:has([data-op-composer-overlaid="true"]))
+  assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), 'true');
+  assert.equal(e.threadCol.getAttribute('data-op-thread-overlaid'), 'true', 'overlaid dock must set reversible data-op-thread-overlaid on thread column');
+
+  // Streaming activity must set data-op-aura on #op-ambient-stage, NOT on <html>
+  const p = ctx.makeEl('p');
+  const txt = { nodeType: 3, nodeValue: 'hello', isConnected: true, parentElement: p };
+  p.append(txt);
+  e.assistantTurn.append(p);
+  ctx.observers[0].cb([{ type: 'characterData', target: txt, oldValue: '', addedNodes: [], removedNodes: [] }]);
+  assert.equal(e.docEl.getAttribute('data-op-aura'), null, 'data-op-aura must not mutate <html> root');
+  assert.equal(stage.getAttribute('data-op-aura'), 'streaming', 'data-op-aura must be set on #op-ambient-stage');
+
+  // Native Palette and stop must clear data-op-thread-overlaid cleanly
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'host', themeMode: 'dark' }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(e.threadCol.getAttribute('data-op-thread-overlaid'), null, 'Native Palette must clear data-op-thread-overlaid');
+
+  ctx.runtime.stop();
+  assert.equal(e.threadCol.getAttribute('data-op-thread-overlaid'), null);
 });

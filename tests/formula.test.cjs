@@ -128,7 +128,7 @@ function loadFormulaEnv() {
     document: doc
   });
   context.globalThis = context;
-  vm.runInContext(fs.readFileSync(path.join(ROOT, 'vendor/temml/temml.js'), 'utf8'), context, { filename: 'vendor/temml/temml.js' });
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'vendor/temml/temml.min.js'), 'utf8'), context, { filename: 'vendor/temml/temml.min.js' });
   const formulaPath = path.join(ROOT, 'src/formula.js');
   if (fs.existsSync(formulaPath)) {
     vm.runInContext(fs.readFileSync(formulaPath, 'utf8'), context, { filename: 'src/formula.js' });

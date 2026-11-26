@@ -66,7 +66,9 @@ const BUDGETS_25X = Object.freeze({
   steadyRemoveAttr: 0,
   scrollMs: 4,
   scrollGcs: 50,
-  streamWallMs: 1100,
+  // 30 steps x 30ms + 250ms trailing settle has ~1150-1190ms OS timer floor; budget caps both wall time and active main-thread work.
+  streamWallMs: 1350,
+  streamMainThreadMs: 150,
   streamCloneNode: 0,
   streamGcs: 5000
 });
@@ -329,6 +331,8 @@ if (shouldAssert) {
     assert.ok(r.scrollFrame.cdp.scriptMs <= BUDGETS_25X.scrollMs, `${tag}: scroll script ${r.scrollFrame.cdp.scriptMs}ms > ${BUDGETS_25X.scrollMs}ms`);
     assert.ok(r.scrollFrame.counts.gcs <= BUDGETS_25X.scrollGcs, `${tag}: scroll gCS ${r.scrollFrame.counts.gcs} > ${BUDGETS_25X.scrollGcs}`);
     assert.ok(r.streamBurst.wallMs <= BUDGETS_25X.streamWallMs, `${tag}: stream ${r.streamBurst.wallMs}ms > ${BUDGETS_25X.streamWallMs}ms`);
+    const streamMainMs = +(r.streamBurst.cdp.scriptMs + r.streamBurst.cdp.recalcMs + r.streamBurst.cdp.layoutMs).toFixed(2);
+    assert.ok(streamMainMs <= BUDGETS_25X.streamMainThreadMs, `${tag}: stream main-thread ${streamMainMs}ms > ${BUDGETS_25X.streamMainThreadMs}ms`);
     assert.equal(r.streamBurst.counts.cloneNode, BUDGETS_25X.streamCloneNode, `${tag}: stream cloneNode ${r.streamBurst.counts.cloneNode} !== 0`);
     assert.ok(r.streamBurst.counts.gcs <= BUDGETS_25X.streamGcs, `${tag}: stream gCS ${r.streamBurst.counts.gcs} > ${BUDGETS_25X.streamGcs}`);
   }

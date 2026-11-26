@@ -12,10 +12,14 @@ const chrome = json('manifest.json');
 const firefox = json('manifests/firefox.json');
 const pkg = json('package.json');
 const hosts = ['https://chatgpt.com/*', 'https://chat.openai.com/*', 'https://gemini.google.com/*'];
+const chatgptHosts = ['https://chatgpt.com/*', 'https://chat.openai.com/*'];
+const geminiHosts = ['https://gemini.google.com/*'];
 const optional = ['https://*/*', 'http://localhost/*', 'http://127.0.0.1/*'];
 const expectedScripts = [
-  { run_at: 'document_start', js: ['src/config-schema.js', 'src/early-boot.js'], css: ['styles/prism-tokens.css', 'styles/hosts.css'] },
-  { run_at: 'document_idle', css: ['vendor/temml/temml-local.css'], js: ['vendor/temml/temml.js', 'src/formula.js', 'src/adapters.js', 'src/content.js'] }
+  { matches: hosts, run_at: 'document_start', js: ['src/config-schema.js', 'src/early-boot.js'], css: ['styles/prism-tokens.css', 'styles/common.css'] },
+  { matches: chatgptHosts, run_at: 'document_start', css: ['styles/host-chatgpt.css'] },
+  { matches: geminiHosts, run_at: 'document_start', css: ['styles/host-gemini.css'] },
+  { matches: hosts, run_at: 'document_idle', css: ['vendor/temml/temml-local.css'], js: ['vendor/temml/temml.min.js', 'src/formula.js', 'src/adapters.js', 'src/content.js'] }
 ];
 
 function resource(path) {
@@ -33,14 +37,14 @@ for (const [name, manifest] of [['Chrome', chrome], ['Firefox', firefox]]) {
   assert.deepEqual(manifest.permissions, ['storage'], `${name}: unexpected mandatory permission`);
   assert.deepEqual(manifest.host_permissions, hosts, `${name}: unexpected default host access`);
   assert.deepEqual(manifest.optional_host_permissions, optional, `${name}: optional network scope changed`);
-  assert.equal(manifest.content_scripts.length, 2);
+  assert.equal(manifest.content_scripts.length, expectedScripts.length);
   manifest.content_scripts.forEach((script, i) => {
-    assert.deepEqual(script.matches, hosts, `${name}: content injection scope changed`);
+    assert.deepEqual(script.matches, expectedScripts[i].matches, `${name}: content injection scope changed`);
     assert.equal(script.all_frames, false, `${name}: must not inject into frames`);
     assert.equal(script.run_at, expectedScripts[i].run_at);
     assert.deepEqual(script.js, expectedScripts[i].js);
     assert.deepEqual(script.css, expectedScripts[i].css);
-    [...script.js, ...(script.css || [])].forEach(resource);
+    [...(script.js || []), ...(script.css || [])].forEach(resource);
   });
   const csp = manifest.content_security_policy?.extension_pages || '';
   assert(csp.includes("script-src 'self'") && csp.includes("object-src 'none'"));

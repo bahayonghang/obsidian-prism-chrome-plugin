@@ -260,8 +260,10 @@ export async function onLiveFixture(suite, host, { failure, initial, colorScheme
 }
 
 /** Injects the extension styles and scripts (as the content script would) and waits for the runtime. */
-export async function injectExtension(page, { styles, scripts }, { waitFor } = {}) {
-  for (const content of styles) await page.addStyleTag({ content });
+export async function injectExtension(page, { styles, stylesByHost, scripts }, { waitFor } = {}) {
+  const host = page.url().includes('gemini.google.com') ? 'gemini' : 'chatgpt';
+  const hostStyles = stylesByHost?.[host] || styles;
+  for (const content of hostStyles) await page.addStyleTag({ content });
   for (const content of scripts) await page.addScriptTag({ content });
   await page.waitForFunction(() => window.ObsidianPrismRuntime?.diagnostics().enabled);
   if (waitFor) await page.waitForSelector(waitFor);

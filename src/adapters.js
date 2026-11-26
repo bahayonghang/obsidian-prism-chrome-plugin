@@ -166,13 +166,41 @@
     if (!el) return false;
     return typeof el.closest === 'function' ? Boolean(el.closest('[data-op-owned]')) : Boolean(el.hasAttribute?.('data-op-owned'));
   }
+  function hasHiddenAttr(node, visCache) {
+    if (typeof node.hasAttribute !== 'function' && typeof node.closest === 'function') {
+      return Boolean(node.closest('[hidden], [aria-hidden="true"]'));
+    }
+    for (let cur = node; cur; cur = cur.parentElement) {
+      if (visCache && visCache.get(cur) === true) return false;
+      if (cur.hasAttribute?.('hidden') || cur.getAttribute?.('aria-hidden') === 'true') return true;
+      if (!cur.parentElement && typeof cur.closest === 'function') {
+        return Boolean(cur.closest('[hidden], [aria-hidden="true"]'));
+      }
+    }
+    return false;
+  }
   function isVisible(node) {
     if (!node || !node.isConnected) return false;
     const visCache = activeScanCache?.vis;
     if (visCache && visCache.has(node)) return visCache.get(node);
-    if (node.closest('[hidden], [aria-hidden="true"]')) {
+    if (hasHiddenAttr(node, visCache)) {
       if (visCache) visCache.set(node, false);
       return false;
+    }
+    if (typeof node.checkVisibility === 'function') {
+      if (node.style?.contentVisibility === 'hidden') {
+        if (visCache) visCache.set(node, false);
+        return false;
+      }
+      const vis = node.checkVisibility({
+        checkOpacity: true,
+        checkVisibilityCSS: true,
+        opacityProperty: true,
+        visibilityProperty: true,
+        contentVisibilityAuto: false
+      });
+      if (visCache) visCache.set(node, vis);
+      return vis;
     }
     const view = node.ownerDocument?.defaultView;
     if (!view?.getComputedStyle) {
@@ -294,6 +322,8 @@
   }
   function visibleText(element) {
     if (!isVisible(element)) return '';
+    const view = element.ownerDocument?.defaultView;
+    if (view?.getComputedStyle && getStyle(element, view)?.contentVisibility === 'hidden') return '';
     // innerText follows rendered visibility, including collapsed native details.
     return typeof element.innerText === 'string' ? element.innerText.trim() : textOf(element).trim();
   }
@@ -659,17 +689,43 @@
     }
     return [...new Set([...surfaces, ...threadFooter])].filter(node => !isProtectedBackdrop(node) && !isHomeThreadFooter(spec, node, view));
   }
-  function findSidebars(spec, root) {
+  function queryOutside(root, skipNode, selector) {
+    if (!skipNode || !root) return root?.querySelectorAll ? [...root.querySelectorAll(selector)] : [];
+    const body = root.body || (root.nodeType === 1 ? root : null);
+    if (!body || !body.children || typeof body.contains !== 'function' || !body.contains(skipNode)) {
+      return root.querySelectorAll ? [...root.querySelectorAll(selector)] : [];
+    }
+    const out = [];
+    const walk = parent => {
+      for (const child of parent.children || []) {
+        if (child === skipNode || isOwned(child)) continue;
+        if (child.contains?.(skipNode)) {
+          if (child.matches?.(selector)) out.push(child);
+          walk(child);
+        } else {
+          if (child.matches?.(selector)) out.push(child);
+          if (child.querySelectorAll) {
+            for (const m of child.querySelectorAll(selector)) out.push(m);
+          }
+        }
+      }
+    };
+    walk(body);
+    return out;
+  }
+  function findSidebars(spec, root, primaryArg, composerArg) {
     const result = [];
-    const primary = findPrimary(spec, root);
-    const composer = findComposer(spec, root);
+    const primary = primaryArg !== undefined ? primaryArg : findPrimary(spec, root);
+    const composer = composerArg !== undefined ? composerArg : findComposer(spec, root);
     const add = node => {
       if (!node || isOwned(node) || !isVisible(node) || node.closest(MESSAGE_AREAS)) return;
       if ((primary && (node === primary || node.contains?.(primary))) ||
           (composer && (node === composer || node.contains?.(composer)))) return;
       if (!result.includes(node)) result.push(node);
     };
-    for (const selector of spec.sidebars) root.querySelectorAll(selector).forEach(add);
+    if (spec.sidebars.length) {
+      queryOutside(root, primary, spec.sidebars.join(',')).forEach(add);
+    }
     // New ChatGPT shells sometimes expose only semantic nav/aside elements.
     // Constrain the fallback to a tall left-edge navigation surface with controls.
     const doc = root.ownerDocument || root;
@@ -686,19 +742,21 @@
         const narrow = rect.width >= 28 && rect.width <= Math.min(560, viewportWidth * .55) && rect.right <= viewportWidth * .66;
         return tall && leftAligned && narrow;
       };
-      for (const node of root.querySelectorAll('aside,nav,[role="navigation"],[aria-label="Main navigation"],[aria-label="Chat history"],[aria-label="主导航"],[aria-label="聊天记录"]')) {
+      for (const node of queryOutside(root, primary, 'aside,nav,[role="navigation"],[aria-label="Main navigation"],[aria-label="Chat history"],[aria-label="主导航"],[aria-label="聊天记录"]')) {
         if (isSideNavigation(node)) add(node);
       }
-      const visited = new Set();
       // Conversation links offer a semantic fallback when a release replaces nav
-      // with generic divs. Inspect only a bounded sample, never the whole DOM.
-      for (const link of [...root.querySelectorAll(spec.sidebarLinks)].slice(0, 24)) {
-        if (link.closest('main,[role="main"]') || isOwned(link)) continue;
-        for (let node = link.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth++) {
-          if (visited.has(node)) break;
-          visited.add(node);
-          if (node.matches('body,html')) break;
-          if (isSideNavigation(node)) add(node);
+      // with generic divs. Skip the full-document scan when a recognized sidebar already holds them.
+      if (spec.sidebarLinks && !result.some(surface => surface.querySelector?.(spec.sidebarLinks))) {
+        const visited = new Set();
+        for (const link of queryOutside(root, primary, spec.sidebarLinks).slice(0, 24)) {
+          if (link.closest('main,[role="main"]') || isOwned(link)) continue;
+          for (let node = link.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth++) {
+            if (visited.has(node)) break;
+            visited.add(node);
+            if (node.matches('body,html')) break;
+            if (isSideNavigation(node)) add(node);
+          }
         }
       }
     }
@@ -800,10 +858,27 @@
       return 0;
     });
   }
+  function mergeSortedByDocumentOrder(a, b) {
+    if (!a.length) return [...b];
+    if (!b.length) return [...a];
+    if (typeof a[0]?.compareDocumentPosition !== 'function') return [...a, ...b];
+    const out = [];
+    let i = 0, j = 0;
+    while (i < a.length && j < b.length) {
+      const left = a[i], right = b[j];
+      if (left === right) { out.push(left); i++; j++; continue; }
+      const pos = left.compareDocumentPosition(right);
+      if (pos & 4) { out.push(left); i++; }
+      else { out.push(right); j++; }
+    }
+    while (i < a.length) out.push(a[i++]);
+    while (j < b.length) out.push(b[j++]);
+    return out;
+  }
   function findTurns(spec, role, root) {
     const selector = role === 'user' ? spec.users : spec.assistants;
     const explicit = topLevelMatches(selector, root).filter(isVisible);
-    if (!spec.turnContainers) return sortByDocumentOrder(explicit);
+    if (!spec.turnContainers) return explicit;
     const result = [...explicit];
     const seen = new Set(explicit);
     const explicitAncestors = new Set();
@@ -813,14 +888,20 @@
         explicitAncestors.add(anc);
       }
     }
-    const containers = topLevelMatches(spec.turnContainers, root).filter(isVisible);
+    let containers;
+    if (activeScanCache && activeScanCache.root === root && activeScanCache.values.has('turnContainers')) {
+      containers = activeScanCache.values.get('turnContainers');
+    } else {
+      containers = topLevelMatches(spec.turnContainers, root);
+      if (activeScanCache && activeScanCache.root === root) activeScanCache.values.set('turnContainers', containers);
+    }
     for (const container of containers) {
       if (seen.has(container) || explicitAncestors.has(container)) continue;
       let insideSeen = false;
       for (let anc = container.parentElement; anc && anc !== root; anc = anc.parentElement) {
         if (seen.has(anc)) { insideSeen = true; break; }
       }
-      if (insideSeen) continue;
+      if (insideSeen || !isVisible(container)) continue;
       if (container.querySelector(spec.users) || container.querySelector(spec.assistants)) continue;
       const heading = container.querySelector('.sr-only');
       const srText = heading ? textOf(heading).trim().toLowerCase() : '';
@@ -843,7 +924,7 @@
         result.push(container);
       }
     }
-    return sortByDocumentOrder(result);
+    return result.length === explicit.length ? result : sortByDocumentOrder(result);
   }
   function normalizeModelText(raw) {
     return String(raw || '').replace(/[⌄▾▼›❯]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -881,13 +962,27 @@
   }
   function commonContainerFor(messages, primary, root) {
     if (messages.length <= 4) return null;
+    if (activeScanCache && activeScanCache.root === root && activeScanCache.values.has('commonMsgRoot')) {
+      return activeScanCache.values.get('commonMsgRoot');
+    }
+    let chosen = null;
     if (primary && typeof primary.querySelectorAll === 'function' && typeof primary.contains === 'function' && messages.every(m => primary.contains(m))) {
-      return primary;
+      chosen = primary;
+    } else if (root && typeof root.querySelectorAll === 'function' && typeof root.contains === 'function' && messages.every(m => root.contains(m))) {
+      chosen = root;
     }
-    if (root && typeof root.querySelectorAll === 'function' && typeof root.contains === 'function' && messages.every(m => root.contains(m))) {
-      return root;
+    if (activeScanCache && activeScanCache.root === root) activeScanCache.values.set('commonMsgRoot', chosen);
+    return chosen;
+  }
+  function queryBatchPres(batchRoot, root) {
+    if (activeScanCache && activeScanCache.root === root && activeScanCache.values.has('batchPres')) {
+      return activeScanCache.values.get('batchPres');
     }
-    return null;
+    const pres = typeof batchRoot.getElementsByTagName === 'function'
+      ? [...batchRoot.getElementsByTagName('pre')]
+      : [...batchRoot.querySelectorAll('pre')];
+    if (activeScanCache && activeScanCache.root === root) activeScanCache.values.set('batchPres', pres);
+    return pres;
   }
   function findCodeSurfaces(spec, messages, root, primary) {
     const surfaces = [];
@@ -900,19 +995,29 @@
     };
     const processSurface = node => {
       if ((node.tagName || '').toUpperCase() === 'CODE-BLOCK') {
-        const inner = [...node.querySelectorAll('.code-block')].find(
-          candidate => !isOwned(candidate) && isVisible(candidate) && candidate.querySelector('pre, .code-block-decoration')
-        );
+        let inner = null;
+        for (const child of node.children || []) {
+          if (child.classList?.contains('code-block') && !isOwned(child) && isVisible(child) && child.querySelector('pre, .code-block-decoration')) {
+            inner = child;
+            break;
+          }
+        }
+        if (!inner) {
+          inner = [...node.querySelectorAll('.code-block')].find(
+            candidate => !isOwned(candidate) && isVisible(candidate) && candidate.querySelector('pre, .code-block-decoration')
+          );
+        }
         if (inner) { add(inner); return; }
       }
       add(node);
     };
     const processPre = (pre, stopAt) => {
-      if (isOwned(pre) || !isVisible(pre)) return;
+      if (isOwned(pre)) return;
       for (let anc = pre; anc; anc = anc.parentElement) {
         if (seen.has(anc)) return;
         if (anc === stopAt) break;
       }
+      if (!isVisible(pre)) return;
       const parent = pre.parentElement;
       const owner = (parent && !isOwned(parent) && spec.codeWells && parent.matches?.(spec.codeWells))
         ? parent.parentElement
@@ -932,7 +1037,7 @@
           if (hasAncestorIn(node, msgSet)) processSurface(node);
         }
       }
-      for (const pre of batchRoot.querySelectorAll('pre')) {
+      for (const pre of queryBatchPres(batchRoot, root)) {
         if (hasAncestorIn(pre, msgSet)) processPre(pre, batchRoot);
       }
       return filterOutermost(surfaces);
@@ -978,7 +1083,7 @@
     const batchRoot = commonContainerFor(messages, primary, root);
     if (batchRoot) {
       const msgSet = new Set(messages);
-      for (const pre of batchRoot.querySelectorAll('pre')) {
+      for (const pre of queryBatchPres(batchRoot, root)) {
         if (!seen.has(pre) && !isOwned(pre) && hasAncestorIn(pre, msgSet) && !pre.parentElement?.closest?.('pre')) {
           seen.add(pre);
           out.push(pre);
@@ -1063,7 +1168,12 @@
     return filterOutermost(list);
   }
   function findVisibleAttachments(spec, messages, composer, root) {
-    return collectAttachments(spec.attachments, [...messages, composer?.parentElement || composer, root]);
+    const rawScopes = [...messages, composer?.parentElement || composer, root].filter(s => s && typeof s.querySelectorAll === 'function');
+    if (root && typeof root.querySelectorAll === 'function' && typeof root.contains === 'function' &&
+        rawScopes.every(s => s === root || root.contains(s))) {
+      return collectAttachments(spec.attachments, [root]);
+    }
+    return collectAttachments(spec.attachments, rawScopes);
   }
   function findComposerAttachments(spec, composer) {
     if (!composer || isOwned(composer)) return [];
@@ -1565,7 +1675,7 @@
       if (node.closest?.(excludeZone) || node.closest?.(MESSAGE_AREAS)) return false;
       if (composer && (composer.contains?.(node) || node.contains?.(composer))) return false;
       if (composerCard && composerCard !== composer && (composerCard.contains?.(node) || node.contains?.(composerCard))) return false;
-      if (node.matches?.(mainSelector) || node.querySelector?.(mainSelector)) return false;
+      if (node.matches?.(mainSelector) || ((node.children?.length || 0) > 0 && node.querySelector?.(mainSelector))) return false;
       if (!isVisible(node)) return false;
       return true;
     });
@@ -1757,7 +1867,7 @@
     const collect = selectors => topLevelMatches(selectors, root).filter(isVisible);
     const userTurns = () => cached('userTurns', () => findTurns(spec, 'user', root));
     const assistantTurns = () => cached('assistantTurns', () => findTurns(spec, 'assistant', root));
-    const messages = () => cached('messages', () => sortByDocumentOrder([...userTurns(), ...assistantTurns()]));
+    const messages = () => cached('messages', () => mergeSortedByDocumentOrder(userTurns(), assistantTurns()));
     const primarySurface = () => cached('primarySurface', () => findPrimary(spec, root));
     const composerSurface = () => cached('composerSurface', () => findComposer(spec, root));
     const modelSelectorTrigger = () => cached('modelSelectorTrigger', () => findModelTrigger(spec, root));
@@ -1781,7 +1891,7 @@
       const comp = composer === undefined ? composerSurface() : composer;
       return cachedByArg('threadFooter', comp, () => findThreadFooterLayer(spec, comp));
     };
-    const sidebarSurfaces = () => cached('sidebarSurfaces', () => findSidebars(spec, root));
+    const sidebarSurfaces = () => cached('sidebarSurfaces', () => findSidebars(spec, root, primarySurface(), composerSurface()));
     const codeSurfaces = () => cached('codeSurfaces', () => findCodeSurfaces(spec, messages(), root, primarySurface()));
     const codeHeaders = () => cached('codeHeaders', () => findCodeHeaders(spec, messages(), primarySurface(), root));
     const codeBlocks = () => cached('codeBlocks', () => findCodeBlocks(messages(), primarySurface(), root));

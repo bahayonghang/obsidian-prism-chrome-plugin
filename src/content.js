@@ -28,7 +28,8 @@
   let pendingDelay = 0;
   let streamIdle = null;
   let fadeFrame = null;
-  let lastHighlightSignature = '';
+  let lastHighlightPaint = 0;
+  let lastHighlightBuckets = ['', '', '', '', ''];
   let scrollFrame = null;
   let revision = 0;
   let passes = 0;
@@ -72,11 +73,13 @@
   let railTurnTextCache = new WeakMap();
   let forceFullEstimate = true;
   let forceRailRecompute = true;
+  let needOrphanPrune = true;
   const dirty = { surfaces: true, formulas: true, codes: true, rail: true, vial: true, thoughts: true, geometry: true };
-  function markAllDirty({ fullEstimate = false, fullRail = false } = {}) {
+  function markAllDirty({ fullEstimate = false, fullRail = false, pruneOrphans = false } = {}) {
     dirty.surfaces = dirty.formulas = dirty.codes = dirty.rail = dirty.vial = dirty.thoughts = dirty.geometry = true;
     if (fullEstimate) forceFullEstimate = true;
     if (fullRail) forceRailRecompute = true;
+    if (pruneOrphans) needOrphanPrune = true;
   }
   function clearTurnCaches() {
     turnTokenCache = new WeakMap();
@@ -101,6 +104,7 @@
   const RUNTIME_SURFACE_ATTRS = Object.freeze([
     'data-op-main-surface',
     'data-op-thread-column',
+    'data-op-thread-overlaid',
     'data-op-composer-column',
     'data-op-code-surface',
     'data-op-code-header',
@@ -163,7 +167,8 @@
     for (const entry of formulas.values()) { clearTimeout(entry.debounceTimer); entry.debounceTimer = null; }
     if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = null;
     if (geometryFrame) cancelAnimationFrame(geometryFrame); geometryFrame = null;
-    if (fadeFrame) cancelAnimationFrame(fadeFrame); fadeFrame = null; lastHighlightSignature = '';
+    if (fadeFrame) cancelAnimationFrame(fadeFrame); fadeFrame = null;
+    lastHighlightPaint = 0; lastHighlightBuckets = ['', '', '', '', ''];
     dockObserver?.disconnect(); dockObserver = null; observedDock = null;
     dockScroller = dockOverlaidHost = alphaFadeScroller = alphaFadeDock = null;
     railSignature = ''; lastEstimate = 0; lastModelLabel = ''; lastAttachments = 0; activeTurn = -1;
@@ -315,24 +320,37 @@
   }
   function clearHighlights() {
     if (fadeFrame) cancelAnimationFrame(fadeFrame);
-    fadeFrame = null; fadeEntries = []; lastHighlightSignature = '';
+    fadeFrame = null; fadeEntries = []; lastHighlightPaint = 0; lastHighlightBuckets = ['', '', '', '', ''];
     if (global.CSS?.highlights) fades.forEach(name => CSS.highlights.delete(name));
+  }
+  function setAuraState(state) {
+    if (ambient) {
+      if (state) setAttr(ambient, 'data-op-aura', state);
+      else removeAttr(ambient, 'data-op-aura');
+    }
+    removeAttr(document.documentElement, 'data-op-aura');
   }
   function clearActivity() {
     clearTimeout(streamIdle); streamIdle = null;
     clearHighlights();
-    document.documentElement.removeAttribute('data-op-aura');
+    setAuraState(null);
   }
 
   // No wrappers are inserted into streamed text. Ranges are created once and reused across rAF frames.
-  function paintHighlights() {
+  function paintHighlights(force = false) {
     fadeFrame = null;
     if (!enabled || !cfg.streamChoreography || !motionAllowed() || !global.CSS?.highlights || !global.Highlight) {
       clearHighlights(); return;
     }
     const now = performance.now();
+    // Each fade tier lasts 65ms; step highlight updates at ~60ms rAF cadence to avoid 60Hz document-wide style invalidation.
+    if (!force && lastHighlightPaint && now - lastHighlightPaint < 60 && fadeEntries.length) {
+      fadeFrame = requestAnimationFrame(() => paintHighlights(false));
+      return;
+    }
+    lastHighlightPaint = now;
     const buckets = fades.map(() => []);
-    const sigParts = [];
+    const bucketSigParts = fades.map(() => []);
     const alive = [];
     for (let i = 0; i < fadeEntries.length; i++) {
       const entry = fadeEntries[i];
@@ -347,21 +365,20 @@
         }
         const bucketIdx = Math.max(0, tier);
         buckets[bucketIdx].push(entry.range);
-        sigParts.push(`${entry.id}:${bucketIdx}:${clampedEnd}`);
+        bucketSigParts[bucketIdx].push(`${entry.id}:${clampedEnd}`);
         alive.push(entry);
       } catch (_) {}
     }
     fadeEntries = alive;
-    const signature = sigParts.join('|');
-    if (signature !== lastHighlightSignature) {
-      lastHighlightSignature = signature;
-      for (let index = 0; index < fades.length; index++) {
-        const name = fades[index];
-        if (buckets[index].length) CSS.highlights.set(name, new Highlight(...buckets[index]));
-        else CSS.highlights.delete(name);
-      }
+    for (let index = 0; index < fades.length; index++) {
+      const sig = bucketSigParts[index].join(',');
+      if (sig === lastHighlightBuckets[index]) continue;
+      lastHighlightBuckets[index] = sig;
+      const name = fades[index];
+      if (buckets[index].length) CSS.highlights.set(name, new Highlight(...buckets[index]));
+      else CSS.highlights.delete(name);
     }
-    if (fadeEntries.length) fadeFrame = requestAnimationFrame(paintHighlights);
+    if (fadeEntries.length) fadeFrame = requestAnimationFrame(() => paintHighlights(false));
   }
   let nextFadeId = 0;
   function addTextFade(node, oldValue = '') {
@@ -380,17 +397,17 @@
     } catch (_) { return; }
     fadeEntries.push({ id: ++nextFadeId, node, start, end: text.length, clampedEnd: text.length, created: performance.now(), range });
     if (fadeEntries.length > 64) fadeEntries = fadeEntries.slice(-64);
-    if (!fadeFrame) paintHighlights();
+    if (!fadeFrame) paintHighlights(true);
   }
   function markResponseActivity() {
     if (!enabled || document.hidden) return;
-    if (cfg.semanticAura && motionAllowed()) setAttr(document.documentElement, 'data-op-aura', 'streaming');
+    if (cfg.semanticAura && motionAllowed()) setAuraState('streaming');
     clearTimeout(streamIdle);
     streamIdle = setTimeout(() => {
       streamIdle = null;
       clearHighlights();
-      if (enabled && cfg.semanticAura && motionAllowed()) setAttr(document.documentElement, 'data-op-aura', 'settled');
-      else removeAttr(document.documentElement, 'data-op-aura');
+      if (enabled && cfg.semanticAura && motionAllowed()) setAuraState('settled');
+      else setAuraState(null);
       lastEstimate = 0;
       markAllDirty({ fullEstimate: true });
       schedule(SCAN_DEBOUNCE_MS);
@@ -453,7 +470,15 @@
           let allOwned = true;
           for (let i = 0; i < addedLen; i++) if (!Adapters.isOwned(added[i])) { allOwned = false; break; }
           if (allOwned) for (let i = 0; i < removedLen; i++) if (!Adapters.isOwned(removed[i])) { allOwned = false; break; }
-          if (allOwned) continue;
+          if (allOwned) {
+            for (let i = 0; i < addedLen; i++) {
+              const n = added[i];
+              if (n.nodeType === 1 && n !== rail && n !== dock && n !== ambient && !codes.has(n.previousElementSibling) && !formulas.has(n)) {
+                needOrphanPrune = true;
+              }
+            }
+            continue;
+          }
         }
       }
       const enclosed = findEnclosingTurn(record.target);
@@ -570,6 +595,7 @@
     if (isBare) setAttr(entry.previewEl, 'data-op-formula-bare', 'true');
     else removeAttr(entry.previewEl, 'data-op-formula-bare');
     if (header) {
+      if (toggleBtn.isConnected && !entry.barEl && header.contains?.(toggleBtn)) return;
       const actionBox = [...(header.children || [])].find(child =>
         !Adapters.isOwned(child) &&
         (child.localName || child.tagName || '').toLowerCase() !== 'button' &&
@@ -674,6 +700,7 @@
     entry.renderedOk = true;
     entry.previewEl.replaceChildren(rendered.fragment);
     applyFormulaEntry(entry);
+    entry.lastLang = cfg.language;
     if (syncFold) syncCodes();
   }
   function readCodeText(pre, snap) {
@@ -731,7 +758,19 @@
             commitFormulaEntry(entry);
           }, FORMULA_DEBOUNCE_MS);
         } else if (entry.renderedOk) {
-          applyFormulaEntry(entry);
+          const alreadyMounted = stableContainer &&
+            entry.lastLang === cfg.language &&
+            entry.toggleBtn.isConnected &&
+            entry.previewEl.isConnected &&
+            (entry.header ? entry.header.contains?.(entry.toggleBtn) : entry.barEl?.isConnected) &&
+            entry.hideTarget.nextElementSibling === entry.previewEl &&
+            (entry.mode === 'preview'
+              ? entry.hideTarget.getAttribute('data-op-formula-source-hidden') === 'true' && !entry.previewEl.hidden
+              : entry.hideTarget.getAttribute('data-op-formula-source-hidden') === null && entry.previewEl.hidden);
+          if (!alreadyMounted) {
+            applyFormulaEntry(entry);
+            entry.lastLang = cfg.language;
+          }
         }
         continue;
       }
@@ -1322,7 +1361,8 @@
     let dockHost = null, threadFooter = null, nextScroller = null, nextThreadScroller = null, nextOverlaidDock = null, nextAlphaFadeScroller = null, nextAlphaFadeDock = null, nextObservedDock = null, messageScroller = null;
     const nextPrimary = adapter.primarySurface?.() || null;
     add(nextPrimary,'data-op-main-surface');
-    for (const element of adapter.threadColumns?.() || []) add(element,'data-op-thread-column');
+    const threadCols = adapter.threadColumns?.() || [];
+    for (const element of threadCols) add(element,'data-op-thread-column');
     const composer = adapter.composerSurface?.() || null;
     for (const element of adapter.composerColumns?.(composer) || []) add(element,'data-op-composer-column');
     const firstTurn = aTurns[0] || uTurns[0];
@@ -1343,6 +1383,7 @@
         if (isOverlaid) {
           nextOverlaidDock = dockHost;
           add(dockHost, 'data-op-composer-overlaid');
+          for (const col of threadCols) add(col, 'data-op-thread-overlaid');
           nextScroller = overlaidScroller(dockHost, scroller);
           add(nextScroller, 'data-op-thread-scroller');
           if (nextScroller) {
@@ -1660,19 +1701,18 @@
       ambient=own(make('div','op-ambient'));ambient.id='op-ambient-stage';ambient.setAttribute('aria-hidden','true');
       const wash=make('div','op-ambient-wash');
       for (const layer of ['one','two','three']) wash.append(make('i','op-aurora op-aurora-'+layer));
-      const glyphs=make('div','op-ambient-glyphs');
-      // Fixed decorative characters: never derived from prompts, replies, or keys.
-      const alphabet='01:<>[]{}+*PRISM';
-      glyphs.textContent=Array.from({length:44},(_,row)=>Array.from({length:126},(_,column)=>alphabet[(row*11+column*7+row*column*3)%alphabet.length]).join('')).join('\n');
-      ambient.append(wash,make('div','op-ambient-grid'),glyphs,make('div','op-ambient-rim'));
+      // Decorative glyph texture is painted via an inline CSS SVG tile (zero DOM text nodes).
+      ambient.append(wash,make('div','op-ambient-grid'),make('div','op-ambient-glyphs'),make('div','op-ambient-rim'));
     }
+    const ambientActive = cfg.ambientIntensity > 0 && cfg.ambientStyle !== 'none';
+    setAttr(ambient, 'data-op-ambient-active', String(ambientActive));
     if (ambient.parentElement!==primarySurface) primarySurface.append(ambient);
   }
   function resetConversation() {
     activeTurn=-1; renderedActiveTurn=-2;
     railSignature=''; lastEstimate=0; lastModelLabel=''; lastAttachments=0;
     clearTurnCaches();
-    markAllDirty({ fullEstimate: true, fullRail: true });
+    markAllDirty({ fullEstimate: true, fullRail: true, pruneOrphans: true });
     for(const [element,entry] of thoughts) cleanupThought(element,entry);
     for(const [pre,entry] of formulas) cleanupFormula(pre,entry);
     formulaSkipCache = new WeakMap();
@@ -1738,7 +1778,10 @@
     if (work.rail) syncRail(snap);
     if (work.vial || work.surfaces) syncDock(snap);
     if (work.thoughts) syncThoughts(snap);
-    if (work.surfaces || work.formulas || work.codes || work.rail || work.thoughts) pruneOrphanRoots();
+    if (needOrphanPrune && (work.surfaces || work.formulas || work.codes || work.rail || work.thoughts)) {
+      pruneOrphanRoots();
+      needOrphanPrune = false;
+    }
     // Phase 3: single batched geometry read -> single batched root-var & bounds write.
     if (work.geometry || work.surfaces) {
       syncAllGeometry({ includeReadingWidth: true, composer: snap.surfaceState?.composer });
@@ -1844,7 +1887,7 @@
       if(document.hidden) {clearActivity();clearTimeout(pending);pending=null;pendingDelay=0;if(geometryFrame)cancelAnimationFrame(geometryFrame);geometryFrame=null;}
       else {lastEstimate=0;markAllDirty({fullEstimate:true,fullRail:true});schedule();}
     });
-    markAllDirty({fullEstimate:true,fullRail:true});
+    markAllDirty({fullEstimate:true,fullRail:true,pruneOrphans:true});
     scan();
   }
   function configure(next) {
@@ -1857,9 +1900,9 @@
     if(!activeForSite()) {suspend();Schema.applyConfigToRoot(cfg);return;}
     Schema.applyConfigToRoot(cfg);
     if(!motionAllowed()||!cfg.streamChoreography) clearHighlights();
-    if(!motionAllowed()||!cfg.semanticAura) document.documentElement.removeAttribute('data-op-aura');
+    if(!motionAllowed()||!cfg.semanticAura) setAuraState(null);
     railSignature='';lastEstimate=0;
-    markAllDirty({fullEstimate:true,fullRail:true});
+    markAllDirty({fullEstimate:true,fullRail:true,pruneOrphans:true});
     if(!enabled) activate();
     else {
       if (observer && observeBodyFn && Boolean(cfg.streamChoreography && motionAllowed()) !== observerCapturesOldValue) {
@@ -1877,7 +1920,10 @@
   let changes=0;
   unsubscribe=Schema.subscribe(next=>{if(lostOwnership())return;changes++;hasConfig=true;configure(next);});
   const initialChanges=changes;
-  Schema.loadConfig().then(loaded=>{if(lostOwnership()||stopped)return;if(changes===initialChanges){hasConfig=true;configure(loaded);}}).catch(()=>{
+  const initialConfigPromise = (global.ObsidianPrismReady && typeof global.ObsidianPrismReady.then === 'function')
+    ? global.ObsidianPrismReady
+    : Schema.loadConfig();
+  initialConfigPromise.then(loaded=>{if(lostOwnership()||stopped)return;if(changes===initialChanges){hasConfig=true;configure(loaded);}}).catch(()=>{
     if(lostOwnership()||stopped)return;
     suspend();Schema.applyConfigToRoot({...cfg,enabled:false});
   });

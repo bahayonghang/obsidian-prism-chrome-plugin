@@ -50,7 +50,7 @@ Any derivative work or modified redistribution MUST remain open-source under **G
 - **Upstream Baseline**: `v0.14.0` (Author: `Ron Kok`)
 - **Copyright**: `Copyright (c) 2020 Ron Kok`
 - **Original License**: MIT License (compatible with `GPL-3.0-only`)
-- **Scope in Obsidian Prism**: Vendored unmodified runtime in `vendor/temml/temml.js` and local MathML styling derived in `vendor/temml/temml-local.css` (removed `@font-face` / `.woff2` webfont dependencies, substituted local system math font stacks, and explicitly scoped every rule under `html[data-op-enabled="true"] .op-formula-preview` for Chrome 111+ compatibility without CSS nesting) to power offline Formula Preview.
+- **Scope in Obsidian Prism**: Vendored unmodified upstream minified runtime (`dist/temml.min.js` from npm `temml@0.14.0`, SHA-256 `56b4338176d39170692503b8b7ec630d3edf8e10861895658deb74aefb66af9d`) in `vendor/temml/temml.min.js` and local MathML styling derived in `vendor/temml/temml-local.css` (removed `@font-face` / `.woff2` webfont dependencies, substituted local system math font stacks, and explicitly scoped every rule under `html[data-op-enabled="true"] .op-formula-preview` for Chrome 111+ compatibility without CSS nesting) to power offline Formula Preview.
 
 ---
 

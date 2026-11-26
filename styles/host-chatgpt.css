@@ -1,0 +1,245 @@
+/* Obsidian Prism Web — ChatGPT-specific host bridge.
+ * Loaded exclusively on chatgpt.com and chat.openai.com. Modified 2026-11-26. GPL-3.0-only. */
+
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] {
+  --main-surface-background: var(--op-canvas) !important;
+  --main-surface-primary: var(--op-canvas) !important;
+  --main-surface-secondary: var(--op-card) !important;
+  --main-surface-tertiary: var(--op-secondary) !important;
+  --message-surface: var(--op-secondary) !important;
+  --bg-primary: var(--op-canvas) !important;
+  --bg-secondary: var(--op-secondary) !important;
+  --bg-tertiary: var(--op-secondary) !important;
+  --bg-elevated-primary: var(--op-card) !important;
+  --bg-elevated-secondary: var(--op-secondary) !important;
+  --text-primary: var(--op-fg) !important;
+  --text-secondary: var(--op-fg-secondary) !important;
+  --text-tertiary: var(--op-fg-muted) !important;
+  --text-quaternary: var(--op-placeholder) !important;
+  --border-xlight: var(--op-border) !important;
+  --border-light: var(--op-border) !important;
+  --border-medium: var(--op-border-strong) !important;
+  background-color: var(--op-canvas) !important;
+  color: var(--op-fg) !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"] [data-message-author-role="user"] > div {
+  border-radius: var(--op-radius-lg) !important;
+}
+/* Literal host bubble backgrounds do not follow --message-surface. Pair their
+ * surface and text colors; the legacy fallback accepts only nonempty text
+ * leaves, so attachment cards and action containers keep their own surfaces. */
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-message-author-role="user"] :where(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"]),
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-message-author-role="user"] > div:not(:empty):not(:has(> *)) {
+  background: color-mix(in srgb,var(--op-accent) 8%,var(--op-secondary)) !important;
+  color: var(--op-fg) !important;
+  border-radius: var(--op-radius-lg) !important;
+}
+
+/* Let the owned field show through only known blank canvas wrappers. */
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] :is(.bg-token-main-surface-primary,.bg-token-bg-primary,[data-testid="conversation-scroll-container"]):not([data-op-composer-surface]):not([data-op-composer-surface] *) {
+  background-color: transparent !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) :is([data-message-author-role],[data-turn="assistant"],[data-testid="assistant-message"],.agent-turn) a:not([role="button"]) {
+  color: var(--op-link) !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-sticky-code="true"] :is([data-message-author-role="assistant"] .code-header,[data-turn="assistant"] .code-header,[data-testid="code-block-header"],[data-test-id="code-block-header"]) {
+  position: sticky !important;
+  top: 0;
+  z-index: 5;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-sticky-code="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role="assistant"] .code-header,[data-turn="assistant"] .code-header,[data-testid="code-block-header"],[data-test-id="code-block-header"]) {
+  background: var(--op-code-header) !important;
+  color: var(--op-code-header-fg) !important;
+  border-bottom: 1px solid var(--op-border) !important;
+}
+
+/* === Bottom Spacing & Composer Scrim (v0.3.0) === */
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-spacer="true"] {
+  min-height: 20px !important;
+  height: 20px !important;
+  padding-bottom: 0 !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-column="true"] {
+  padding-bottom: 24px !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-column="true"][data-op-thread-overlaid="true"] {
+  padding-bottom: max(24px, var(--op-dock-clearance, 96px)) !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-scroller-fade="true"] {
+  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--op-scroller-fade-start, 24px)), transparent calc(100% - var(--op-scroller-fade-end, 0px)), transparent 100%) !important;
+  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--op-scroller-fade-start, 24px)), transparent calc(100% - var(--op-scroller-fade-end, 0px)), transparent 100%) !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-container {
+  padding-top: 8px !important;
+  padding-bottom: 14px !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-hint {
+  margin-top: 6px !important;
+  margin-bottom: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"],
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] [data-op-composer-column="true"]:not(.composer-container):not(:has(.composer-hint)),
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-column:not(.composer-container):not(:has(.composer-hint)) {
+  padding-top: 4px !important;
+  padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"]:not(:has([data-op-composer-disclaimer="true"])):not(:has(.composer-hint)) {
+  padding-bottom: 5px !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"]:not(:has(.composer-hint)) {
+  padding-bottom: 5px !important;
+  margin-bottom: 0 !important;
+  min-height: 0 !important;
+}
+/* v0.4.4 #46: Tighten live ChatGPT Thread Footer bottom inset & inner wrapper padding without altering its native
+ * positioning, z-index, or anchor-scope. Gated strictly on active conversation + composerRestyle + non-Native Palette. */
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] {
+  --thread-composer-bottom-inset: 0px !important;
+  padding-bottom: 7px !important;
+  margin-bottom: 0 !important;
+  min-height: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] [data-thread-scroll-footer="true"] {
+  --thread-composer-bottom-inset: 0px !important;
+  padding-bottom: 0 !important;
+  margin-bottom: 0 !important;
+  min-height: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) :is([data-op-thread-footer="true"][data-thread-scroll-footer="true"], [data-op-thread-footer="true"] [data-thread-scroll-footer="true"])::after {
+  height: 0 !important;
+  min-height: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] :has([data-op-composer-surface="true"]) {
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+  min-height: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] [data-op-composer-surface="true"] {
+  margin-top: 0 !important;
+  margin-bottom: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-disclaimer="true"]:not(.composer-hint) {
+  display: none !important;
+}
+
+/* === Code Surface Readability (v0.3.0) === */
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) :is([data-testid="code-block"], .code-block-wrapper) {
+  display: block !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  background: var(--op-code-surface) !important;
+  border: 1px solid var(--op-border-strong) !important;
+  border-radius: var(--op-radius-md) !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) :is([data-testid="code-block"], .code-block-wrapper) pre {
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 0 calc(var(--op-radius-md) - 1px) calc(var(--op-radius-md) - 1px) !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) :is([data-testid="code-block"], .code-block-wrapper) > pre:first-child {
+  border-radius: calc(var(--op-radius-md) - 1px) !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) :is([data-message-author-role] .code-header, [data-turn] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) {
+  background: var(--op-code-header) !important;
+  color: var(--op-code-header-fg) !important;
+  margin: 0 !important;
+  border-bottom: 1px solid var(--op-border) !important;
+  border-radius: calc(var(--op-radius-md) - 1px) calc(var(--op-radius-md) - 1px) 0 0 !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) :is([data-message-author-role] .code-header, [data-turn] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(span, p, label, strong) {
+  color: var(--op-code-header-fg) !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) :is([data-message-author-role] .code-header, [data-turn] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a):not(.op-formula-toggle),
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) :is([data-message-author-role] .code-header, [data-turn] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a):not(.op-formula-toggle) span {
+  color: var(--op-code-header-icon) !important;
+  border-color: var(--op-border-strong) !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) :is([data-message-author-role] .code-header, [data-turn] .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg {
+  color: var(--op-code-header-icon) !important;
+}
+
+/* === Content Width Presets (v0.3.1 #21) === */
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) main {
+  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+  --thread-content-responsive-max-width: var(--op-reading-width, 48rem) !important;
+  --thread-body-max-width: var(--op-reading-width, 48rem) !important;
+  --user-chat-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(#thread-bottom-container,#thread-bottom,#thread-bottom [class*="--thread-content-max-width"]) {
+  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) #thread-bottom :has(form[data-chatgpt-composer]):not(:has(> form[data-chatgpt-composer])) {
+  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+  max-width: 100% !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) [class*="transcriptContent"] {
+  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+  --user-chat-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
+  max-width: calc(var(--op-reading-width, 48rem) + 40px) !important;
+  margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem) - 40px) / 2 + var(--op-reading-shift, 0px))) !important;
+  margin-right: auto !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) #thread-bottom :has(> form[data-chatgpt-composer]) {
+  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+  max-width: calc(var(--op-reading-width, 48rem) + 40px) !important;
+  margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem) - 40px) / 2 + var(--op-reading-shift, 0px))) !important;
+  margin-right: auto !important;
+}
+/* Direct-form fallback if #thread-bottom > form[data-chatgpt-composer] has no column wrapper. */
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) #thread-bottom > form[data-chatgpt-composer] {
+  width: var(--op-reading-width, 48rem) !important;
+  max-width: none !important;
+  margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem)) / 2 + var(--op-reading-shift, 0px))) !important;
+  margin-right: auto !important;
+}
+/* v0.4.4 #46: Live Thread Footer width bridge on [data-thread-composer-backdrop="true"] and inner wrapper uncap. */
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) [data-thread-composer-backdrop="true"] {
+  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+  --thread-content-responsive-max-width: var(--op-reading-width, 48rem) !important;
+  --thread-body-max-width: var(--op-reading-width, 48rem) !important;
+  max-width: calc(var(--op-reading-width, 48rem) + 40px) !important;
+  margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem) - 40px) / 2 + var(--op-reading-shift, 0px))) !important;
+  margin-right: auto !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-thread-composer-backdrop="true"] :has(form[data-chatgpt-composer]),[data-thread-composer-backdrop="true"] form[data-chatgpt-composer]) {
+  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
+  --thread-body-max-width: var(--op-reading-width, 48rem) !important;
+  max-width: 100% !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-content-search-unit-key$=":user"] :has([data-user-message-bubble="true"]),[data-message-author-role="user"] :has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"])) {
+  --user-chat-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
+  max-width: 100% !important;
+}
+html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-user-message-bubble="true"],[data-message-author-role="user"] :where(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"]),[data-message-author-role="user"] > div:not(:has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"])),[data-testid="user-message"],[data-turn="user"] .user-message-bubble-color,[data-turn="user"] > div > div) {
+  width: fit-content !important;
+  max-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
+  margin-left: auto !important;
+}
+/* === end Content Width Presets (v0.3.1 #21) === */
+
+/* === v0.3.1 #19 two-row composer === */
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] {
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  grid-template-areas: "header header" "primary primary" "leading trailing" !important;
+  row-gap: 0 !important;
+  column-gap: 8px !important;
+}
+/* Review fix P1: ChatGPT's area names are inferred. On a grid without named areas the adapter marks the
+ * existing children it identified by role (data-op-composer-leading/-primary/-trailing) and these rules
+ * name their areas; any other child (the attachment header) spans the first free row. */
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] > [data-op-composer-leading="true"] { grid-area: leading !important; }
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] > [data-op-composer-primary="true"] { grid-area: primary !important; }
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] > [data-op-composer-trailing="true"] { grid-area: trailing !important; }
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"]:has(> [data-op-composer-primary="true"]) > :not([data-op-composer-leading="true"], [data-op-composer-primary="true"], [data-op-composer-trailing="true"]) {
+  grid-column: 1 / -1 !important;
+}
+
+/* === v0.3.1 #20 conversation heading typography === */
+html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) :is([data-markdown-text-style="assistant-message"],[data-user-message-bubble],[data-message-author-role],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn .markdown) :is(h1,h2,h3,h4):not([data-op-owned] *) {
+  font-family: inherit !important;
+  color: var(--op-fg) !important;
+  font-weight: var(--op-heading-weight) !important;
+}
