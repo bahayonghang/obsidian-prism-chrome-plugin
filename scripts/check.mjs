@@ -203,7 +203,7 @@ for (const [size, path] of Object.entries(chrome.icons)) {
   assert.equal(bytes.readUInt32BE(16), Number(size), `${path}: incorrect width`);
   assert.equal(bytes.readUInt32BE(20), Number(size), `${path}: incorrect height`);
 }
-for (const path of ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md', 'README.md', 'PRIVACY.md', 'MODIFICATIONS.md', 'docs/ARCHITECTURE.md', 'docs/TESTING.md', 'docs/IMPLEMENTATION_PLAN.md']) resource(path);
+for (const path of ['LICENSE', 'NOTICE', 'THIRD_PARTY_NOTICES.md', 'README.md', 'PRIVACY.md', 'MODIFICATIONS.md', 'docs/ARCHITECTURE.md', 'docs/TESTING.md', 'docs/IMPLEMENTATION_PLAN.md', 'docs/PERFORMANCE_PLAN.md']) resource(path);
 assert(read('LICENSE').includes('GNU GENERAL PUBLIC LICENSE'));
 assert(read('NOTICE').includes('RMvdesi'));
 const notices = read('THIRD_PARTY_NOTICES.md');
