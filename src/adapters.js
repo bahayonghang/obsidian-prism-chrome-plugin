@@ -218,17 +218,27 @@
       return true;
     });
   }
-  // A detached copy excludes our sibling controls without mutating framework-owned text.
+  function collectLiveDomText(node, root, selector) {
+    let out = '';
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === 3 || child.nodeType === 4) {
+        out += child.nodeValue || '';
+      } else if (child.nodeType === 1 && (child === root || !child.matches?.(selector))) {
+        out += collectLiveDomText(child, root, selector);
+      }
+    }
+    return out;
+  }
+  function isLiveDomNode(element) {
+    return Boolean(element && 'firstChild' in element && 'nextSibling' in element);
+  }
+  // Zero-clone subtree text traversal excludes owned/hidden controls without mutating host text.
   function textOf(element) {
     if (!element) return '';
     const hiddenSelector = '[data-op-owned],script,style,[hidden],[aria-hidden="true"]';
     if (element.matches?.(hiddenSelector)) return '';
     if (!element.querySelector?.(hiddenSelector)) return element.textContent || '';
-    if (typeof element.cloneNode === 'function') {
-      const copy = element.cloneNode(true);
-      copy.querySelectorAll(hiddenSelector).forEach(node => node.remove());
-      return copy.textContent || '';
-    }
+    if (isLiveDomNode(element)) return collectLiveDomText(element, element, hiddenSelector);
     const collect = node => {
       if (!node) return '';
       if (node.nodeType === 3) return node.nodeValue ?? node.textContent ?? '';
@@ -261,13 +271,11 @@
     if (!element) return '';
     const selector = options && options.excludeCode ? `${TURN_NOISE_SELECTOR},pre` : TURN_NOISE_SELECTOR;
     if (element.matches && element.matches(selector)) return '';
-    if (typeof element.cloneNode === 'function') {
+    if (isLiveDomNode(element)) {
       if (!element.querySelector || !element.querySelector(selector)) {
         return (element.textContent || '').trim();
       }
-      const copy = element.cloneNode(true);
-      copy.querySelectorAll(selector).forEach(node => node.remove());
-      return (copy.textContent || '').trim();
+      return collectLiveDomText(element, element, selector).trim();
     }
     const collectText = node => {
       if (!node) return '';
@@ -291,13 +299,29 @@
   }
   function estimateTokens(text, options = {}) {
     const source = String(text || '');
-    if (!source.trim()) return 0;
+    const len = source.length;
+    if (!len) return 0;
+    let hasNonSpace = false;
     let cjk = 0;
     let other = 0;
-    for (const character of source) {
-      if (/[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff]/u.test(character)) cjk++;
-      else other++;
+    for (let i = 0; i < len; i++) {
+      const code = source.charCodeAt(i);
+      if (!hasNonSpace && code > 32 && code !== 160 && code !== 0xfeff &&
+          !(code >= 0x2000 && code <= 0x200a) && code !== 0x2028 && code !== 0x2029 &&
+          code !== 0x202f && code !== 0x205f && code !== 0x3000) {
+        hasNonSpace = true;
+      }
+      if ((code >= 0x2e80 && code <= 0x9fff) || (code >= 0xac00 && code <= 0xd7af) || (code >= 0xf900 && code <= 0xfaff)) {
+        cjk++;
+      } else {
+        if (code >= 0xd800 && code <= 0xdbff && i + 1 < len) {
+          const next = source.charCodeAt(i + 1);
+          if (next >= 0xdc00 && next <= 0xdfff) i++;
+        }
+        other++;
+      }
     }
+    if (!hasNonSpace && !source.trim()) return 0;
     const divisor = options && options.mode === 'code' ? 3.2 : 4;
     return Math.ceil(cjk * 0.7 + other / divisor);
   }
@@ -849,7 +873,23 @@
     });
     return resolved;
   }
-  function findCodeSurfaces(spec, messages, root) {
+  function hasAncestorIn(node, set) {
+    for (let cur = node; cur; cur = cur.parentElement) {
+      if (set.has(cur)) return true;
+    }
+    return false;
+  }
+  function commonContainerFor(messages, primary, root) {
+    if (messages.length <= 4) return null;
+    if (primary && typeof primary.querySelectorAll === 'function' && typeof primary.contains === 'function' && messages.every(m => primary.contains(m))) {
+      return primary;
+    }
+    if (root && typeof root.querySelectorAll === 'function' && typeof root.contains === 'function' && messages.every(m => root.contains(m))) {
+      return root;
+    }
+    return null;
+  }
+  function findCodeSurfaces(spec, messages, root, primary) {
     const surfaces = [];
     const seen = new Set();
     const add = node => {
@@ -858,50 +898,100 @@
       seen.add(node);
       surfaces.push(node);
     };
+    const processSurface = node => {
+      if ((node.tagName || '').toUpperCase() === 'CODE-BLOCK') {
+        const inner = [...node.querySelectorAll('.code-block')].find(
+          candidate => !isOwned(candidate) && isVisible(candidate) && candidate.querySelector('pre, .code-block-decoration')
+        );
+        if (inner) { add(inner); return; }
+      }
+      add(node);
+    };
+    const processPre = (pre, stopAt) => {
+      if (isOwned(pre) || !isVisible(pre)) return;
+      for (let anc = pre; anc; anc = anc.parentElement) {
+        if (seen.has(anc)) return;
+        if (anc === stopAt) break;
+      }
+      const parent = pre.parentElement;
+      const owner = (parent && !isOwned(parent) && spec.codeWells && parent.matches?.(spec.codeWells))
+        ? parent.parentElement
+        : parent;
+      if (owner && !isOwned(owner) && !owner.matches(MESSAGE_AREAS) && !owner.matches('.markdown') &&
+          spec.codeHeaders && owner.querySelector(spec.codeHeaders) && owner.querySelectorAll('pre').length === 1) {
+        add(owner);
+      } else {
+        add(pre);
+      }
+    };
+    const batchRoot = messages.length ? commonContainerFor(messages, primary, root) : null;
+    if (batchRoot) {
+      const msgSet = new Set(messages);
+      if (spec.codeSurfaces) {
+        for (const node of batchRoot.querySelectorAll(spec.codeSurfaces)) {
+          if (hasAncestorIn(node, msgSet)) processSurface(node);
+        }
+      }
+      for (const pre of batchRoot.querySelectorAll('pre')) {
+        if (hasAncestorIn(pre, msgSet)) processPre(pre, batchRoot);
+      }
+      return filterOutermost(surfaces);
+    }
     const scope = messages.length ? messages : [root];
     for (const container of scope) {
       if (spec.codeSurfaces) {
-        for (const node of container.querySelectorAll(spec.codeSurfaces)) {
-          if ((node.tagName || '').toUpperCase() === 'CODE-BLOCK') {
-            const inner = [...node.querySelectorAll('.code-block')].find(
-              candidate => !isOwned(candidate) && isVisible(candidate) && candidate.querySelector('pre, .code-block-decoration')
-            );
-            if (inner) {
-              add(inner);
-              continue;
-            }
-          }
-          add(node);
-        }
+        for (const node of container.querySelectorAll(spec.codeSurfaces)) processSurface(node);
       }
-      for (const pre of container.querySelectorAll('pre')) {
-        if (isOwned(pre) || !isVisible(pre)) continue;
-        let covered = false;
-        for (let anc = pre; anc; anc = anc.parentElement) {
-          if (seen.has(anc)) { covered = true; break; }
-          if (anc === container) break;
-        }
-        if (covered) continue;
-        const parent = pre.parentElement;
-        const owner = (parent && !isOwned(parent) && spec.codeWells && parent.matches?.(spec.codeWells))
-          ? parent.parentElement
-          : parent;
-        if (owner && !isOwned(owner) && !owner.matches(MESSAGE_AREAS) && !owner.matches('.markdown') &&
-            spec.codeHeaders && owner.querySelector(spec.codeHeaders) && owner.querySelectorAll('pre').length === 1) {
-          add(owner);
-        } else {
-          add(pre);
-        }
-      }
+      for (const pre of container.querySelectorAll('pre')) processPre(pre, container);
     }
     return filterOutermost(surfaces);
   }
-  function findCodeHeaders(spec, messages) {
-    if (!spec.codeHeaders) return [];
+  function findCodeHeaders(spec, messages, primary, root) {
+    if (!spec.codeHeaders || !messages.length) return [];
     const out = [];
+    const seen = new Set();
+    const batchRoot = commonContainerFor(messages, primary, root);
+    if (batchRoot) {
+      const msgSet = new Set(messages);
+      for (const hdr of batchRoot.querySelectorAll(spec.codeHeaders)) {
+        if (!seen.has(hdr) && !isOwned(hdr) && hasAncestorIn(hdr, msgSet) && isVisible(hdr)) {
+          seen.add(hdr);
+          out.push(hdr);
+        }
+      }
+      return out;
+    }
     for (const message of messages) {
       for (const hdr of message.querySelectorAll(spec.codeHeaders)) {
-        if (!isOwned(hdr) && isVisible(hdr) && !out.includes(hdr)) out.push(hdr);
+        if (!seen.has(hdr) && !isOwned(hdr) && isVisible(hdr)) {
+          seen.add(hdr);
+          out.push(hdr);
+        }
+      }
+    }
+    return out;
+  }
+  function findCodeBlocks(messages, primary, root) {
+    if (!messages.length) return [];
+    const out = [];
+    const seen = new Set();
+    const batchRoot = commonContainerFor(messages, primary, root);
+    if (batchRoot) {
+      const msgSet = new Set(messages);
+      for (const pre of batchRoot.querySelectorAll('pre')) {
+        if (!seen.has(pre) && !isOwned(pre) && hasAncestorIn(pre, msgSet) && !pre.parentElement?.closest?.('pre')) {
+          seen.add(pre);
+          out.push(pre);
+        }
+      }
+      return out;
+    }
+    for (const message of messages) {
+      for (const pre of message.querySelectorAll('pre')) {
+        if (!seen.has(pre) && !isOwned(pre) && !pre.parentElement?.closest?.('pre')) {
+          seen.add(pre);
+          out.push(pre);
+        }
       }
     }
     return out;
@@ -1692,9 +1782,9 @@
       return cachedByArg('threadFooter', comp, () => findThreadFooterLayer(spec, comp));
     };
     const sidebarSurfaces = () => cached('sidebarSurfaces', () => findSidebars(spec, root));
-    const codeSurfaces = () => cached('codeSurfaces', () => findCodeSurfaces(spec, messages(), root));
-    const codeHeaders = () => cached('codeHeaders', () => findCodeHeaders(spec, messages()));
-    const codeBlocks = () => cached('codeBlocks', () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))].filter(pre => !isOwned(pre) && !pre.parentElement?.closest?.('pre')));
+    const codeSurfaces = () => cached('codeSurfaces', () => findCodeSurfaces(spec, messages(), root, primarySurface()));
+    const codeHeaders = () => cached('codeHeaders', () => findCodeHeaders(spec, messages(), primarySurface(), root));
+    const codeBlocks = () => cached('codeBlocks', () => findCodeBlocks(messages(), primarySurface(), root));
     return Object.freeze({
       host,
       usesOverlayScrim: Boolean(spec.usesOverlayScrim),

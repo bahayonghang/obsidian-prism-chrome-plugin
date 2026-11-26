@@ -218,9 +218,9 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     usesScrollerAlphaFade: host === 'chatgpt',
     conversationOnlyBackdrops: host === 'gemini',
     contentWidth: { native: 768, targets: [], composerTargets: [] },
-    userTurns: () => (homeMode ? [] : [userTurn]),
-    assistantTurns: () => (homeMode ? [] : [assistantTurn]),
-    primarySurface: () => primary,
+    userTurns: () => (options.userTurns ? options.userTurns() : (homeMode ? [] : [userTurn])),
+    assistantTurns: () => (options.assistantTurns ? options.assistantTurns() : (homeMode ? [] : [assistantTurn])),
+    primarySurface: () => (options.primarySurface ? options.primarySurface() : primary),
     composerSurface: () => composer,
     composerGrid: () => ({ element: gridEl, slots: null, trailing: trailingEl }),
     composerEmptyHeaders: () => options.emptyHeaders || [],
@@ -254,7 +254,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     cornerFloatingObstacles: (...args) => (options.cornerFloatingObstacles ? options.cornerFloatingObstacles(...args) : []),
     codeBlocks: () => (options.codeBlocks ? options.codeBlocks() : [...currentCodeBlocks]),
     thoughtBlocks: () => [],
-    isAssistantNode: () => false,
+    isAssistantNode: options.isAssistantNode || (() => false),
     isStreaming: () => streamingNow,
     scrollContainer: () => (options.useCustomScroller ? scrollerEl : body)
   };
@@ -283,11 +283,22 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
   h.context.innerHeight = 900;
   h.context.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   h.context.ResizeObserver = class { observe() {} disconnect() {} };
-  h.context.MutationObserver = class { observe() {} disconnect() {} };
-  h.context.requestAnimationFrame = () => 1;
+  const observers = [];
+  const rafQueue = [];
+  h.context.MutationObserver = class {
+    constructor(cb) { this.cb = cb; this.calls = []; observers.push(this); }
+    observe(target, opts) { this.calls.push({ target, opts }); }
+    disconnect() {}
+  };
+  h.context.requestAnimationFrame = cb => {
+    if (options.captureRaf) { rafQueue.push(cb); return rafQueue.length; }
+    return 1;
+  };
   h.context.cancelAnimationFrame = () => {};
   let nowMs = 100;
   h.context.performance = { now: () => nowMs };
+  if (options.documentExtra) Object.assign(h.context.document, options.documentExtra);
+  if (options.contextExtra) Object.assign(h.context, options.contextExtra);
   if (options.loadFormula) {
     h.context.globalThis = h.context;
     h.load('vendor/temml/temml.js');
@@ -306,7 +317,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
   };
   h.load('src/content.js');
   return {
-    h, elements, body, makeEl,
+    h, elements, body, makeEl, observers, rafQueue,
     runtime: h.context.ObsidianPrismRuntime,
     setModel(label) { currentModel = label; },
     setAttachments(list) { currentAttachments = list; },
@@ -2361,6 +2372,129 @@ test('v0.4.5 #51: code header SVG paint classification caches across unchanged s
   await new Promise(resolve => setTimeout(resolve, 30));
   assert.ok(svgStyleReads > 0, 'palette change invalidates SVG paint cache');
   assert.equal(pathNode.getAttribute('data-op-code-icon-fill'), 'true');
+
+  ctx.runtime.stop();
+});
+
+test('v0.4.5 #52: incremental Context Vial & dirty-subsystem MutationObserver only re-estimate mutated assistant turn without rescanning surfaces or rail', async () => {
+  const estimatedTurns = [];
+  const cleanedTurns = [];
+  let primaryCalls = 0;
+  let uTurns = [];
+  let aTurns = [];
+  let primaryRef = null;
+
+  const ctx = createRuntimeDom({ language: 'en-US', streamChoreography: false }, {
+    host: 'chatgpt',
+    userTurns: () => uTurns,
+    assistantTurns: () => aTurns,
+    primarySurface: () => { primaryCalls++; return primaryRef; },
+    isAssistantNode: node => aTurns.some(t => t === node || t.contains?.(node) || node?.parentElement && t.contains?.(node.parentElement)),
+    cleanTurnText: node => { cleanedTurns.push(node); return node?.textContent || ''; },
+    estimateTurnTokens: node => {
+      estimatedTurns.push(node);
+      const len = (node?.textContent || '').length;
+      return { prose: Math.ceil(len / 4), code: 0, total: Math.ceil(len / 4) };
+    }
+  });
+  const e = Object.fromEntries(ctx.elements);
+  primaryRef = e.primary;
+  const makeT = (role, txt) => {
+    const t = ctx.makeEl('article', { 'data-turn': role });
+    t.textContent = txt;
+    e.primary.append(t);
+    return t;
+  };
+  uTurns = [makeT('user', 'Question 1'), makeT('user', 'Question 2'), makeT('user', 'Question 3')];
+  aTurns = [makeT('assistant', 'Answer 1'), makeT('assistant', 'Answer 2'), makeT('assistant', 'Answer 3')];
+  const p = ctx.makeEl('p');
+  const txtNode = { nodeType: 3, nodeValue: 'streaming ', textContent: 'streaming ', isConnected: true, parentElement: p };
+  p.append(txtNode);
+  aTurns[2].append(p);
+
+  // Run initial full scan with the 6 turns
+  ctx.advanceTime(1000);
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+  assert.ok(estimatedTurns.length >= 6, 'initial scan estimates all turns');
+
+  // Now simulate assistant prose streaming characterData mutation on aTurns[2]
+  estimatedTurns.length = 0;
+  cleanedTurns.length = 0;
+  primaryCalls = 0;
+  txtNode.nodeValue += 'more tokens here';
+  aTurns[2].textContent = 'Answer 3 streaming more tokens here';
+  ctx.advanceTime(900);
+  const bodyObserver = ctx.observers[0];
+  bodyObserver.cb([{ type: 'characterData', target: txtNode, oldValue: 'streaming ', addedNodes: [], removedNodes: [] }]);
+  await new Promise(resolve => setTimeout(resolve, 310));
+
+  assert.equal(estimatedTurns.length, 1, `expected only 1 mutated assistant turn re-estimated, got ${estimatedTurns.length}`);
+  assert.equal(estimatedTurns[0], aTurns[2], 'only the mutated assistant turn should be re-estimated during streaming');
+  assert.equal(cleanedTurns.length, 0, 'assistant streaming must not recompute Conversation Rail user-turn text');
+  assert.equal(primaryCalls, 0, 'assistant prose-only streaming must not re-run full surface discovery');
+
+  ctx.runtime.stop();
+});
+
+test('v0.4.5 #52: MutationObserver gates characterDataOldValue on streamChoreography and paintHighlights reuses Range on rAF', async () => {
+  let createdRanges = 0;
+  const highlightsMap = new Map();
+  let aTurnRef = null;
+  const ctx = createRuntimeDom({ streamChoreography: false }, {
+    host: 'chatgpt',
+    captureRaf: true,
+    isAssistantNode: node => Boolean(aTurnRef && (node === aTurnRef || aTurnRef.contains?.(node) || (node?.parentElement && aTurnRef.contains?.(node.parentElement)))),
+    documentExtra: {
+      createRange() {
+        createdRanges++;
+        return {
+          startNode: null, startOffset: 0, endNode: null, endOffset: 0,
+          setStart(n, o) { this.startNode = n; this.startOffset = o; },
+          setEnd(n, o) { this.endNode = n; this.endOffset = o; }
+        };
+      }
+    },
+    contextExtra: {
+      Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
+      CSS: { highlights: highlightsMap },
+      Highlight: class { constructor(...ranges) { this.ranges = ranges; } }
+    }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const e = Object.fromEntries(ctx.elements);
+  aTurnRef = e.assistantTurn;
+  const bodyObserver = ctx.observers[0];
+  const initialObserve = bodyObserver.calls[bodyObserver.calls.length - 1];
+  assert.equal(initialObserve.opts.characterDataOldValue, false, 'characterDataOldValue must be false when streamChoreography is disabled');
+
+  // Enable streamChoreography -> MutationObserver re-observes with characterDataOldValue: true
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, streamChoreography: true }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const enabledObserve = bodyObserver.calls[bodyObserver.calls.length - 1];
+  assert.equal(enabledObserve.opts.characterDataOldValue, true, 'characterDataOldValue must flip to true when streamChoreography is enabled');
+
+  // Stream a text mutation -> creates 1 Range, schedules rAF, and reuses that same Range across frames
+  const p = ctx.makeEl('p');
+  const textNode = { nodeType: 3, nodeValue: 'hello world', isConnected: true, parentElement: p };
+  p.append(textNode);
+  e.assistantTurn.append(p);
+  createdRanges = 0;
+  ctx.rafQueue.length = 0;
+  bodyObserver.cb([{ type: 'characterData', target: textNode, oldValue: 'hello ', addedNodes: [], removedNodes: [] }]);
+  assert.equal(createdRanges, 1, 'addTextFade should allocate Range once per fade entry');
+  assert.ok(ctx.rafQueue.length >= 1, 'paintHighlights should schedule subsequent fade frames via requestAnimationFrame');
+
+  // Advance 2 frames (70ms each) -> Range must be reused (0 new createRange calls)
+  ctx.advanceTime(70);
+  const frame1 = ctx.rafQueue.shift();
+  frame1();
+  ctx.advanceTime(70);
+  const frame2 = ctx.rafQueue.shift();
+  frame2();
+  assert.equal(createdRanges, 1, 'subsequent rAF paintHighlights frames must reuse existing Range without calling createRange again');
 
   ctx.runtime.stop();
 });

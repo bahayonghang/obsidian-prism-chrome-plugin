@@ -2144,3 +2144,70 @@ test('v0.4.5 #51: cornerFloatingObstacles skips excluded message and nav buttons
   assert.equal(obstacles.length, 1, 'still detects the real corner floating button');
   assert.ok(gcsCount <= 10, `excluded message/nav buttons must not invoke getComputedStyle (got ${gcsCount})`);
 });
+
+test('v0.4.5 #52: textOf and cleanTurnText traverse DOM text with zero cloneNode calls', () => {
+  const A = adapters();
+  const makeLiveNode = (tagName, attrs = {}) => {
+    const node = domNode(tagName, attrs);
+    node.childNodes = [];
+    node.nextSibling = null;
+    Object.defineProperty(node, 'firstChild', { get() { return this.childNodes[0] || null; } });
+    Object.defineProperty(node, 'textContent', {
+      get() {
+        return this.childNodes.map(c => (c.nodeType === 3 ? c.nodeValue : c.textContent)).join('');
+      }
+    });
+    node.cloneNode = () => { throw new Error('cloneNode must never be called by textOf or cleanTurnText'); };
+    node.append = function (...kids) {
+      for (const kid of kids) {
+        const prev = this.childNodes[this.childNodes.length - 1] || null;
+        if (prev) prev.nextSibling = kid;
+        kid.nextSibling = null;
+        kid.parentElement = this;
+        this.childNodes.push(kid);
+        if (kid.nodeType === 1) this.children.push(kid);
+      }
+      return this;
+    };
+    return node;
+  };
+  const makeText = value => ({ nodeType: 3, nodeValue: value, nextSibling: null, parentElement: null });
+
+  const turn = makeLiveNode('article', { 'data-turn': 'assistant' });
+  const srOnly = makeLiveNode('h6', { class: 'sr-only' }); srOnly.append(makeText('ChatGPT said:'));
+  const owned = makeLiveNode('div', { 'data-op-owned': '' }); owned.append(makeText('Translate'));
+  const hidden = makeLiveNode('span', { hidden: '' }); hidden.append(makeText('Secret'));
+  const ariaHidden = makeLiveNode('span', { 'aria-hidden': 'true' }); ariaHidden.append(makeText('Icon'));
+  const script = makeLiveNode('script'); script.append(makeText('alert(1)'));
+  const btn = makeLiveNode('button'); btn.append(makeText('Copy'));
+  const p = makeLiveNode('p');
+  const em = makeLiveNode('em'); em.append(makeText('bold'));
+  p.append(makeText('Hello '), em, makeText(' world!'));
+  const pre = makeLiveNode('pre');
+  const code = makeLiveNode('code');
+  const hiddenInsideCode = makeLiveNode('span', { 'data-op-owned': '' }); hiddenInsideCode.append(makeText('NOISE'));
+  code.append(makeText('const x = '), hiddenInsideCode, makeText('42;'));
+  pre.append(code);
+  turn.append(srOnly, owned, hidden, ariaHidden, script, btn, p, pre);
+
+  assert.equal(A.textOf(code), 'const x = 42;');
+  assert.equal(A.textOf(p), 'Hello bold world!');
+  assert.equal(A.cleanTurnText(turn, { excludeCode: true }), 'Hello bold world!');
+  assert.equal(A.cleanTurnText(turn), 'Hello bold world!const x = 42;');
+});
+
+test('v0.4.5 #52: charCodeAt estimateTokens matches CJK, Latin, code mode, Unicode whitespace, and surrogate pairs', () => {
+  const A = adapters();
+  assert.equal(A.estimateTokens(''), 0);
+  assert.equal(A.estimateTokens(' \t\n\u00a0\u3000 '), 0);
+  assert.equal(A.estimateTokens('abcd'), 1);
+  assert.equal(A.estimateTokens('abcdefgh'), 2);
+  assert.equal(A.estimateTokens('一二三四五六七八九十'), 7);
+  assert.equal(A.estimateTokens('한글테스트'), Math.ceil(5 * 0.7));
+  assert.equal(A.estimateTokens('\uf900\uf901'), Math.ceil(2 * 0.7));
+  assert.equal(A.estimateTokens('😀😀😀😀'), 1, 'astral emoji surrogate pairs count as 1 code point each');
+  assert.equal(A.estimateTokens('a😀b😀'), 1);
+  assert.equal(A.estimateTokens('a😀b😀c'), 2);
+  assert.equal(A.estimateTokens('const x = 1;', { mode: 'code' }), 4);
+  assert.equal(A.estimateTokens('你好world'), Math.ceil(2 * 0.7 + 5 / 4));
+});

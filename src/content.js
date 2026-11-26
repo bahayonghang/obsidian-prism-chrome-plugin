@@ -11,6 +11,8 @@
   const adapter = Adapters?.forHost(host);
   if (!Schema || !adapter) return;
   const FORMULA_DEBOUNCE_MS = 280;
+  const SCAN_DEBOUNCE_MS = 160;
+  const STREAM_SCAN_MS = 260;
 
   let cfg = Schema.DEFAULT_CONFIG;
   let enabled = false;
@@ -19,10 +21,14 @@
   let observer = null;
   let documentObserver = null;
   let observedBody = null;
+  let observeBodyFn = null;
+  let observerCapturesOldValue = false;
   let events = null;
   let pending = null;
+  let pendingDelay = 0;
   let streamIdle = null;
-  let fadeTimer = null;
+  let fadeFrame = null;
+  let lastHighlightSignature = '';
   let scrollFrame = null;
   let revision = 0;
   let passes = 0;
@@ -34,8 +40,13 @@
   let activeTurn = -1;
   let renderedActiveTurn = -2;
   let cachedUserTurns = [];
+  let cachedAssistantTurns = [];
+  let cachedUserTurnSet = new Set();
+  let cachedAssistantTurnSet = new Set();
   let cachedMessageScroller = null;
   let railSignature = '';
+  let prevRailTurns = [];
+  let lastRailLang = '';
   let lastEstimate = 0;
   let lastModelLabel = '';
   let lastAttachments = 0;
@@ -56,6 +67,31 @@
   const savedFoldState = new WeakMap();
   let formulaSkipCache = new WeakMap();
   let codeHeaderSvgCache = new WeakMap();
+  let turnTokenCache = new WeakMap();
+  let dirtyTurns = new WeakSet();
+  let railTurnTextCache = new WeakMap();
+  let forceFullEstimate = true;
+  let forceRailRecompute = true;
+  const dirty = { surfaces: true, formulas: true, codes: true, rail: true, vial: true, thoughts: true, geometry: true };
+  function markAllDirty({ fullEstimate = false, fullRail = false } = {}) {
+    dirty.surfaces = dirty.formulas = dirty.codes = dirty.rail = dirty.vial = dirty.thoughts = dirty.geometry = true;
+    if (fullEstimate) forceFullEstimate = true;
+    if (fullRail) forceRailRecompute = true;
+  }
+  function clearTurnCaches() {
+    turnTokenCache = new WeakMap();
+    dirtyTurns = new WeakSet();
+    railTurnTextCache = new WeakMap();
+    prevRailTurns = [];
+    lastRailLang = '';
+    cachedUserTurns = [];
+    cachedAssistantTurns = [];
+    cachedUserTurnSet = new Set();
+    cachedAssistantTurnSet = new Set();
+    cachedMessageScroller = null;
+    forceFullEstimate = true;
+    forceRailRecompute = true;
+  }
   const thoughts = new Map();
   const runWithScanCache = fn => (typeof adapter.withScanCache === 'function' ? adapter.withScanCache(fn) : fn());
   const fades = ['op-stream-f0','op-stream-f1','op-stream-f2','op-stream-f3','op-stream-f4'];
@@ -121,21 +157,24 @@
   function disconnectRuntime({ permanent = false } = {}) {
     enabled = false;
     observer?.disconnect(); observer = null;
-    documentObserver?.disconnect(); documentObserver = null; observedBody = null;
+    documentObserver?.disconnect(); documentObserver = null; observedBody = null; observeBodyFn = null; observerCapturesOldValue = false;
     events?.abort(); events = null;
-    clearTimeout(pending); pending = null;
+    clearTimeout(pending); pending = null; pendingDelay = 0;
     for (const entry of formulas.values()) { clearTimeout(entry.debounceTimer); entry.debounceTimer = null; }
     if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = null;
     if (geometryFrame) cancelAnimationFrame(geometryFrame); geometryFrame = null;
+    if (fadeFrame) cancelAnimationFrame(fadeFrame); fadeFrame = null; lastHighlightSignature = '';
     dockObserver?.disconnect(); dockObserver = null; observedDock = null;
     dockScroller = dockOverlaidHost = alphaFadeScroller = alphaFadeDock = null;
     railSignature = ''; lastEstimate = 0; lastModelLabel = ''; lastAttachments = 0; activeTurn = -1;
-    renderedActiveTurn = -2; cachedUserTurns = []; cachedMessageScroller = null;
+    renderedActiveTurn = -2;
+    clearTurnCaches();
+    markAllDirty({ fullEstimate: true, fullRail: true });
     if (permanent) {
       stopped = true;
       surfaceObserver?.disconnect(); surfaceObserver = null; primarySurface = null;
       clearTimeout(streamIdle); streamIdle = null;
-      clearTimeout(fadeTimer); fadeTimer = null; fadeEntries = [];
+      fadeEntries = [];
       unsubscribe();
       systemTheme.removeEventListener('change', mediaChanged);
       reducedMotion.removeEventListener('change', mediaChanged);
@@ -275,7 +314,8 @@
     thoughts.delete(element);
   }
   function clearHighlights() {
-    clearTimeout(fadeTimer); fadeTimer = null; fadeEntries = [];
+    if (fadeFrame) cancelAnimationFrame(fadeFrame);
+    fadeFrame = null; fadeEntries = []; lastHighlightSignature = '';
     if (global.CSS?.highlights) fades.forEach(name => CSS.highlights.delete(name));
   }
   function clearActivity() {
@@ -284,32 +324,46 @@
     document.documentElement.removeAttribute('data-op-aura');
   }
 
-  // No wrappers are inserted into streamed text. Ranges live only for a short fade.
+  // No wrappers are inserted into streamed text. Ranges are created once and reused across rAF frames.
   function paintHighlights() {
-    fadeTimer = null;
+    fadeFrame = null;
     if (!enabled || !cfg.streamChoreography || !motionAllowed() || !global.CSS?.highlights || !global.Highlight) {
       clearHighlights(); return;
     }
     const now = performance.now();
     const buckets = fades.map(() => []);
-    fadeEntries = fadeEntries.filter(entry => {
+    const sigParts = [];
+    const alive = [];
+    for (let i = 0; i < fadeEntries.length; i++) {
+      const entry = fadeEntries[i];
       const tier = Math.floor((now - entry.created) / 65);
       const length = entry.node.nodeValue?.length || 0;
-      if (!entry.node.isConnected || tier > 4 || entry.start >= length) return false;
+      if (!entry.node.isConnected || tier > 4 || entry.start >= length) continue;
+      const clampedEnd = Math.min(length, entry.end);
       try {
-        const range = document.createRange();
-        range.setStart(entry.node, entry.start);
-        range.setEnd(entry.node, Math.min(length, entry.end));
-        buckets[Math.max(0,tier)].push(range);
-        return true;
-      } catch (_) { return false; }
-    });
-    fades.forEach((name, index) => {
-      if (buckets[index].length) CSS.highlights.set(name, new Highlight(...buckets[index]));
-      else CSS.highlights.delete(name);
-    });
-    if (fadeEntries.length) fadeTimer = setTimeout(paintHighlights, 55);
+        if (clampedEnd !== entry.clampedEnd) {
+          entry.range.setEnd(entry.node, clampedEnd);
+          entry.clampedEnd = clampedEnd;
+        }
+        const bucketIdx = Math.max(0, tier);
+        buckets[bucketIdx].push(entry.range);
+        sigParts.push(`${entry.id}:${bucketIdx}:${clampedEnd}`);
+        alive.push(entry);
+      } catch (_) {}
+    }
+    fadeEntries = alive;
+    const signature = sigParts.join('|');
+    if (signature !== lastHighlightSignature) {
+      lastHighlightSignature = signature;
+      for (let index = 0; index < fades.length; index++) {
+        const name = fades[index];
+        if (buckets[index].length) CSS.highlights.set(name, new Highlight(...buckets[index]));
+        else CSS.highlights.delete(name);
+      }
+    }
+    if (fadeEntries.length) fadeFrame = requestAnimationFrame(paintHighlights);
   }
+  let nextFadeId = 0;
   function addTextFade(node, oldValue = '') {
     if (!cfg.streamChoreography || !motionAllowed() || !global.CSS?.highlights || !global.Highlight) return;
     if (node.nodeType !== Node.TEXT_NODE || !adapter.isAssistantNode(node)) return;
@@ -318,59 +372,180 @@
     if (!text.trim()) return;
     const start = oldValue && text.startsWith(oldValue) ? oldValue.length : 0;
     if (start >= text.length) return;
-    fadeEntries.push({node, start, end:text.length, created:performance.now()});
-    fadeEntries = fadeEntries.slice(-64);
-    if (!fadeTimer) paintHighlights();
+    let range;
+    try {
+      range = document.createRange();
+      range.setStart(node, start);
+      range.setEnd(node, text.length);
+    } catch (_) { return; }
+    fadeEntries.push({ id: ++nextFadeId, node, start, end: text.length, clampedEnd: text.length, created: performance.now(), range });
+    if (fadeEntries.length > 64) fadeEntries = fadeEntries.slice(-64);
+    if (!fadeFrame) paintHighlights();
   }
   function markResponseActivity() {
     if (!enabled || document.hidden) return;
-    if (cfg.semanticAura && motionAllowed()) document.documentElement.setAttribute('data-op-aura','streaming');
+    if (cfg.semanticAura && motionAllowed()) setAttr(document.documentElement, 'data-op-aura', 'streaming');
     clearTimeout(streamIdle);
     streamIdle = setTimeout(() => {
       streamIdle = null;
       clearHighlights();
-      if (enabled && cfg.semanticAura && motionAllowed()) document.documentElement.setAttribute('data-op-aura','settled');
-      else document.documentElement.removeAttribute('data-op-aura');
+      if (enabled && cfg.semanticAura && motionAllowed()) setAttr(document.documentElement, 'data-op-aura', 'settled');
+      else removeAttr(document.documentElement, 'data-op-aura');
       lastEstimate = 0;
-      schedule();
+      markAllDirty({ fullEstimate: true });
+      schedule(SCAN_DEBOUNCE_MS);
     }, 1200);
+  }
+  const STRUCTURAL_TAGS = new Set(['PRE','CODE','DETAILS','SUMMARY','FORM','NAV','ASIDE','MAIN','HEADER','FOOTER','DIALOG','BUTTON','INPUT','TEXTAREA','IMG','TABLE','CODE-BLOCK','USER-QUERY','MODEL-RESPONSE','ARTICLE','SECTION']);
+  function findEnclosingTurn(node) {
+    let cur = node && node.nodeType === 1 ? node : node?.parentElement;
+    while (cur) {
+      if (cachedAssistantTurnSet.has(cur)) return { turn: cur, role: 'assistant' };
+      if (cachedUserTurnSet.has(cur)) return { turn: cur, role: 'user' };
+      cur = cur.parentElement;
+    }
+    return null;
+  }
+  function isStructuralNode(node) {
+    if (!node || node.nodeType !== 1) return false;
+    const tag = (node.tagName || '').toUpperCase();
+    if (STRUCTURAL_TAGS.has(tag)) return true;
+    if (node.matches?.('[data-testid],[data-turn],[data-message-author-role],[contenteditable="true"],[role="dialog"],[role="navigation"],.code-block,.code-header')) return true;
+    if (node.querySelector?.('pre,code,details,form,nav,aside,button,img,code-block,user-query,model-response,[data-turn],[data-message-author-role]')) return true;
+    return false;
+  }
+  function isRelevantClassTarget(node) {
+    if (!node || node.nodeType !== 1) return false;
+    const enclosed = findEnclosingTurn(node);
+    if (!enclosed || enclosed.turn === node) return true;
+    if (node.closest?.('pre,code,details,button,a,form,nav,aside,[data-op-code-surface],[data-op-code-header],[data-op-sidebar-surface],[data-op-composer-surface],[data-op-composer-dock]')) return true;
+    return false;
   }
   function mutationsChanged(records) {
     if (lostOwnership() || !enabled || stopped) return;
-    // A host rerender can remove our complete controls. Reattach them without
-    // subscribing to ordinary text changes inside controls we still own.
-    let changed = [rail,dock,ambient].some(root=>root&&!root.isConnected)
-      || [...codes].some(([pre,entry])=>pre.isConnected&&!entry.button.isConnected)
-      || [...formulas.values()].some(entry=>entry.pre.isConnected&&entry.renderedOk&&(!entry.toggleBtn.isConnected||(entry.mode==='preview'&&!entry.previewEl.isConnected)))
-      || [...thoughts].some(([element,entry])=>element.isConnected&&!entry.toolbar.isConnected);
-    let responseChanged = false;
-    for (const record of records) {
-      if (Adapters.isOwned(record.target)) continue;
-      const children = [...(record.addedNodes || []), ...(record.removedNodes || [])];
-      // This also covers bare text nodes written inside an owned component.
-      if (record.type === 'childList' && children.length && children.every(Adapters.isOwned)) continue;
-      changed = true;
-      if (document.hidden) continue;
-      if (record.type === 'characterData' && adapter.isAssistantNode(record.target)) {
-        responseChanged = true;
-        addTextFade(record.target, record.oldValue || '');
+    // Check detached extension roots without allocating intermediate arrays.
+    let anyDirty = false;
+    let structuralDirty = false;
+    if (rail && !rail.isConnected) { dirty.rail = true; anyDirty = structuralDirty = true; }
+    if (dock && !dock.isConnected) { dirty.vial = dirty.geometry = true; anyDirty = structuralDirty = true; }
+    if (ambient && !ambient.isConnected) { dirty.surfaces = dirty.geometry = true; anyDirty = structuralDirty = true; }
+    for (const [pre, entry] of codes) {
+      if (pre.isConnected && !entry.button.isConnected) { dirty.codes = true; anyDirty = true; break; }
+    }
+    for (const entry of formulas.values()) {
+      if (entry.pre.isConnected && entry.renderedOk && (!entry.toggleBtn.isConnected || (entry.mode === 'preview' && !entry.previewEl.isConnected))) {
+        dirty.formulas = true; anyDirty = true; break;
       }
-      for (const node of record.addedNodes || []) {
-        if (Adapters.isOwned(node) || (!adapter.isAssistantNode(node) && !adapter.isAssistantNode(record.target))) continue;
+    }
+    for (const [element, entry] of thoughts) {
+      if (element.isConnected && !entry.toolbar.isConnected) { dirty.thoughts = true; anyDirty = structuralDirty = true; break; }
+    }
+    let responseChanged = false;
+    for (let r = 0; r < records.length; r++) {
+      const record = records[r];
+      if (Adapters.isOwned(record.target)) continue;
+      if (record.type === 'childList') {
+        const added = record.addedNodes;
+        const removed = record.removedNodes;
+        const addedLen = added ? added.length : 0;
+        const removedLen = removed ? removed.length : 0;
+        if (addedLen + removedLen > 0) {
+          let allOwned = true;
+          for (let i = 0; i < addedLen; i++) if (!Adapters.isOwned(added[i])) { allOwned = false; break; }
+          if (allOwned) for (let i = 0; i < removedLen; i++) if (!Adapters.isOwned(removed[i])) { allOwned = false; break; }
+          if (allOwned) continue;
+        }
+      }
+      const enclosed = findEnclosingTurn(record.target);
+      const targetEl = record.target && record.target.nodeType === 1 ? record.target : record.target?.parentElement;
+      if (record.type === 'characterData') {
+        const isAssistant = enclosed ? enclosed.role === 'assistant' : adapter.isAssistantNode(record.target);
+        if (enclosed) dirtyTurns.add(enclosed.turn);
+        dirty.vial = true;
+        anyDirty = true;
+        if (enclosed?.role === 'user') { dirty.rail = true; structuralDirty = true; }
+        if (targetEl?.closest?.('pre,code')) { dirty.formulas = dirty.codes = true; }
+        if (thoughts.size && targetEl) {
+          for (const thoughtEl of thoughts.keys()) {
+            if (thoughtEl === targetEl || thoughtEl.contains?.(targetEl)) { dirty.thoughts = true; structuralDirty = true; break; }
+          }
+        }
+        if (!enclosed && !isAssistant) {
+          dirty.surfaces = dirty.rail = dirty.thoughts = dirty.geometry = true;
+          structuralDirty = true;
+        }
+        if (!document.hidden && isAssistant) {
+          responseChanged = true;
+          addTextFade(record.target, record.oldValue || '');
+        }
+        continue;
+      }
+      if (record.type === 'attributes') {
+        if (record.attributeName === 'data-is-streaming') {
+          dirty.formulas = dirty.vial = true;
+          anyDirty = true;
+          continue;
+        }
+        if (record.attributeName === 'class' && !isRelevantClassTarget(record.target)) continue;
+        if (enclosed) {
+          dirtyTurns.add(enclosed.turn);
+          dirty.vial = true;
+          if (enclosed.role === 'user') dirty.rail = true;
+        }
+        dirty.surfaces = dirty.thoughts = dirty.geometry = true;
+        if (targetEl?.closest?.('pre,code,[data-op-code-surface]')) dirty.formulas = dirty.codes = true;
+        anyDirty = structuralDirty = true;
+        continue;
+      }
+      // childList mutation: check if purely inline prose inside a known assistant turn
+      let hasStructural = !enclosed || enclosed.role !== 'assistant' || Boolean(targetEl?.closest?.('pre,code'));
+      if (!hasStructural) {
+        const added = record.addedNodes || [];
+        const removed = record.removedNodes || [];
+        for (let i = 0; i < added.length; i++) {
+          if (!Adapters.isOwned(added[i]) && isStructuralNode(added[i])) { hasStructural = true; break; }
+        }
+        if (!hasStructural) {
+          for (let i = 0; i < removed.length; i++) {
+            if (!Adapters.isOwned(removed[i]) && isStructuralNode(removed[i])) { hasStructural = true; break; }
+          }
+        }
+      }
+      if (enclosed) dirtyTurns.add(enclosed.turn);
+      anyDirty = true;
+      if (!hasStructural) {
+        dirty.vial = true;
+        responseChanged = true;
+      } else {
+        dirty.surfaces = dirty.formulas = dirty.codes = dirty.rail = dirty.vial = dirty.thoughts = dirty.geometry = true;
+        structuralDirty = true;
+      }
+      if (document.hidden) continue;
+      const added = record.addedNodes || [];
+      const targetIsAssistant = enclosed ? enclosed.role === 'assistant' : adapter.isAssistantNode(record.target);
+      for (let i = 0; i < added.length; i++) {
+        const node = added[i];
+        if (Adapters.isOwned(node) || (!targetIsAssistant && !adapter.isAssistantNode(node))) continue;
         responseChanged = true;
         if (node.nodeType === Node.TEXT_NODE) addTextFade(node);
-        else if (node.nodeType === Node.ELEMENT_NODE) {
+        else if (node.nodeType === Node.ELEMENT_NODE && typeof document.createTreeWalker === 'function') {
           const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
           for (let textNode = walker.nextNode(), count = 0; textNode && count < 64; textNode = walker.nextNode(), count++) addTextFade(textNode);
         }
       }
     }
     if (responseChanged) markResponseActivity();
-    if (changed) schedule();
+    if (anyDirty) schedule(!structuralDirty && responseChanged ? STREAM_SCAN_MS : SCAN_DEBOUNCE_MS);
   }
-  function schedule() {
-    if (lostOwnership() || !enabled || stopped || pending || document.hidden) return;
-    pending = setTimeout(() => { pending = null; if (lostOwnership()) return; scan(); }, 160);
+  function schedule(delay = SCAN_DEBOUNCE_MS) {
+    if (lostOwnership() || !enabled || stopped || document.hidden) return;
+    if (pending) {
+      if (delay >= pendingDelay) return;
+      clearTimeout(pending);
+      pending = null;
+    }
+    pendingDelay = delay;
+    pending = setTimeout(() => { pending = null; pendingDelay = 0; if (lostOwnership()) return; scan(); }, delay);
   }
 
   function isFormulaViewActive(pre) {
@@ -501,6 +676,22 @@
     applyFormulaEntry(entry);
     if (syncFold) syncCodes();
   }
+  function readCodeText(pre, snap) {
+    if (snap?.codeTextCache?.has(pre)) return snap.codeTextCache.get(pre);
+    const code = pre.querySelector('code') || pre;
+    const text = Adapters.textOf(code);
+    snap?.codeTextCache?.set(pre, text);
+    return text;
+  }
+  function countLines(text) {
+    let end = text.length;
+    if (end > 0 && text.charCodeAt(end - 1) === 10) end--;
+    let lines = 1;
+    for (let i = 0; i < end; i++) {
+      if (text.charCodeAt(i) === 10) lines++;
+    }
+    return lines;
+  }
   function syncFormulas(snap) {
     const temml = global.temml;
     const active = Boolean(cfg.formulaPreview !== false && Formula && temml);
@@ -514,7 +705,7 @@
     const isStreaming = snap ? snap.isStreaming : Boolean(adapter.isStreaming?.());
     for (const pre of current) {
       const code = pre.querySelector('code') || pre;
-      const source = Adapters.textOf(code);
+      const source = readCodeText(pre, snap);
       let entry = formulas.get(pre);
       if (entry) {
         const stableContainer = entry.code === code && entry.surface?.isConnected && entry.hideTarget?.isConnected &&
@@ -593,7 +784,7 @@
         }
         continue;
       }
-      const count = Adapters.textOf(pre.querySelector('code') || pre).replace(/\n$/, '').split('\n').length;
+      const count = countLines(readCodeText(pre, snap));
       if (count < 48) {
         if (codes.has(pre)) cleanupCode(pre, codes.get(pre));
         continue;
@@ -642,14 +833,23 @@
     toggle.setAttribute('aria-expanded','false');
     if (returnFocus) toggle.focus();
   }
-  function renderRailList(turns) {
+  function readRailTurnText(turn) {
+    if (!forceRailRecompute && !dirtyTurns.has(turn) && railTurnTextCache.has(turn)) {
+      return railTurnTextCache.get(turn);
+    }
+    const text = Adapters.cleanTurnText(turn);
+    railTurnTextCache.set(turn, text);
+    return text;
+  }
+  function renderRailList(turns, turnTexts) {
     if (!rail) return;
     const search = rail.querySelector('.op-rail-search');
     const keyword = search.value.trim().toLocaleLowerCase();
     const list = rail.querySelector('.op-rail-list');
     const fragment = document.createDocumentFragment();
     turns.forEach((turn,index) => {
-      const text = Adapters.cleanTurnText(turn).replace(/\s+/g,' ').trim();
+      const raw = turnTexts ? turnTexts[index] : readRailTurnText(turn);
+      const text = raw.replace(/\s+/g,' ').trim();
       if (keyword && !text.toLocaleLowerCase().includes(keyword)) return;
       const button = make('button','op-rail-item');
       button.dataset.turn = String(index);
@@ -666,7 +866,7 @@
     if (lostOwnership()) return;
     const turns = snap ? snap.userTurns : adapter.userTurns();
     if (!cfg.railOutline || !turns.length) {
-      rail?.remove(); rail = null; railSignature = ''; renderedActiveTurn = -2; return;
+      rail?.remove(); rail = null; railSignature = ''; prevRailTurns = []; lastRailLang = ''; renderedActiveTurn = -2; return;
     }
     if (!rail) {
       rail = own(make('aside','op-rail'));
@@ -703,7 +903,18 @@
     setAttr(search, 'aria-label', outlineSearch);
     setText(rail.querySelector('.op-rail-title'),outlineTitle);
     setText(rail.querySelector('.op-rail-count'),String(turns.length));
-    const signature = JSON.stringify([cfg.language,turns.map(turn => Adapters.cleanTurnText(turn))]);
+    let turnsUnchanged = !forceRailRecompute && railSignature !== '' && lastRailLang === cfg.language && turns.length === prevRailTurns.length;
+    if (turnsUnchanged) {
+      for (let i = 0; i < turns.length; i++) {
+        if (turns[i] !== prevRailTurns[i] || dirtyTurns.has(turns[i])) { turnsUnchanged = false; break; }
+      }
+    }
+    if (turnsUnchanged) return;
+    const turnTexts = turns.map(readRailTurnText);
+    prevRailTurns = turns;
+    lastRailLang = cfg.language;
+    forceRailRecompute = false;
+    const signature = JSON.stringify([cfg.language, turnTexts]);
     if (signature !== railSignature) {
       railSignature = signature;
       const ticks = rail.querySelector('.op-rail-ticks');
@@ -713,13 +924,13 @@
         const index = count === 1 ? 0 : Math.round(i*(turns.length-1)/(count-1));
         const tick = make('button','op-rail-tick');
         tick.dataset.turn = String(index);
-        tick.title = Adapters.cleanTurnText(turns[index]).replace(/\s+/g,' ').trim().slice(0,100);
+        tick.title = turnTexts[index].replace(/\s+/g,' ').trim().slice(0,100);
         tick.setAttribute('aria-label',`${local('跳到提问','Go to question')} ${index+1}: ${tick.title}`);
         tick.addEventListener('click', () => jump(index));
         fragment.append(tick);
       }
       ticks.replaceChildren(fragment);
-      renderRailList(turns);
+      renderRailList(turns, turnTexts);
     }
   }
   function updateRailActive(force = false) {
@@ -880,19 +1091,29 @@
     const attachments=snap ? snap.attachmentsCount : (adapter.visibleAttachments?.()||[]).length;
     const capacity=Adapters.resolveReferenceCapacity(host,modelLabel,cfg.contextWindowTokens);
     const now=performance.now();
-    if (!lastEstimate || now-lastEstimate>750 || lastModelLabel!==modelLabel || lastAttachments!==attachments) {
+    if (!lastEstimate || now-lastEstimate>750 || lastModelLabel!==modelLabel || lastAttachments!==attachments || forceFullEstimate) {
       let user=0, assistant=0, code=0;
       const uTurns = snap ? snap.userTurns : adapter.userTurns();
       const aTurns = snap ? snap.assistantTurns : adapter.assistantTurns();
+      const readTurnEstimate = node => {
+        if (!forceFullEstimate && !dirtyTurns.has(node) && turnTokenCache.has(node)) {
+          return turnTokenCache.get(node);
+        }
+        const computed = Adapters.estimateTurnTokens(node);
+        turnTokenCache.set(node, computed);
+        dirtyTurns.delete(node);
+        return computed;
+      };
       for (const node of uTurns) {
-        const turn=Adapters.estimateTurnTokens(node);
+        const turn=readTurnEstimate(node);
         user+=turn.total; code+=turn.code;
       }
       for (const node of aTurns) {
-        const turn=Adapters.estimateTurnTokens(node);
+        const turn=readTurnEstimate(node);
         assistant+=turn.total; code+=turn.code;
       }
       estimate={user, assistant, code, total:user+assistant};
+      forceFullEstimate = false;
       lastEstimate=now; lastModelLabel=modelLabel; lastAttachments=attachments;
     }
     const format = number => number>=1000000 ? (number/1000000).toFixed(1)+'M' : number>=1000 ? (number/1000).toFixed(1)+'K' : String(number);
@@ -1448,8 +1669,10 @@
     if (ambient.parentElement!==primarySurface) primarySurface.append(ambient);
   }
   function resetConversation() {
-    activeTurn=-1; renderedActiveTurn=-2; cachedUserTurns=[]; cachedMessageScroller=null;
+    activeTurn=-1; renderedActiveTurn=-2;
     railSignature=''; lastEstimate=0; lastModelLabel=''; lastAttachments=0;
+    clearTurnCaches();
+    markAllDirty({ fullEstimate: true, fullRail: true });
     for(const [element,entry] of thoughts) cleanupThought(element,entry);
     for(const [pre,entry] of formulas) cleanupFormula(pre,entry);
     formulaSkipCache = new WeakMap();
@@ -1463,38 +1686,63 @@
     if(lostOwnership() || !enabled || stopped || document.hidden || !document.body) return;
     passes++;
     if(route!==location.href) {route=location.href;revision++;resetConversation();}
+    let work = { ...dirty };
+    dirty.surfaces = dirty.formulas = dirty.codes = dirty.rail = dirty.vial = dirty.thoughts = dirty.geometry = false;
+    // Fast path: streaming prose-only tick inside existing assistant turns (zero surface/geometry rescan).
+    const vialOnly = work.vial && !work.surfaces && !work.formulas && !work.codes && !work.rail && !work.thoughts && !work.geometry;
+    if (vialOnly && dock?.isConnected && (cachedUserTurns.length || cachedAssistantTurns.length) &&
+        cachedUserTurns.every(t => t.isConnected) && cachedAssistantTurns.every(t => t.isConnected)) {
+      syncContextVial({
+        userTurns: cachedUserTurns,
+        assistantTurns: cachedAssistantTurns,
+        modelLabel: lastModelLabel,
+        attachmentsCount: lastAttachments
+      });
+      return;
+    }
+    if (vialOnly) work = { surfaces: true, formulas: true, codes: true, rail: true, vial: true, thoughts: true, geometry: true };
     // Phase 1: pure read/discovery inside one scan-scoped cache (zero DOM mutations).
     const snap = runWithScanCache(() => {
-      const surfaceState = collectSurfaceState();
-      const userTurns = adapter.userTurns();
-      const assistantTurns = adapter.assistantTurns();
-      const needCode = cfg.formulaPreview !== false || cfg.longCodeFold;
+      const surfaceState = work.surfaces ? collectSurfaceState() : null;
+      const needTurns = work.surfaces || work.rail || work.vial || work.formulas || work.codes;
+      const userTurns = needTurns ? adapter.userTurns() : cachedUserTurns;
+      const assistantTurns = needTurns ? adapter.assistantTurns() : cachedAssistantTurns;
+      const needCode = (work.formulas || work.codes) && (cfg.formulaPreview !== false || cfg.longCodeFold);
       const codeBlocks = needCode ? adapter.codeBlocks().filter(pre => !Adapters.isOwned(pre)) : [];
-      const needFormula = cfg.formulaPreview !== false && codeBlocks.length > 0;
+      const needFormula = work.formulas && cfg.formulaPreview !== false && codeBlocks.length > 0;
       const codeSurfaces = needFormula ? (adapter.codeSurfaces?.() || []) : [];
       const codeHeaders = needFormula ? (adapter.codeHeaders?.() || []) : [];
       const isStreaming = needFormula ? Boolean(adapter.isStreaming?.()) : false;
-      const modelLabel = cfg.contextVial ? (adapter.activeModelLabel?.() || '') : '';
-      const attachmentsCount = cfg.contextVial ? (adapter.visibleAttachments?.() || []).length : 0;
-      const thoughtBlocks = cfg.thoughtTranslate ? adapter.thoughtBlocks() : [];
+      const modelLabel = (work.vial || work.surfaces) && cfg.contextVial ? (adapter.activeModelLabel?.() || '') : lastModelLabel;
+      const attachmentsCount = (work.vial || work.surfaces) && cfg.contextVial ? (adapter.visibleAttachments?.() || []).length : lastAttachments;
+      const thoughtBlocks = work.thoughts && cfg.thoughtTranslate ? adapter.thoughtBlocks() : [];
       return {
         surfaceState, userTurns, assistantTurns, codeBlocks, codeSurfaces, codeHeaders,
-        isStreaming, modelLabel, attachmentsCount, thoughtBlocks
+        isStreaming, modelLabel, attachmentsCount, thoughtBlocks, codeTextCache: new Map()
       };
     });
-    cachedUserTurns = snap.userTurns;
-    cachedMessageScroller = snap.surfaceState.messageScroller || null;
+    if (work.surfaces || work.rail || work.vial || work.formulas || work.codes) {
+      cachedUserTurns = snap.userTurns;
+      cachedAssistantTurns = snap.assistantTurns;
+      cachedUserTurnSet = new Set(snap.userTurns);
+      cachedAssistantTurnSet = new Set(snap.assistantTurns);
+    }
+    if (snap.surfaceState) cachedMessageScroller = snap.surfaceState.messageScroller || null;
     // Phase 2: pure DOM & attribute writes (zero interleaved layout reads).
-    commitSurfaceState(snap.surfaceState);
-    syncAmbientDom();
-    syncFormulas(snap);
-    syncCodes(snap);
-    syncRail(snap);
-    syncDock(snap);
-    syncThoughts(snap);
-    pruneOrphanRoots();
+    if (work.surfaces && snap.surfaceState) {
+      commitSurfaceState(snap.surfaceState);
+      syncAmbientDom();
+    }
+    if (work.formulas) syncFormulas(snap);
+    if (work.codes) syncCodes(snap);
+    if (work.rail) syncRail(snap);
+    if (work.vial || work.surfaces) syncDock(snap);
+    if (work.thoughts) syncThoughts(snap);
+    if (work.surfaces || work.formulas || work.codes || work.rail || work.thoughts) pruneOrphanRoots();
     // Phase 3: single batched geometry read -> single batched root-var & bounds write.
-    syncAllGeometry({ includeReadingWidth: true, composer: snap.surfaceState.composer });
+    if (work.geometry || work.surfaces) {
+      syncAllGeometry({ includeReadingWidth: true, composer: snap.surfaceState?.composer });
+    }
   }
   function shouldIgnoreScrollTarget(target) {
     if (!target || target === document || target === document.documentElement || target === document.body || target === document.scrollingElement || target === global) return false;
@@ -1558,16 +1806,18 @@
       documentObserver.disconnect();
       documentObserver.observe(document.documentElement,{childList:true,attributes:true,attributeFilter:['class','data-theme','data-op-instance']});
       observedBody=document.body;
+      observerCapturesOldValue = Boolean(cfg.streamChoreography && motionAllowed());
       if(observedBody) {
-        observer.observe(observedBody,{childList:true,subtree:true,characterData:true,characterDataOldValue:true,attributes:true,attributeFilter:['hidden','open','class','aria-hidden','aria-expanded','aria-current','aria-selected','data-active','data-is-streaming']});
+        observer.observe(observedBody,{childList:true,subtree:true,characterData:true,characterDataOldValue:observerCapturesOldValue,attributes:true,attributeFilter:['hidden','open','class','aria-hidden','aria-expanded','aria-current','aria-selected','data-active','data-is-streaming']});
         documentObserver.observe(observedBody,{attributes:true,attributeFilter:['class','data-theme']});
       }
     }
+    observeBodyFn = observeBody;
     documentObserver=new MutationObserver(records=>{
       if(lostOwnership()) return;
-      if(document.body!==observedBody) {observeBody();lastEstimate=0;railSignature='';schedule();}
+      if(document.body!==observedBody) {observeBody();lastEstimate=0;railSignature='';markAllDirty({fullEstimate:true,fullRail:true});schedule();}
       if(records.some(record=>record.type==='attributes' && record.attributeName!=='data-op-instance') && Schema.resolvePalette(cfg)==='host') {
-        Schema.applyConfigToRoot(cfg);schedule();
+        Schema.applyConfigToRoot(cfg);markAllDirty();schedule();
       }
     });
     observeBody();
@@ -1585,14 +1835,16 @@
       if(scrollFrame) return;
       scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;if(lostOwnership() || document.hidden) return;activeTurn=nearestTurn();updateRailActive();});
     },{capture:true,passive:true});
-    listen(window,'resize',()=>{if(lostOwnership()) return;scheduleGeometry();schedule();});
-    listen(window,'popstate',schedule);listen(window,'hashchange',schedule);
+    listen(window,'resize',()=>{if(lostOwnership()) return;scheduleGeometry();markAllDirty();schedule();});
+    listen(window,'popstate',()=>{markAllDirty({fullEstimate:true,fullRail:true});schedule();});
+    listen(window,'hashchange',()=>{markAllDirty({fullEstimate:true,fullRail:true});schedule();});
     listen(document,'visibilitychange',()=>{
       if(lostOwnership()) return;
       document.documentElement.setAttribute('data-op-visibility',document.hidden?'hidden':'visible');
-      if(document.hidden) {clearActivity();clearTimeout(pending);pending=null;if(geometryFrame)cancelAnimationFrame(geometryFrame);geometryFrame=null;}
-      else {lastEstimate=0;schedule();}
+      if(document.hidden) {clearActivity();clearTimeout(pending);pending=null;pendingDelay=0;if(geometryFrame)cancelAnimationFrame(geometryFrame);geometryFrame=null;}
+      else {lastEstimate=0;markAllDirty({fullEstimate:true,fullRail:true});schedule();}
     });
+    markAllDirty({fullEstimate:true,fullRail:true});
     scan();
   }
   function configure(next) {
@@ -1607,7 +1859,14 @@
     if(!motionAllowed()||!cfg.streamChoreography) clearHighlights();
     if(!motionAllowed()||!cfg.semanticAura) document.documentElement.removeAttribute('data-op-aura');
     railSignature='';lastEstimate=0;
-    if(!enabled) activate();else scan();
+    markAllDirty({fullEstimate:true,fullRail:true});
+    if(!enabled) activate();
+    else {
+      if (observer && observeBodyFn && Boolean(cfg.streamChoreography && motionAllowed()) !== observerCapturesOldValue) {
+        observeBodyFn();
+      }
+      scan();
+    }
   }
   mediaChanged=()=>{if(!lostOwnership()&&hasConfig)configure(cfg);};
   systemTheme.addEventListener('change',mediaChanged);
@@ -1623,7 +1882,7 @@
     suspend();Schema.applyConfigToRoot({...cfg,enabled:false});
   });
   global.ObsidianPrismRuntime=Object.freeze({
-    refresh:schedule,
+    refresh(){ markAllDirty(); schedule(SCAN_DEBOUNCE_MS); },
     diagnostics:()=>({passes,enabled,observing:Boolean(observer),pending:Boolean(pending),codeBlocks:codes.size,formulaBlocks:formulas.size,thoughtBlocks:thoughts.size,surfaces:surfaceMarks.size}),
     stop(){
       if(lostOwnership()) return;
