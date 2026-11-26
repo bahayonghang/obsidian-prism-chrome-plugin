@@ -251,7 +251,8 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     activeModelLabel: () => currentModel,
     sidebarSurfaces: () => [],
     sidebarActiveTargets: () => [],
-    codeBlocks: () => [...currentCodeBlocks],
+    cornerFloatingObstacles: (...args) => (options.cornerFloatingObstacles ? options.cornerFloatingObstacles(...args) : []),
+    codeBlocks: () => (options.codeBlocks ? options.codeBlocks() : [...currentCodeBlocks]),
     thoughtBlocks: () => [],
     isAssistantNode: () => false,
     isStreaming: () => streamingNow,
@@ -2110,4 +2111,119 @@ test('v0.4.4 #46: runtime marks data-op-thread-footer and scans footer siblings 
   assert.equal(threadFooterEl.getAttribute('data-op-thread-footer'), null);
   assert.equal(footerSpacer.getAttribute('data-op-composer-empty-sibling'), null);
   assert.equal(footerDisclaimer.getAttribute('data-op-composer-disclaimer'), null);
+});
+
+test('v0.4.5 #50: batch Formula Preview init avoids per-block codeBlocks rescans, negative-caches failed/non-LaTeX blocks until changed, deduplicates dock avoidance, and performs zero steady-state attribute writes', async () => {
+  let codeBlocksCalls = 0;
+  let obstacleCalls = 0;
+  let surfacesRef = [];
+  let headersRef = [];
+  let presRef = [];
+  const ctx = createRuntimeDom({ language: 'zh-CN', formulaPreview: true }, {
+    host: 'chatgpt',
+    loadFormula: true,
+    codeBlocks: () => { codeBlocksCalls++; return presRef; },
+    codeSurfaces: () => surfacesRef,
+    codeHeaders: () => headersRef,
+    cornerFloatingObstacles: () => { obstacleCalls++; return []; },
+    textOf: node => node?.textContent || ''
+  });
+  const e = Object.fromEntries(ctx.elements);
+  const makeNode = ctx.makeEl;
+
+  let temmlRenderCalls = 0;
+  const origTemmlRender = ctx.h.context.temml.render;
+  ctx.h.context.temml.render = function (...args) {
+    temmlRenderCalls++;
+    return origTemmlRender.apply(this, args);
+  };
+
+  function makeCodeSurface(lang, text) {
+    const surface = makeNode('div', { class: 'code-shell' });
+    const header = makeNode('div', { class: 'code-shell-header' });
+    const label = makeNode('span'); label.textContent = lang;
+    const actions = makeNode('div');
+    const copyBtn = makeNode('button', { 'aria-label': 'Copy' }); copyBtn.textContent = 'Copy';
+    actions.append(copyBtn);
+    header.append(label, actions);
+    const pre = makeNode('pre');
+    const code = makeNode('code', { class: `language-${lang.toLowerCase()}` });
+    code.textContent = text;
+    pre.append(code);
+    surface.append(header, pre);
+    e.assistantTurn.append(surface);
+    surfacesRef.push(surface);
+    headersRef.push(header);
+    presRef.push(pre);
+    return { surface, header, pre, code };
+  }
+
+  // 4 valid LaTeX blocks, 2 invalid LaTeX blocks, 2 plain JS blocks
+  for (let i = 0; i < 4; i++) makeCodeSurface('LaTeX', `E_${i} = \\frac{1}{${i + 1}}`);
+  const invalid1 = makeCodeSurface('LaTeX', '\\begin{aligned} \\frac{1}{');
+  const invalid2 = makeCodeSurface('LaTeX', '\\invalidmacro{\\frac{1}{');
+  const jsBlock = makeCodeSurface('JavaScript', 'const x = 1;\nconsole.log(x);');
+  makeCodeSurface('JavaScript', 'export function f(a) { return a + 1; }');
+
+  codeBlocksCalls = 0;
+  obstacleCalls = 0;
+  temmlRenderCalls = 0;
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+
+  assert.equal(ctx.runtime.diagnostics().formulaBlocks, 4, 'only valid LaTeX blocks stay registered');
+  assert.ok(codeBlocksCalls <= 2, `batch init should not call codeBlocks per formula (got ${codeBlocksCalls})`);
+  assert.equal(obstacleCalls, 1, `single scan should evaluate cornerFloatingObstacles once (got ${obstacleCalls})`);
+  assert.equal(temmlRenderCalls, 6, 'initial scan renders 4 valid + 2 invalid blocks once');
+
+  // Instrument setAttribute/removeAttribute across root and owned/code controls for a steady-state no-op scan
+  let steadyWrites = 0;
+  const rootEl = ctx.h.context.document.documentElement;
+  const watched = [rootEl];
+  const walk = node => {
+    if (!node || typeof node !== 'object') return;
+    watched.push(node);
+    for (const c of node.children || []) walk(c);
+  };
+  walk(ctx.h.context.document.body);
+  const restorers = [];
+  for (const node of new Set(watched)) {
+    const origSet = node.setAttribute;
+    const origRm = node.removeAttribute;
+    node.setAttribute = function (...a) { steadyWrites++; return origSet.apply(this, a); };
+    node.removeAttribute = function (...a) { steadyWrites++; return origRm.apply(this, a); };
+    restorers.push(() => { node.setAttribute = origSet; node.removeAttribute = origRm; });
+  }
+
+  codeBlocksCalls = 0;
+  obstacleCalls = 0;
+  temmlRenderCalls = 0;
+  steadyWrites = 0;
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+
+  for (const r of restorers) r();
+  assert.equal(temmlRenderCalls, 0, 'failed LaTeX blocks must not re-render on unchanged steady-state scan');
+  assert.ok(codeBlocksCalls <= 2, `steady-state scan should not trigger extra codeBlocks rescans (got ${codeBlocksCalls})`);
+  assert.equal(obstacleCalls, 1, `steady-state scan should evaluate cornerFloatingObstacles once (got ${obstacleCalls})`);
+  assert.equal(steadyWrites, 0, `unchanged steady-state scan must perform zero attribute writes (got ${steadyWrites})`);
+
+  // When a previously failed LaTeX block is fixed, negative cache invalidates and renders Formula Preview
+  invalid1.code.textContent = '\\alpha + \\beta = \\gamma';
+  // When a non-LaTeX block changes language & source to LaTeX, negative cache invalidates too
+  jsBlock.code.setAttribute('class', 'language-latex');
+  jsBlock.code.textContent = 'x^2 + y^2 = z^2';
+  temmlRenderCalls = 0;
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+
+  assert.equal(ctx.runtime.diagnostics().formulaBlocks, 6, 'fixed invalid block and converted block both render');
+  assert.equal(temmlRenderCalls, 2, 'only the two newly changed blocks call temml.render');
+  assert.ok(invalid1.surface.querySelector('.op-formula-preview')?.querySelector('math'));
+  assert.ok(jsBlock.surface.querySelector('.op-formula-preview')?.querySelector('math'));
+
+  // invalid2 remained unchanged and still did not re-render
+  assert.equal(invalid2.surface.querySelector('.op-formula-preview'), null);
+
+  ctx.runtime.stop();
 });

@@ -51,6 +51,7 @@
   const codes = new Map();
   const formulas = new Map();
   const savedFoldState = new WeakMap();
+  let formulaSkipCache = new WeakMap();
   const thoughts = new Map();
   const fades = ['op-stream-f0','op-stream-f1','op-stream-f2','op-stream-f3','op-stream-f4'];
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
@@ -145,6 +146,7 @@
     codes.clear();
     for (const entry of formulas.values()) { clearTimeout(entry.debounceTimer); entry.debounceTimer = null; }
     formulas.clear();
+    formulaSkipCache = new WeakMap();
     thoughts.clear();
     rootVarOriginals.clear();
     readingWidth = '';
@@ -186,22 +188,37 @@
     }
     return out;
   }
+  const ORPHAN_ROOT_SELECTOR = [
+    '#op-bottom-dock', '.op-dock[data-op-owned]',
+    '#op-rail-root', '.op-rail[data-op-owned]',
+    '#op-ambient-stage', '.op-ambient[data-op-owned]',
+    '.op-code-fold-bar[data-op-owned]',
+    '.op-thought-toolbar[data-op-owned]',
+    '.op-formula-preview[data-op-owned]',
+    '.op-formula-toggle[data-op-owned]',
+    '.op-formula-bar[data-op-owned]'
+  ].join(', ');
   function pruneOrphanRoots() {
-    const keepButtons = new Set([...codes.values()].map(entry => entry.button));
-    const keepToolbars = new Set([...thoughts.values()].map(entry => entry.toolbar));
-    const keepPreviews = new Set([...formulas.values()].filter(e => e.renderedOk).map(e => e.previewEl));
-    const keepToggles = new Set([...formulas.values()].filter(e => e.renderedOk).map(e => e.toggleBtn));
-    const keepBars = new Set([...formulas.values()].filter(e => e.renderedOk && e.barEl).map(e => e.barEl));
-    const keepHiddenTargets = new Set([...formulas.values()].filter(e => e.renderedOk && e.mode === 'preview').map(e => e.hideTarget));
-    for (const node of queryAllNodes('#op-bottom-dock, .op-dock[data-op-owned]')) if (node !== dock) node.remove();
-    for (const node of queryAllNodes('#op-rail-root, .op-rail[data-op-owned]')) if (node !== rail) node.remove();
-    for (const node of queryAllNodes('#op-ambient-stage, .op-ambient[data-op-owned]')) if (node !== ambient) node.remove();
-    for (const node of queryAllNodes('.op-code-fold-bar[data-op-owned]')) if (!keepButtons.has(node)) node.remove();
-    for (const node of queryAllNodes('.op-thought-toolbar[data-op-owned]')) if (!keepToolbars.has(node)) node.remove();
-    for (const node of queryAllNodes('.op-formula-preview[data-op-owned]')) if (!keepPreviews.has(node)) node.remove();
-    for (const node of queryAllNodes('.op-formula-toggle[data-op-owned]')) if (!keepToggles.has(node)) node.remove();
-    for (const node of queryAllNodes('.op-formula-bar[data-op-owned]')) if (!keepBars.has(node)) node.remove();
-    for (const node of queryAllNodes('[data-op-formula-source-hidden="true"]')) if (!keepHiddenTargets.has(node)) node.removeAttribute('data-op-formula-source-hidden');
+    const keepOwned = new Set();
+    if (dock) keepOwned.add(dock);
+    if (rail) keepOwned.add(rail);
+    if (ambient) keepOwned.add(ambient);
+    for (const entry of codes.values()) keepOwned.add(entry.button);
+    for (const entry of thoughts.values()) keepOwned.add(entry.toolbar);
+    const keepHiddenTargets = new Set();
+    for (const entry of formulas.values()) {
+      if (!entry.renderedOk) continue;
+      keepOwned.add(entry.previewEl);
+      keepOwned.add(entry.toggleBtn);
+      if (entry.barEl) keepOwned.add(entry.barEl);
+      if (entry.mode === 'preview') keepHiddenTargets.add(entry.hideTarget);
+    }
+    for (const node of queryAllNodes(ORPHAN_ROOT_SELECTOR)) {
+      if (!keepOwned.has(node)) node.remove();
+    }
+    for (const node of queryAllNodes('[data-op-formula-source-hidden="true"]')) {
+      if (!keepHiddenTargets.has(node)) node.removeAttribute('data-op-formula-source-hidden');
+    }
   }
 
   const t = key => Schema.t(cfg, key);
@@ -217,6 +234,15 @@
   }
   function own(element) { element.setAttribute('data-op-owned',''); return element; }
   function setText(element, value) { if (element.textContent !== value) element.textContent = value; }
+  function setAttr(element, name, value) {
+    const next = String(value);
+    if (element.getAttribute(name) !== next) element.setAttribute(name, next);
+  }
+  function removeAttr(element, name) {
+    if (element.hasAttribute ? element.hasAttribute(name) : element.getAttribute(name) !== null) {
+      element.removeAttribute(name);
+    }
+  }
   function listen(target, type, listener, options = {}) {
     target.addEventListener(type, listener, {...options, signal: events.signal});
   }
@@ -359,8 +385,8 @@
   function mountFormulaToggle(entry) {
     const { header, toggleBtn, hideTarget } = entry;
     const isBare = !header && entry.surface === entry.pre;
-    if (isBare) entry.previewEl.setAttribute('data-op-formula-bare', 'true');
-    else entry.previewEl.removeAttribute('data-op-formula-bare');
+    if (isBare) setAttr(entry.previewEl, 'data-op-formula-bare', 'true');
+    else removeAttr(entry.previewEl, 'data-op-formula-bare');
     if (header) {
       const actionBox = [...(header.children || [])].find(child =>
         !Adapters.isOwned(child) &&
@@ -369,12 +395,12 @@
         (child.querySelector?.('button') || child.querySelector?.('[role="button"]'))
       );
       if (actionBox) {
-        toggleBtn.removeAttribute('data-op-formula-header-direct');
+        removeAttr(toggleBtn, 'data-op-formula-header-direct');
         if (toggleBtn.parentElement !== actionBox || actionBox.firstChild !== toggleBtn) {
           actionBox.prepend(toggleBtn);
         }
       } else {
-        toggleBtn.setAttribute('data-op-formula-header-direct', 'true');
+        setAttr(toggleBtn, 'data-op-formula-header-direct', 'true');
         const firstBtn = [...(header.children || [])].find(child =>
           !Adapters.isOwned(child) &&
           ((child.localName || child.tagName || '').toLowerCase() === 'button' || child.getAttribute?.('role') === 'button')
@@ -389,10 +415,10 @@
       entry.barEl = null;
       return;
     }
-    toggleBtn.removeAttribute('data-op-formula-header-direct');
+    removeAttr(toggleBtn, 'data-op-formula-header-direct');
     if (!entry.barEl) entry.barEl = own(make('div', 'op-formula-bar'));
-    if (isBare) entry.barEl.setAttribute('data-op-formula-bare', 'true');
-    else entry.barEl.removeAttribute('data-op-formula-bare');
+    if (isBare) setAttr(entry.barEl, 'data-op-formula-bare', 'true');
+    else removeAttr(entry.barEl, 'data-op-formula-bare');
     if (toggleBtn.parentElement !== entry.barEl) entry.barEl.append(toggleBtn);
     if (entry.barEl.nextElementSibling !== hideTarget) {
       if (typeof hideTarget.before === 'function') hideTarget.before(entry.barEl);
@@ -402,22 +428,22 @@
     const preview = entry.mode === 'preview';
     setText(entry.toggleBtn, t(preview ? 'formulaShowSource' : 'formulaShowPreview'));
     const tip = t(preview ? 'formulaShowSourceLabel' : 'formulaShowPreviewLabel');
-    entry.toggleBtn.title = tip;
-    entry.toggleBtn.setAttribute('aria-label', tip);
-    entry.toggleBtn.setAttribute('aria-pressed', String(preview));
-    entry.toggleBtn.setAttribute('data-formula-mode', entry.mode);
+    if (entry.toggleBtn.title !== tip) entry.toggleBtn.title = tip;
+    setAttr(entry.toggleBtn, 'aria-label', tip);
+    setAttr(entry.toggleBtn, 'aria-pressed', String(preview));
+    setAttr(entry.toggleBtn, 'data-formula-mode', entry.mode);
   }
   function applyFormulaEntry(entry) {
     const showPreview = Boolean(entry.renderedOk && entry.mode === 'preview');
     if (showPreview) {
-      entry.hideTarget.setAttribute('data-op-formula-source-hidden', 'true');
-      entry.previewEl.hidden = false;
+      setAttr(entry.hideTarget, 'data-op-formula-source-hidden', 'true');
+      if (entry.previewEl.hidden) entry.previewEl.hidden = false;
       if (entry.hideTarget.nextElementSibling !== entry.previewEl) {
         entry.hideTarget.insertAdjacentElement('afterend', entry.previewEl);
       }
     } else {
-      entry.hideTarget.removeAttribute('data-op-formula-source-hidden');
-      entry.previewEl.hidden = true;
+      removeAttr(entry.hideTarget, 'data-op-formula-source-hidden');
+      if (!entry.previewEl.hidden) entry.previewEl.hidden = true;
       if (entry.renderedOk && entry.hideTarget.nextElementSibling !== entry.previewEl) {
         entry.hideTarget.insertAdjacentElement('afterend', entry.previewEl);
       }
@@ -425,10 +451,10 @@
     mountFormulaToggle(entry);
     updateFormulaToggleLabel(entry);
   }
-  function commitFormulaEntry(entry) {
+  function commitFormulaEntry(entry, { syncFold = true } = {}) {
     if (lostOwnership() || !enabled || stopped || !entry.pre.isConnected || cfg.formulaPreview === false || !Formula || !global.temml) {
       cleanupFormula(entry.pre, entry);
-      syncCodes();
+      if (syncFold) syncCodes();
       return;
     }
     const code = entry.pre.querySelector('code') || entry.pre;
@@ -438,32 +464,35 @@
     entry.lastSource = source;
     entry.lastHint = hint;
     if (!Formula.isLikelyLatex(source, hint)) {
+      formulaSkipCache.set(entry.pre, { source, hint, status: 'non-latex' });
       cleanupFormula(entry.pre, entry);
-      syncCodes();
+      if (syncFold) syncCodes();
       return;
     }
     const rendered = Formula.renderFormulaPreview(document, global.temml, source);
     if (!rendered.ok || !rendered.fragment) {
       if (entry.mode === 'source') {
         entry.renderedOk = false;
-        entry.hideTarget?.removeAttribute('data-op-formula-source-hidden');
+        removeAttr(entry.hideTarget, 'data-op-formula-source-hidden');
         entry.previewEl.replaceChildren();
         entry.previewEl.hidden = true;
         entry.previewEl.remove();
         entry.toggleBtn.remove();
         entry.barEl?.remove();
         entry.barEl = null;
-        syncCodes();
+        if (syncFold) syncCodes();
         return;
       }
+      formulaSkipCache.set(entry.pre, { source, hint, status: 'failed' });
       cleanupFormula(entry.pre, entry);
-      syncCodes();
+      if (syncFold) syncCodes();
       return;
     }
+    formulaSkipCache.delete(entry.pre);
     entry.renderedOk = true;
     entry.previewEl.replaceChildren(rendered.fragment);
     applyFormulaEntry(entry);
-    syncCodes();
+    if (syncFold) syncCodes();
   }
   function syncFormulas() {
     const temml = global.temml;
@@ -472,27 +501,27 @@
     for (const [pre, entry] of formulas) {
       if (!current.has(pre) || !pre.isConnected) cleanupFormula(pre, entry);
     }
-    if (!current.size) {
-      pruneOrphanRoots();
-      return;
-    }
+    if (!current.size) return;
     const hostSurfaces = adapter.codeSurfaces?.() || [];
     const hostHeaders = adapter.codeHeaders?.() || [];
     const isStreaming = Boolean(adapter.isStreaming?.());
     for (const pre of current) {
       const code = pre.querySelector('code') || pre;
       const source = Adapters.textOf(code);
-      const surface = resolveFormulaSurface(pre, hostSurfaces);
-      const hideTarget = resolveFormulaHideTarget(pre, surface);
-      const header = resolveFormulaHeader(surface, pre, hostHeaders);
-      const hint = Formula.extractLanguageHint(surface, pre, code, header);
       let entry = formulas.get(pre);
       if (entry) {
+        const stableContainer = entry.code === code && entry.surface?.isConnected && entry.hideTarget?.isConnected &&
+          (!entry.header || entry.header.isConnected) &&
+          (entry.surface === pre || entry.surface.contains?.(pre));
+        const surface = stableContainer ? entry.surface : resolveFormulaSurface(pre, hostSurfaces);
+        const hideTarget = stableContainer ? entry.hideTarget : resolveFormulaHideTarget(pre, surface);
+        const header = stableContainer ? entry.header : resolveFormulaHeader(surface, pre, hostHeaders);
+        const hint = Formula.extractLanguageHint(surface, pre, code, header);
         entry.code = code;
         entry.surface = surface;
         entry.header = header;
         if (entry.hideTarget !== hideTarget) {
-          entry.hideTarget?.removeAttribute('data-op-formula-source-hidden');
+          removeAttr(entry.hideTarget, 'data-op-formula-source-hidden');
           entry.hideTarget = hideTarget;
         }
         if (source !== entry.lastSource || hint !== entry.lastHint) {
@@ -508,7 +537,17 @@
         }
         continue;
       }
-      if (!Formula.isLikelyLatex(source, hint)) continue;
+      const surface = resolveFormulaSurface(pre, hostSurfaces);
+      const hideTarget = resolveFormulaHideTarget(pre, surface);
+      const header = resolveFormulaHeader(surface, pre, hostHeaders);
+      const hint = Formula.extractLanguageHint(surface, pre, code, header);
+      const skipped = formulaSkipCache.get(pre);
+      if (skipped && skipped.source === source && skipped.hint === hint) continue;
+      if (!Formula.isLikelyLatex(source, hint)) {
+        formulaSkipCache.set(pre, { source, hint, status: 'non-latex' });
+        continue;
+      }
+      formulaSkipCache.delete(pre);
       const previewEl = own(make('div', 'op-formula-preview'));
       const toggleBtn = own(make('button', 'op-formula-toggle'));
       entry = {
@@ -528,10 +567,9 @@
           commitFormulaEntry(entry);
         }, FORMULA_DEBOUNCE_MS);
       } else {
-        commitFormulaEntry(entry);
+        commitFormulaEntry(entry, { syncFold: false });
       }
     }
-    pruneOrphanRoots();
   }
 
   function syncCodes() {
@@ -587,7 +625,7 @@
   }
   function updateFoldLabel(entry) {
     setText(entry.button, `${t(entry.folded ? 'foldExpand' : 'foldCollapse')} · ${entry.lines} ${t('linesUnit')}`);
-    entry.button.setAttribute('aria-expanded',String(!entry.folded));
+    setAttr(entry.button, 'aria-expanded', String(!entry.folded));
   }
 
   function closeRail(returnFocus = false) {
@@ -619,7 +657,6 @@
   }
   function syncRail() {
     if (lostOwnership()) return;
-    pruneOrphanRoots();
     const turns = adapter.userTurns();
     if (!cfg.railOutline || !turns.length) {
       rail?.remove(); rail = null; railSignature = ''; return;
@@ -649,11 +686,15 @@
     }
     if (!rail.isConnected) document.body.append(rail);
     const toggle = rail.querySelector('.op-rail-toggle');
-    toggle.setAttribute('aria-label',t('outlineTitle')); toggle.title = t('outlineTitle');
-    rail.setAttribute('aria-label',t('outlineTitle'));
+    const outlineTitle = t('outlineTitle');
+    setAttr(toggle, 'aria-label', outlineTitle);
+    if (toggle.title !== outlineTitle) toggle.title = outlineTitle;
+    setAttr(rail, 'aria-label', outlineTitle);
     const search = rail.querySelector('.op-rail-search');
-    search.placeholder = t('outlineSearch'); search.setAttribute('aria-label',t('outlineSearch'));
-    setText(rail.querySelector('.op-rail-title'),t('outlineTitle'));
+    const outlineSearch = t('outlineSearch');
+    if (search.placeholder !== outlineSearch) search.placeholder = outlineSearch;
+    setAttr(search, 'aria-label', outlineSearch);
+    setText(rail.querySelector('.op-rail-title'),outlineTitle);
     setText(rail.querySelector('.op-rail-count'),String(turns.length));
     const signature = JSON.stringify([cfg.language,turns.map(turn => Adapters.cleanTurnText(turn))]);
     if (signature !== railSignature) {
@@ -678,7 +719,7 @@
     rail?.querySelectorAll('[data-turn]').forEach(button => {
       const active = Number(button.dataset.turn) === activeTurn;
       button.classList.toggle('is-active',active);
-      if (active) button.setAttribute('aria-current','location'); else button.removeAttribute('aria-current');
+      if (active) setAttr(button, 'aria-current', 'location'); else removeAttr(button, 'aria-current');
     });
   }
   function jump(index) {
@@ -776,16 +817,16 @@
     const widthLabel = t(WIDTH_LABELS[preset]);
     const widthTip = `${t('widthToggleLabel')}: ${widthLabel}`;
     setText(widthBtn, widthLabel);
-    widthBtn.setAttribute('data-width-preset', preset);
-    widthBtn.title = widthTip;
-    widthBtn.setAttribute('aria-label', widthTip);
+    setAttr(widthBtn, 'data-width-preset', preset);
+    if (widthBtn.title !== widthTip) widthBtn.title = widthTip;
+    setAttr(widthBtn, 'aria-label', widthTip);
   }
   function syncContextVial() {
     let vial = dock.querySelector('.op-vial-pill');
     if (!cfg.contextVial) {
       vial?.remove();
       dock.querySelector('.op-vial-popover')?.remove();
-      dock.removeAttribute('data-op-popover-side');
+      removeAttr(dock, 'data-op-popover-side');
       dock.style.removeProperty('--op-vial-popover-shift-x');
       return;
     }
@@ -821,7 +862,7 @@
     // v0.3.1 #18: `?` marks an unrecognized auto capacity so a fallback never reads as the real window.
     const unsure=capacity.source==='unrecognized'?'?':'';
     setText(vial.querySelector('.op-vial-summary'),`≈ ${format(estimate.total)}${attachments>0?'+':''} / ${format(capacity.tokens)}${unsure}`);
-    vial.setAttribute('aria-label',`${t('vialTitle')}: ${estimate.total.toLocaleString()}${attachments>0?'+':''} / ${capacity.tokens.toLocaleString()}${unsure} tokens${unsure?` (${t('vialSourceUnrecognized')})`:''}`);
+    setAttr(vial, 'aria-label', `${t('vialTitle')}: ${estimate.total.toLocaleString()}${attachments>0?'+':''} / ${capacity.tokens.toLocaleString()}${unsure} tokens${unsure?` (${t('vialSourceUnrecognized')})`:''}`);
     const liquid=vial.querySelector('.op-vial-liquid');
     if(liquid.style.height!==percent.toFixed(1)+'%') liquid.style.height=percent.toFixed(1)+'%';
     const popover=dock.querySelector('.op-vial-popover');
@@ -848,7 +889,6 @@
   }
   function syncDock() {
     if (lostOwnership()) return;
-    pruneOrphanRoots();
     if (!dock) { dock=own(make('aside','op-dock')); dock.id='op-bottom-dock'; document.body.append(dock); }
     if (!dock.isConnected) document.body.append(dock);
     syncWidthToggle();
@@ -1120,12 +1160,10 @@
     dockOverlaidHost = nextOverlaidDock; dockScroller = nextThreadScroller;
     alphaFadeScroller = nextAlphaFadeScroller; alphaFadeDock = nextAlphaFadeDock;
     const home = String(isHome);
-    if (document.documentElement.getAttribute('data-op-home') !== home) document.documentElement.setAttribute('data-op-home',home);
-    document.documentElement.setAttribute('data-op-visibility',document.hidden?'hidden':'visible');
+    setAttr(document.documentElement, 'data-op-home', home);
+    setAttr(document.documentElement, 'data-op-visibility', document.hidden?'hidden':'visible');
   }
-  function updateAmbientGeometry() {
-    geometryFrame=null;
-    if (lostOwnership() || !enabled || stopped || document.hidden) return;
+  function syncAmbientBounds() {
     if (ambient && primarySurface?.isConnected) {
       const rect=primarySurface.getBoundingClientRect();
       const left=Math.max(0,Math.min(innerWidth,rect.left));
@@ -1137,6 +1175,11 @@
         if (ambient.style[key]!==pixels) ambient.style[key]=pixels;
       }
     }
+  }
+  function updateAmbientGeometry() {
+    geometryFrame=null;
+    if (lostOwnership() || !enabled || stopped || document.hidden) return;
+    syncAmbientBounds();
     syncDockClearance();
     syncScrollerFade();
     syncDockAvoidance();
@@ -1291,7 +1334,6 @@
   }
   function syncAmbient() {
     if (lostOwnership()) return;
-    pruneOrphanRoots();
     const needed=(cfg.ambientIntensity>0 && (cfg.ambientStyle!=='none' || cfg.ambientTexture!=='off')) || cfg.semanticAura;
     if (!needed || !primarySurface) {ambient?.remove();ambient=null;return;}
     if (!ambient) {
@@ -1305,12 +1347,13 @@
       ambient.append(wash,make('div','op-ambient-grid'),glyphs,make('div','op-ambient-rim'));
     }
     if (ambient.parentElement!==primarySurface) primarySurface.append(ambient);
-    updateAmbientGeometry();
+    syncAmbientBounds();
   }
   function resetConversation() {
     activeTurn=-1; railSignature=''; lastEstimate=0; lastModelLabel=''; lastAttachments=0;
     for(const [element,entry] of thoughts) cleanupThought(element,entry);
     for(const [pre,entry] of formulas) cleanupFormula(pre,entry);
+    formulaSkipCache = new WeakMap();
     for(const [pre,entry] of codes) cleanupCode(pre,entry);
     clearActivity();
     closeRail(); setDockOpen(false);
@@ -1320,7 +1363,7 @@
     if(lostOwnership() || !enabled || stopped || document.hidden || !document.body) return;
     passes++;
     if(route!==location.href) {route=location.href;revision++;resetConversation();}
-    syncSurfaces(); syncReadingWidth(); syncDockClearance(); syncScrollerFade(); syncAmbient(); syncFormulas(); syncCodes(); syncRail(); syncDock(); syncThoughts(); syncDockAvoidance();
+    syncSurfaces(); syncReadingWidth(); syncDockClearance(); syncScrollerFade(); syncAmbient(); syncFormulas(); syncCodes(); syncRail(); syncDock(); syncThoughts(); pruneOrphanRoots(); syncDockAvoidance();
   }
   function suspend() {
     if (lostOwnership()) return;
@@ -1333,6 +1376,7 @@
     document.documentElement.removeAttribute('data-op-visibility');
     clearActivity();
     for(const [pre,entry] of formulas) cleanupFormula(pre,entry);
+    formulaSkipCache = new WeakMap();
     for(const [pre,entry] of codes) cleanupCode(pre,entry);
     for(const [element,entry] of thoughts) cleanupThought(element,entry);
     rail?.remove();dock?.remove();ambient?.remove();rail=dock=ambient=null;
@@ -1403,6 +1447,7 @@
     const previous=cfg;cfg=Schema.sanitizeConfig(next);
     if(previous.thoughtView!==cfg.thoughtView) for(const [element,entry] of thoughts){entry.view=cfg.thoughtView;applyThoughtView(element,entry);}
     if(previous.thoughtEndpoint!==cfg.thoughtEndpoint||previous.thoughtModel!==cfg.thoughtModel) for(const [element,entry] of thoughts) cleanupThought(element,entry);
+    if(previous.formulaPreview!==cfg.formulaPreview) formulaSkipCache = new WeakMap();
     if(!activeForSite()) {suspend();Schema.applyConfigToRoot(cfg);return;}
     Schema.applyConfigToRoot(cfg);
     if(!motionAllowed()||!cfg.streamChoreography) clearHighlights();
