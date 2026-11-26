@@ -1,6 +1,6 @@
 'use strict';
 /* v0.3.1 #21 Content Width Presets: per-site width-limiter declarations, the midpoint target math,
- * and a static guard that keeps the hosts.css width rules in sync with those declarations. */
+ * and a static guard that keeps the styles/host-*.css width rules in sync with those declarations. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -101,11 +101,14 @@ test('standard adds no override; full reserves a left edge and the Conversation 
   assert.equal(A.contentWidthTarget(768, 'full', 0, 860), null, 'no main area, no override');
 });
 
-/* Static guard (declaration <-> CSS sync), not a rendering check: hosts.css cannot read the adapter, so its
+/* Static guard (declaration <-> CSS sync), not a rendering check: styles/host-*.css cannot read the adapter, so their
  * width rules repeat the selectors declared in src/adapters.js (contentWidth.targets / composerTargets), which
  * own them. This guard fails when the two lists drift apart in either direction. What the reader sees (widths,
  * midpoint, bubble cap, native restore) is measured in tests/live-width.mjs. */
-const hostsCss = fs.readFileSync(path.join(ROOT, 'styles/hosts.css'), 'utf8');
+const HOST_CSS_FILES = {
+  chatgpt: fs.readFileSync(path.join(ROOT, 'styles/host-chatgpt.css'), 'utf8'),
+  gemini: fs.readFileSync(path.join(ROOT, 'styles/host-gemini.css'), 'utf8')
+};
 const MARKER = '/* === Content Width Presets (v0.3.1 #21) === */';
 function splitTopLevel(text) {
   const parts = [];
@@ -124,21 +127,22 @@ function splitTopLevel(text) {
   parts.push(text.slice(start).trim());
   return parts.filter(Boolean);
 }
-function contentWidthBlockCss() {
-  const start = hostsCss.indexOf(MARKER);
-  assert.notEqual(start, -1, `hosts.css has the ${MARKER} block`);
-  const end = hostsCss.indexOf('/* === ', start + MARKER.length);
-  return (end === -1 ? hostsCss.slice(start) : hostsCss.slice(start, end)).replace(/\/\*[\s\S]*?\*\//g, '');
+function contentWidthBlockCss(host) {
+  const css = HOST_CSS_FILES[host];
+  const start = css.indexOf(MARKER);
+  assert.notEqual(start, -1, `styles/host-${host}.css has the ${MARKER} block`);
+  const end = css.indexOf('/* === ', start + MARKER.length);
+  return (end === -1 ? css.slice(start) : css.slice(start, end)).replace(/\/\*[\s\S]*?\*\//g, '');
 }
 /** Element selectors of all host-scoped width rules in the Content Width Presets block (including uncap rules). */
 function cssWidthLimiters(host) {
-  const css = contentWidthBlockCss();
+  const css = contentWidthBlockCss(host);
   const out = [];
   for (const [, selectorText] of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
     for (const selector of splitTopLevel(selectorText.replace(/\s+/g, ' ').trim())) {
       const hostMatch = selector.match(/^html\[data-op-enabled="true"\]\[data-op-host="(chatgpt|gemini)"\]/);
       assert.ok(hostMatch, `Content Width Presets rule must be host-scoped (no unguarded host-agnostic rule): "${selector}"`);
-      if (hostMatch[1] !== host) continue;
+      assert.equal(hostMatch[1], host, `styles/host-${host}.css must only declare ${host} width rules`);
       // Drop the root gate (the first compound); what remains is the limiter, or an :is() list of limiters.
       const limiter = selector.slice(selector.indexOf(' ') + 1);
       const list = limiter.match(/^:is\((.*)\)$/);
@@ -148,16 +152,16 @@ function cssWidthLimiters(host) {
   return out;
 }
 
-test('static guard: hosts.css width rules size exactly the limiters each adapter declares without 820px ceiling or host-agnostic rules', () => {
-  const block = contentWidthBlockCss();
-  assert.equal(/820px/.test(block), false, 'hosts.css Content Width Presets must not hardcode an 820px ceiling');
+test('static guard: styles/host-*.css width rules size exactly the limiters each adapter declares without 820px ceiling or host-agnostic rules', () => {
   const A = adapters();
   for (const host of ['chatgpt', 'gemini']) {
+    const block = contentWidthBlockCss(host);
+    assert.equal(/820px/.test(block), false, `styles/host-${host}.css Content Width Presets must not hardcode an 820px ceiling`);
     const spec = plain(A.forHost(host, {}).contentWidth);
     assert.deepEqual(
       cssWidthLimiters(host).sort(),
       [...spec.targets, ...spec.userTurnTargets, ...spec.composerTargets].sort(),
-      `${host}: hosts.css and src/adapters.js list the same width limiters`
+      `${host}: host-${host}.css and src/adapters.js list the same width limiters`
     );
   }
 });

@@ -1,81 +1,11 @@
-/* Obsidian Prism Web — scoped host bridge and owned controls.
- * Adapted from RMvdesi/obsidian-prism. Modified 2026-11-22. GPL-3.0-only.
+/* Obsidian Prism Web — shared host bridge and owned controls.
+ * Adapted from RMvdesi/obsidian-prism. Modified 2026-11-26. GPL-3.0-only.
  * No document-wide animation reset, text wrapping, remote fonts, or page blur. */
 
 /* Theme bridges live on recognized surfaces, never on the entire html/body.
  * This lets the sidebar and composer return to native styling independently. */
 html[data-op-enabled="true"] [data-op-main-surface="true"] {
   isolation: isolate;
-}
-html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] {
-  --main-surface-background: var(--op-canvas) !important;
-  --main-surface-primary: var(--op-canvas) !important;
-  --main-surface-secondary: var(--op-card) !important;
-  --main-surface-tertiary: var(--op-secondary) !important;
-  --message-surface: var(--op-secondary) !important;
-  --bg-primary: var(--op-canvas) !important;
-  --bg-secondary: var(--op-secondary) !important;
-  --bg-tertiary: var(--op-secondary) !important;
-  --bg-elevated-primary: var(--op-card) !important;
-  --bg-elevated-secondary: var(--op-secondary) !important;
-  --text-primary: var(--op-fg) !important;
-  --text-secondary: var(--op-fg-secondary) !important;
-  --text-tertiary: var(--op-fg-muted) !important;
-  --text-quaternary: var(--op-placeholder) !important;
-  --border-xlight: var(--op-border) !important;
-  --border-light: var(--op-border) !important;
-  --border-medium: var(--op-border-strong) !important;
-  background-color: var(--op-canvas) !important;
-  color: var(--op-fg) !important;
-}
-html[data-op-enabled="true"][data-op-host="chatgpt"] [data-message-author-role="user"] > div {
-  border-radius: var(--op-radius-lg) !important;
-}
-/* Literal host bubble backgrounds do not follow --message-surface. Pair their
- * surface and text colors; the legacy fallback accepts only nonempty text
- * leaves, so attachment cards and action containers keep their own surfaces. */
-html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-message-author-role="user"] :where(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"]),
-html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-message-author-role="user"] > div:not(:empty):not(:has(> *)) {
-  background: color-mix(in srgb,var(--op-accent) 8%,var(--op-secondary)) !important;
-  color: var(--op-fg) !important;
-  border-radius: var(--op-radius-lg) !important;
-}
-
-/* Gemini's Material tokens are similarly limited to its primary chat surface. */
-html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] {
-  --gem-sys-color--background: var(--op-canvas) !important;
-  --gem-sys-color--surface: var(--op-canvas) !important;
-  --gem-sys-color--surface-dim: var(--op-muted) !important;
-  --gem-sys-color--surface-bright: var(--op-card) !important;
-  --gem-sys-color--surface-container-lowest: var(--op-tonal-0) !important;
-  --gem-sys-color--surface-container-low: var(--op-muted) !important;
-  --gem-sys-color--surface-container: var(--op-card) !important;
-  --gem-sys-color--surface-container-high: var(--op-secondary) !important;
-  --gem-sys-color--surface-container-highest: var(--op-tonal-3) !important;
-  --gem-sys-color--on-surface: var(--op-fg) !important;
-  --gem-sys-color--on-surface-variant: var(--op-fg-secondary) !important;
-  --gem-sys-color--outline: var(--op-border-strong) !important;
-  --gem-sys-color--outline-variant: var(--op-border) !important;
-  --gem-sys-color--primary: var(--op-accent) !important;
-  --bard-color-surface: var(--op-canvas) !important;
-  --bard-color-background: var(--op-canvas) !important;
-  --bard-color-on-surface: var(--op-fg) !important;
-  background-color: var(--op-canvas) !important;
-  color: var(--op-fg) !important;
-}
-html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) .user-query-bubble-with-background {
-  background: color-mix(in srgb,var(--op-accent) 8%,var(--op-secondary)) !important;
-  border-radius: var(--op-radius-lg) !important;
-  color: var(--op-fg) !important;
-}
-
-/* Let the owned field show through only known blank canvas wrappers. Popovers,
- * code, messages and the complete composer keep their own opaque surfaces. */
-html[data-op-enabled="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] :is(.bg-token-main-surface-primary,.bg-token-bg-primary,[data-testid="conversation-scroll-container"]):not([data-op-composer-surface]):not([data-op-composer-surface] *) {
-  background-color: transparent !important;
-}
-html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] :is(main,.conversation-container,.chat-container,.conversation-container-scrollable,.chat-history-scroll-container) {
-  background-color: transparent !important;
 }
 
 /* Both the narrow app rail and the conversation history are real surfaces.
@@ -173,7 +103,7 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]):not([data-o
   color: var(--op-sidebar-active-ink) !important;
   box-shadow: inset 0 0 0 1px color-mix(in srgb,var(--op-accent) 34%,transparent) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]):not([data-op-sidebar-style="native"]) [data-op-sidebar-surface="true"] [data-op-sidebar-active-tile="true"] :is(svg,svg *) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]):not([data-op-sidebar-style="native"]) [data-op-sidebar-surface="true"] [data-op-sidebar-active-tile="true"] svg {
   color: inherit !important;
 }
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]):not([data-op-sidebar-style="native"]) [data-op-sidebar-surface="true"] [data-op-sidebar-active-tile="true"]::before,
@@ -250,27 +180,23 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([role="
 }
 
 /* Shared typography enhancements are limited to actual conversation blocks. */
-html[data-op-enabled="true"] :is([data-message-author-role],[data-turn],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response) pre,
-html[data-op-enabled="true"] :is([data-message-author-role],[data-turn],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response) code {
+html[data-op-enabled="true"] [data-op-main-surface="true"] :is(pre, code) {
   font-family: var(--op-code-font-family) !important;
 }
-html[data-op-enabled="true"] :is([data-message-author-role],[data-turn],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response) pre {
+html[data-op-enabled="true"] [data-op-main-surface="true"] pre {
   border-radius: var(--op-radius-md) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role],[data-turn],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response) pre {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] pre {
   background: var(--op-code-well) !important;
   border: 1px solid var(--op-border) !important;
   color: var(--op-fg) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role],[data-turn="assistant"],[data-testid="assistant-message"],.agent-turn,model-response) a:not([role="button"]) {
-  color: var(--op-link) !important;
-}
-html[data-op-enabled="true"][data-op-sticky-code="true"] :is([data-op-code-header="true"],code-block .code-block-decoration,[data-message-author-role="assistant"] .code-header,[data-turn="assistant"] .code-header,[data-testid="code-block-header"],[data-test-id="code-block-header"]) {
+html[data-op-enabled="true"][data-op-sticky-code="true"] [data-op-code-header="true"] {
   position: sticky !important;
   top: 0;
   z-index: 5;
 }
-html[data-op-enabled="true"][data-op-sticky-code="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"],code-block .code-block-decoration,[data-message-author-role="assistant"] .code-header,[data-turn="assistant"] .code-header,[data-testid="code-block-header"],[data-test-id="code-block-header"]) {
+html[data-op-enabled="true"][data-op-sticky-code="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] {
   background: var(--op-code-header) !important;
   color: var(--op-code-header-fg) !important;
   border-bottom: 1px solid var(--op-border) !important;
@@ -283,7 +209,12 @@ html[data-op-enabled="true"] pre.op-code-folded {
 html[data-op-enabled="true"] .op-thought-hidden { display: none !important; }
 
 /* Only extension-owned UI is normalized; host buttons and inputs retain behavior. */
-[data-op-owned], [data-op-owned] * { box-sizing: border-box; }
+[data-op-owned],
+.op-rail :where(section, div, button, input, span, strong, p),
+.op-dock :where(section, button, span, strong, dl, dt, dd, p),
+.op-thought-toolbar :where(div, button, p),
+.op-formula-preview :where(div, p, pre),
+.op-formula-bar button { box-sizing: border-box; }
 [data-op-owned] {
   font-family: -apple-system,BlinkMacSystemFont,"Segoe UI","Noto Sans",Arial,sans-serif;
   font-size: 13px;
@@ -327,13 +258,12 @@ html[data-op-enabled="true"] .op-thought-hidden { display: none !important; }
 #op-ambient-stage {
   position: fixed;
   inset: 0;
-  pointer-events: none;
+  pointer-events: none !important;
   z-index: -1;
   overflow: hidden;
-  contain: paint;
+  contain: strict;
   user-select: none;
 }
-#op-ambient-stage * { pointer-events: none !important; }
 .op-ambient-wash {
   position: absolute;
   inset: 0;
@@ -376,22 +306,28 @@ html[data-op-ambient-style="spotlight"] .op-aurora-one {
   left: -8%;bottom: -49%;width: 116%;height: 124%;
   background: radial-gradient(ellipse at 50% 48%,color-mix(in srgb,var(--op-accent) 70%,var(--op-horizon-blue)) 0%,color-mix(in srgb,var(--op-horizon-violet) 36%,transparent) 30%,transparent 63%);
 }
-html[data-op-ambient-style="spotlight"] :is(.op-aurora-two,.op-aurora-three) { display: none; }
+html[data-op-ambient-style="spotlight"] :is(.op-aurora-two,.op-aurora-three) {
+  display: none;
+  animation: none;
+  will-change: auto;
+}
 
-/* Both motion levels move on the compositor; only ultra has broader travel. */
-html[data-op-motion="subtle"] .op-aurora {
+/* Both motion levels move on the compositor; only ultra has broader travel.
+ * Gate GPU promotion on active visible layers so idle/none/spotlight layers allocate no textures. */
+html[data-op-motion="subtle"]:not([data-op-ambient-style="none"]) #op-ambient-stage[data-op-ambient-active="true"] .op-aurora {
   animation: op-horizon-drift-subtle calc(var(--op-drift-duration,28s) * 1.25) ease-in-out infinite alternate;
   will-change: transform;
 }
-html[data-op-motion="ultra"] .op-aurora {
+html[data-op-motion="ultra"]:not([data-op-ambient-style="none"]) #op-ambient-stage[data-op-ambient-active="true"] .op-aurora {
   animation: op-horizon-drift var(--op-drift-duration,28s) ease-in-out infinite alternate;
   will-change: transform;
 }
-html:is([data-op-motion="subtle"],[data-op-motion="ultra"]) .op-aurora-two {
+html:is([data-op-motion="subtle"],[data-op-motion="ultra"]) #op-ambient-stage[data-op-ambient-active="true"] .op-aurora-two {
   animation-delay: -11s;
   animation-direction: alternate-reverse;
 }
-html:is([data-op-motion="subtle"],[data-op-motion="ultra"]) .op-aurora-three { animation-delay: -19s; }
+html:is([data-op-motion="subtle"],[data-op-motion="ultra"]) #op-ambient-stage[data-op-ambient-active="true"] .op-aurora-three { animation-delay: -19s; }
+#op-ambient-stage[data-op-ambient-active="false"] .op-aurora { animation: none; will-change: auto; }
 @keyframes op-horizon-drift-subtle {
   0% { transform: translate3d(-2%,1%,0) scale(1); }
   100% { transform: translate3d(3%,-3%,0) scale(1.06); }
@@ -413,13 +349,18 @@ html:is([data-op-motion="subtle"],[data-op-motion="ultra"]) .op-aurora-three { a
   background-size: 64px 64px;
   opacity: calc(var(--op-ambient-alpha,0) * var(--op-ambient-presence,.24) * .12);
 }
+/* Fixed decorative glyph matrix rendered as a repeating inline SVG tile (zero DOM text shaping). */
 .op-ambient-glyphs {
   inset: 8% 4% 0;
-  color: var(--op-horizon-ink);
-  font: 10px/1.9 var(--op-code-font-family);
-  letter-spacing: 2.8px;
-  word-break: break-all;
-  white-space: pre-wrap;
+  background-color: var(--op-horizon-ink);
+  -webkit-mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='224' height='114' viewBox='0 0 224 114'%3E%3Cg fill='%23000' font-family='monospace' font-size='10' letter-spacing='2.8'%3E%3Ctext x='2' y='14'%3E01:%3C%3E[]%7B%7D+*PRISM01%3C/text%3E%3Ctext x='2' y='33'%3EPRISM01:%3C%3E[]%7B%7D+*P%3C/text%3E%3Ctext x='2' y='52'%3E%3C%3E[]%7B%7D+*PRISM01:%3C%3C/text%3E%3Ctext x='2' y='71'%3E+*PRISM01:%3C%3E[]%7B%7D+%3C/text%3E%3Ctext x='2' y='90'%3E[]%7B%7D+*PRISM01:%3C%3E[%3C/text%3E%3Ctext x='2' y='109'%3E1:%3C%3E[]%7B%7D+*PRISM01%3C/text%3E%3C/g%3E%3C/svg%3E"), radial-gradient(ellipse at 50% 65%,#000 28%,transparent 78%);
+  -webkit-mask-size: 224px 114px, 100% 100%;
+  -webkit-mask-repeat: repeat, no-repeat;
+  -webkit-mask-composite: source-in;
+  mask-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='224' height='114' viewBox='0 0 224 114'%3E%3Cg fill='%23000' font-family='monospace' font-size='10' letter-spacing='2.8'%3E%3Ctext x='2' y='14'%3E01:%3C%3E[]%7B%7D+*PRISM01%3C/text%3E%3Ctext x='2' y='33'%3EPRISM01:%3C%3E[]%7B%7D+*P%3C/text%3E%3Ctext x='2' y='52'%3E%3C%3E[]%7B%7D+*PRISM01:%3C%3C/text%3E%3Ctext x='2' y='71'%3E+*PRISM01:%3C%3E[]%7B%7D+%3C/text%3E%3Ctext x='2' y='90'%3E[]%7B%7D+*PRISM01:%3C%3E[%3C/text%3E%3Ctext x='2' y='109'%3E1:%3C%3E[]%7B%7D+*PRISM01%3C/text%3E%3C/g%3E%3C/svg%3E"), radial-gradient(ellipse at 50% 65%,#000 28%,transparent 78%);
+  mask-size: 224px 114px, 100% 100%;
+  mask-repeat: repeat, no-repeat;
+  mask-composite: intersect;
   opacity: calc(var(--op-ambient-alpha,0) * var(--op-ambient-presence,.24) * .15);
 }
 html[data-op-texture="grid"] .op-ambient-grid,
@@ -431,8 +372,8 @@ html[data-op-texture="glyphs"] .op-ambient-glyphs { display: block; }
   opacity: 0;
   transition: opacity .7s ease;
 }
-html[data-op-aura="streaming"] .op-ambient-rim { opacity: .7; }
-html[data-op-aura="settled"] .op-ambient-rim { opacity: .22; }
+#op-ambient-stage[data-op-aura="streaming"] .op-ambient-rim { opacity: .7; }
+#op-ambient-stage[data-op-aura="settled"] .op-ambient-rim { opacity: .22; }
 
 /* Conversation rail: a visible toggle, click targets and a keyboard-operable drawer. */
 #op-rail-root {
@@ -560,14 +501,12 @@ html[data-op-aura="settled"] .op-ambient-rim { opacity: .22; }
 .op-thought-result:not(:empty) { padding-top: 12px;margin-top: 10px;border-top: 1px solid var(--op-border); }
 
 /* CSS and JavaScript share the same effective motion policy. */
-html[data-op-motion="off"] [data-op-owned],
-html[data-op-motion="off"] [data-op-owned] *,
-html[data-op-motion="off"] :is([data-op-composer-surface="true"],[data-op-sidebar-surface="true"] *) { animation: none !important;transition: none !important;scroll-behavior: auto !important; }
+html[data-op-motion="off"] :is([data-op-owned], .op-aurora, .op-ambient-rim, [data-op-composer-surface="true"], [data-op-sidebar-surface="true"] :is(a, button, [role="button"])) { animation: none !important;transition: none !important;scroll-behavior: auto !important; }
 html[data-op-motion="off"] .op-aurora { transform: none;will-change: auto; }
 html[data-op-visibility="hidden"] #op-ambient-stage,
-html[data-op-visibility="hidden"] #op-ambient-stage * { animation-play-state: paused !important;transition: none !important;will-change: auto; }
+html[data-op-visibility="hidden"] #op-ambient-stage :is(.op-aurora, .op-ambient-rim) { animation-play-state: paused !important;transition: none !important;will-change: auto; }
 @media (prefers-reduced-motion: reduce) {
-  [data-op-owned],[data-op-owned] *,[data-op-composer-surface="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-primary-action="true"],[data-op-composer-chip="true"],[data-op-sidebar-surface="true"] * { animation: none !important;transition: none !important;scroll-behavior: auto !important; }
+  [data-op-owned],.op-aurora,.op-ambient-rim,[data-op-composer-surface="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-primary-action="true"],[data-op-composer-chip="true"],[data-op-sidebar-surface="true"] :is(a,button,[role="button"]) { animation: none !important;transition: none !important;scroll-behavior: auto !important; }
   .op-aurora { transform: none;will-change: auto; }
 }
 @media (max-width: 700px) {
@@ -584,46 +523,8 @@ html[data-op-visibility="hidden"] #op-ambient-stage * { animation-play-state: pa
 }
 
 /* === Bottom Spacing & Composer Scrim (v0.3.0) === */
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-spacer="true"] {
-  min-height: 20px !important;
-  height: 20px !important;
-  padding-bottom: 0 !important;
-}
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-column="true"] {
-  padding-bottom: 24px !important;
-}
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]):has([data-op-composer-overlaid="true"]) [data-op-thread-column="true"] {
-  padding-bottom: max(24px, var(--op-dock-clearance, 96px)) !important;
-}
 html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-overlaid="true"] {
   z-index: 6 !important;
-}
-html[data-op-enabled="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-scroller-fade="true"] {
-  -webkit-mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--op-scroller-fade-start, 24px)), transparent calc(100% - var(--op-scroller-fade-end, 0px)), transparent 100%) !important;
-  mask-image: linear-gradient(to bottom, #000 0, #000 calc(100% - var(--op-scroller-fade-start, 24px)), transparent calc(100% - var(--op-scroller-fade-end, 0px)), transparent 100%) !important;
-}
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-container {
-  padding-top: 8px !important;
-  padding-bottom: 14px !important;
-}
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-hint {
-  margin-top: 6px !important;
-  margin-bottom: 0 !important;
-}
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"],
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] [data-op-composer-column="true"]:not(.composer-container):not(:has(.composer-hint)),
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] .composer-column:not(.composer-container):not(:has(.composer-hint)) {
-  padding-top: 4px !important;
-  padding-bottom: 0 !important;
-  margin-bottom: 0 !important;
-}
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"]:not(:has([data-op-composer-disclaimer="true"])):not(:has(.composer-hint)) {
-  padding-bottom: 5px !important;
-}
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"]:not(:has(.composer-hint)) {
-  padding-bottom: 5px !important;
-  margin-bottom: 0 !important;
-  min-height: 0 !important;
 }
 html[data-op-enabled="true"][data-op-composer="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] :has([data-op-composer-surface="true"]):not(.composer-container) {
   padding-top: 0 !important;
@@ -634,41 +535,6 @@ html[data-op-enabled="true"][data-op-composer="true"][data-op-home="false"]:not(
 }
 html[data-op-enabled="true"][data-op-composer="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] [data-op-composer-surface="true"] {
   margin-top: 0 !important;
-  margin-bottom: 0 !important;
-}
-/* v0.4.4 #46: Tighten live ChatGPT Thread Footer bottom inset & inner wrapper padding without altering its native
- * positioning, z-index, or anchor-scope. Gated strictly on active conversation + composerRestyle + non-Native Palette. */
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] {
-  --thread-composer-bottom-inset: 0px !important;
-  padding-bottom: 7px !important;
-  margin-bottom: 0 !important;
-  min-height: 0 !important;
-}
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] [data-thread-scroll-footer="true"] {
-  --thread-composer-bottom-inset: 0px !important;
-  padding-bottom: 0 !important;
-  margin-bottom: 0 !important;
-  min-height: 0 !important;
-}
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) :is([data-op-thread-footer="true"][data-thread-scroll-footer="true"], [data-op-thread-footer="true"] [data-thread-scroll-footer="true"])::after {
-  height: 0 !important;
-  min-height: 0 !important;
-}
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] :has([data-op-composer-surface="true"]) {
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
-  min-height: 0 !important;
-}
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-thread-footer="true"] [data-op-composer-surface="true"] {
-  margin-top: 0 !important;
-  margin-bottom: 0 !important;
-}
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] {
-  min-height: 0 !important;
-  padding-top: 16px !important;
-  padding-bottom: 5px !important;
   margin-bottom: 0 !important;
 }
 html[data-op-enabled="true"][data-op-composer="true"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-empty-sibling="true"] {
@@ -682,13 +548,6 @@ html[data-op-enabled="true"][data-op-composer="true"][data-op-home="false"]:not(
   border: 0 !important;
   flex: 0 0 0 !important;
 }
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-disclaimer="true"]:not(.composer-hint) {
-  display: none !important;
-}
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) :is([data-op-composer-disclaimer="true"], [data-op-composer-dock="true"] hallucination-disclaimer) {
-  display: none !important;
-}
-
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) .native-composer-fade {
   background-color: transparent !important;
   background-image: none !important;
@@ -712,45 +571,31 @@ html[data-op-enabled="true"][data-op-home="false"]:not([data-op-effective-palett
 }
 
 /* === Code Surface Readability (v0.3.0) === */
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) code-block:has(.code-block) {
-  display: block !important;
-  background: transparent !important;
-  border: 0 !important;
-  border-radius: 0 !important;
-  padding: 0 !important;
-  box-shadow: none !important;
-  overflow: visible !important;
-}
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block:not(:has(.code-block)), code-block .code-block, [data-testid="code-block"], .code-block-wrapper) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-surface="true"]:not(pre) {
   display: block !important;
   padding: 0 !important;
   overflow: visible !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) code-block:has(.code-block) > .code-block {
-  margin: 0 !important;
-  max-width: 100% !important;
-}
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], code-block:not(:has(.code-block)), code-block .code-block, [data-testid="code-block"], .code-block-wrapper) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-surface="true"] {
   background: var(--op-code-surface) !important;
   border: 1px solid var(--op-border-strong) !important;
   border-radius: var(--op-radius-md) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"], code-block:not(:has(.code-block)), code-block .code-block, [data-testid="code-block"], .code-block-wrapper) :is(.formatted-code-block-internal-container, pre, pre code),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], [data-op-main-surface="true"]) :is(pre, pre code),
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"],
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code {
   background: var(--op-code-well) !important;
   color: var(--op-code-fg) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block:not(:has(.code-block)), code-block .code-block, [data-testid="code-block"], .code-block-wrapper) :is(.formatted-code-block-internal-container, pre) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-surface="true"]:not(pre) pre {
   margin: 0 !important;
   border: 0 !important;
   border-radius: 0 0 calc(var(--op-radius-md) - 1px) calc(var(--op-radius-md) - 1px) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block:not(:has(.code-block)), code-block .code-block, [data-testid="code-block"], .code-block-wrapper) > :is(.formatted-code-block-internal-container, pre):first-child,
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block:not(:has(.code-block)), code-block .code-block, [data-testid="code-block"], .code-block-wrapper) > .formatted-code-block-internal-container:first-child > pre {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-surface="true"]:not(pre) > pre:first-child {
   border-radius: calc(var(--op-radius-md) - 1px) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] {
   background: var(--op-code-header) !important;
   color: var(--op-code-header-fg) !important;
   --mat-icon-color: var(--op-code-header-icon) !important;
@@ -763,190 +608,67 @@ html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-o
   border-bottom: 1px solid var(--op-border) !important;
   border-radius: calc(var(--op-radius-md) - 1px) calc(var(--op-radius-md) - 1px) 0 0 !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(span, p, label, strong):not(.mat-icon, .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .google-symbols) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] :is(span, p, label, strong):not(.mat-icon, .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .google-symbols) {
   color: var(--op-code-header-fg) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a):not(.op-formula-toggle),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(button, [role="button"], a):not(.op-formula-toggle) span,
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) :is(mat-icon, .mat-icon, .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .google-symbols, [fonticon]) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] :is(button, [role="button"], a):not(.op-formula-toggle),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] :is(button, [role="button"], a):not(.op-formula-toggle) span,
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] :is(mat-icon, .mat-icon, .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .google-symbols, [fonticon]) {
   color: var(--op-code-header-icon) !important;
   --mat-icon-color: var(--op-code-header-icon) !important;
   border-color: var(--op-border-strong) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] svg {
   color: var(--op-code-header-icon) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg :is(path, rect, circle, polygon, line, polyline)[stroke]:not([stroke="none"]),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[stroke]:not([stroke="none"]),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg :is(path, rect, circle, polygon, line, polyline, g)[data-op-code-icon-stroke="true"]:not([stroke="none"]),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[data-op-code-icon-stroke="true"]:not([stroke="none"]) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] svg :is(path, rect, circle, polygon, line, polyline)[stroke]:not([stroke="none"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] svg[stroke]:not([stroke="none"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] svg :is(path, rect, circle, polygon, line, polyline, g)[data-op-code-icon-stroke="true"]:not([stroke="none"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] svg[data-op-code-icon-stroke="true"]:not([stroke="none"]) {
   color: var(--op-code-header-icon) !important;
   stroke: currentColor !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg :is(path, rect, circle, polygon)[fill]:not([fill="none"]):not([fill="transparent"]),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[fill]:not([fill="none"]):not([fill="transparent"]),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg :is(path, rect, circle, polygon, g)[data-op-code-icon-fill="true"]:not([fill="none"]):not([fill="transparent"]),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-header="true"], code-block .code-block-decoration, :is([data-message-author-role], [data-turn], [data-testid="assistant-message"], .agent-turn) .code-header, [data-testid="code-block-header"], [data-test-id="code-block-header"]) svg[data-op-code-icon-fill="true"]:not([fill="none"]):not([fill="transparent"]) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] svg :is(path, rect, circle, polygon)[fill]:not([fill="none"]):not([fill="transparent"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] svg[fill]:not([fill="none"]):not([fill="transparent"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] svg :is(path, rect, circle, polygon, g)[data-op-code-icon-fill="true"]:not([fill="none"]):not([fill="transparent"]),
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-code-header="true"] svg[data-op-code-icon-fill="true"]:not([fill="none"]):not([fill="transparent"]) {
   color: var(--op-code-header-icon) !important;
   fill: currentColor !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code span,
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code span {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], [data-op-main-surface="true"]) pre code span {
   color: var(--op-code-fg) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-deletion, .token.keyword, .token.atrule, .token.important, .token.deleted),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-deletion, .token.keyword, .token.atrule, .token.important, .token.deleted) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], [data-op-main-surface="true"]) pre code :is(.hljs-keyword, .hljs-selector-tag, .hljs-built_in, .hljs-deletion, .token.keyword, .token.atrule, .token.important, .token.deleted) {
   color: var(--op-syn-keyword) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-template-tag, .hljs-template-variable, .token.string, .token.char, .token.regex, .token.inserted),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-template-tag, .hljs-template-variable, .token.string, .token.char, .token.regex, .token.inserted) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], [data-op-main-surface="true"]) pre code :is(.hljs-string, .hljs-regexp, .hljs-addition, .hljs-template-tag, .hljs-template-variable, .token.string, .token.char, .token.regex, .token.inserted) {
   color: var(--op-syn-string) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet, .token.number, .token.boolean, .token.constant, .token.symbol),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet, .token.number, .token.boolean, .token.constant, .token.symbol) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], [data-op-main-surface="true"]) pre code :is(.hljs-number, .hljs-literal, .hljs-symbol, .hljs-bullet, .token.number, .token.boolean, .token.constant, .token.symbol) {
   color: var(--op-syn-number) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-title, .hljs-title.function_, .hljs-section, .hljs-name, .token.function, .token.function-name, .token.selector),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-title, .hljs-title.function_, .hljs-section, .hljs-name, .token.function, .token.function-name, .token.selector) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], [data-op-main-surface="true"]) pre code :is(.hljs-title, .hljs-title.function_, .hljs-section, .hljs-name, .token.function, .token.function-name, .token.selector) {
   color: var(--op-syn-function) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-type, .hljs-title.class_, .hljs-class .hljs-title, .hljs-variable.constant_, .hljs-meta, .token.class-name, .token.builtin, .token.namespace),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-type, .hljs-title.class_, .hljs-class .hljs-title, .hljs-variable.constant_, .hljs-meta, .token.class-name, .token.builtin, .token.namespace) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], [data-op-main-surface="true"]) pre code :is(.hljs-type, .hljs-title.class_, .hljs-class .hljs-title, .hljs-variable.constant_, .hljs-meta, .token.class-name, .token.builtin, .token.namespace) {
   color: var(--op-syn-type) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-comment, .hljs-quote, .hljs-doctag, .token.comment, .token.prolog, .token.doctype, .token.cdata),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-comment, .hljs-quote, .hljs-doctag, .token.comment, .token.prolog, .token.doctype, .token.cdata) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], [data-op-main-surface="true"]) pre code :is(.hljs-comment, .hljs-quote, .hljs-doctag, .token.comment, .token.prolog, .token.doctype, .token.cdata) {
   color: var(--op-syn-comment) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-operator, .hljs-punctuation, .hljs-subst, .token.operator, .token.punctuation, .token.entity, .token.url),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-operator, .hljs-punctuation, .hljs-subst, .token.operator, .token.punctuation, .token.entity, .token.url) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], [data-op-main-surface="true"]) pre code :is(.hljs-operator, .hljs-punctuation, .hljs-subst, .token.operator, .token.punctuation, .token.entity, .token.url) {
   color: var(--op-syn-operator) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response, [data-op-code-surface="true"]:not(pre), code-block, [data-testid="code-block"], .code-block-wrapper) pre code :is(.hljs-attr, .hljs-attribute, .hljs-property, .hljs-variable, .hljs-params, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id, .token.attr-name, .token.attr-value, .token.property, .token.variable, .token.tag),
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) pre[data-op-code-surface="true"] code :is(.hljs-attr, .hljs-attribute, .hljs-property, .hljs-variable, .hljs-params, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id, .token.attr-name, .token.attr-value, .token.property, .token.variable, .token.tag) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], [data-op-main-surface="true"]) pre code :is(.hljs-attr, .hljs-attribute, .hljs-property, .hljs-variable, .hljs-params, .hljs-selector-attr, .hljs-selector-class, .hljs-selector-id, .token.attr-name, .token.attr-value, .token.property, .token.variable, .token.tag) {
   color: var(--op-syn-attr) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response) :not(pre) > code:not(pre *):not([data-op-owned] *) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] :not(pre) > code:not(pre *):not([data-op-owned] *) {
   background: var(--op-code-inline-bg) !important;
   color: var(--op-code-inline-fg) !important;
   border: 1px solid var(--op-code-inline-border) !important;
   padding: 0.12em 0.42em;
   border-radius: 6px;
 }
-
-/* === Content Width Presets (v0.3.1 #21) === */
-/* content.js sets --op-reading-width (target text-column width) and --op-reading-shift on the root
- * for wide/full from the main area's width (Adapters.contentWidthTarget); standard sets nothing and
- * leaves the host's native width. The rules below touch only the per-site width limiters declared in
- * src/adapters.js (contentWidth.targets / userTurnTargets / composerTargets), which owns them: these
- * selectors are a copy, and tests/content-width.test.cjs fails when they drift. No geometry search
- * and no per-node marks. The margin-left formula centres each limiter in its own container, then
- * shifts it left by --op-reading-shift so a full column clears the Conversation Rail. */
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) main {
-  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
-  --thread-content-responsive-max-width: var(--op-reading-width, 48rem) !important;
-  --thread-body-max-width: var(--op-reading-width, 48rem) !important;
-  --user-chat-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
-}
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(#thread-bottom-container,#thread-bottom,#thread-bottom [class*="--thread-content-max-width"]) {
-  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
-}
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) #thread-bottom :has(form[data-chatgpt-composer]):not(:has(> form[data-chatgpt-composer])) {
-  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
-  max-width: 100% !important;
-}
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) [class*="transcriptContent"] {
-  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
-  --user-chat-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
-  max-width: calc(var(--op-reading-width, 48rem) + 40px) !important;
-  margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem) - 40px) / 2 + var(--op-reading-shift, 0px))) !important;
-  margin-right: auto !important;
-}
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) #thread-bottom :has(> form[data-chatgpt-composer]) {
-  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
-  max-width: calc(var(--op-reading-width, 48rem) + 40px) !important;
-  margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem) - 40px) / 2 + var(--op-reading-shift, 0px))) !important;
-  margin-right: auto !important;
-}
-/* Direct-form fallback if #thread-bottom > form[data-chatgpt-composer] has no column wrapper. */
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) #thread-bottom > form[data-chatgpt-composer] {
-  width: var(--op-reading-width, 48rem) !important;
-  max-width: none !important;
-  margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem)) / 2 + var(--op-reading-shift, 0px))) !important;
-  margin-right: auto !important;
-}
-/* v0.4.4 #46: Live Thread Footer width bridge on [data-thread-composer-backdrop="true"] and inner wrapper uncap. */
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) [data-thread-composer-backdrop="true"] {
-  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
-  --thread-content-responsive-max-width: var(--op-reading-width, 48rem) !important;
-  --thread-body-max-width: var(--op-reading-width, 48rem) !important;
-  max-width: calc(var(--op-reading-width, 48rem) + 40px) !important;
-  margin-left: max(0px, calc((100% - var(--op-reading-width, 48rem) - 40px) / 2 + var(--op-reading-shift, 0px))) !important;
-  margin-right: auto !important;
-}
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-thread-composer-backdrop="true"] :has(form[data-chatgpt-composer]),[data-thread-composer-backdrop="true"] form[data-chatgpt-composer]) {
-  --thread-content-max-width: var(--op-reading-width, 48rem) !important;
-  --thread-body-max-width: var(--op-reading-width, 48rem) !important;
-  max-width: 100% !important;
-}
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-content-search-unit-key$=":user"] :has([data-user-message-bubble="true"]),[data-message-author-role="user"] :has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"])) {
-  --user-chat-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
-  max-width: 100% !important;
-}
-html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is([data-user-message-bubble="true"],[data-message-author-role="user"] :where(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"]),[data-message-author-role="user"] > div:not(:has(.bg-token-message-surface,.user-message-bubble-color,[data-testid="user-message-bubble"],[data-user-message-bubble="true"])),[data-testid="user-message"],[data-turn="user"] .user-message-bubble-color,[data-turn="user"] > div > div) {
-  width: fit-content !important;
-  max-width: min(100%, calc(var(--op-reading-width, 48rem) * 0.8)) !important;
-  margin-left: auto !important;
-}
-html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) chat-window {
-  --bard-chat-window-content-width-default: var(--op-reading-width, 744px) !important;
-  --bard-chat-window-content-width: var(--op-reading-width, 708px) !important;
-}
-html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) user-query {
-  width: 100% !important;
-  max-width: var(--op-reading-width, 708px) !important;
-  margin-left: max(0px, calc((100% - var(--op-reading-width, 708px)) / 2 + var(--op-reading-shift, 0px))) !important;
-  margin-right: auto !important;
-}
-html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(.md-content > *,.response-footer,hallucination-disclaimer) {
-  max-width: var(--op-reading-width, 708px) !important;
-  margin-left: max(0px, calc((100% - var(--op-reading-width, 708px)) / 2 + var(--op-reading-shift, 0px))) !important;
-  margin-right: auto !important;
-}
-html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(user-query > user-query-content,user-query .user-query-container) {
-  width: 100% !important;
-  max-width: 100% !important;
-}
-html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) user-query :has(.user-query-bubble-with-background) {
-  max-width: 100% !important;
-}
-html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(user-query .user-query-bubble-with-background,user-query-content.user-query-bubble-with-background) {
-  width: fit-content !important;
-  max-width: min(100%, calc(var(--op-reading-width, 708px) * 0.8)) !important;
-  margin-left: auto !important;
-}
-html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(user-query .user-query-bubble-with-background :is(.query-text, .query-text-line),user-query .user-query-bubble-with-background > *) {
-  max-width: 100% !important;
-}
-/* The Gemini input area is natively 48px narrower than the reading column (660 vs 708) and keeps that inset. */
-html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) input-container :has(.input-area-container) {
-  width: 100% !important;
-  max-width: none !important;
-}
-html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) .input-area-container {
-  width: 100% !important;
-  max-width: calc(var(--op-reading-width, 708px) - 48px) !important;
-  margin-left: max(0px, calc((100% - var(--op-reading-width, 708px) + 48px) / 2 + var(--op-reading-shift, 0px))) !important;
-  margin-right: auto !important;
-}
-html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) .input-area-container :has(input-area-v2) {
-  max-width: 100% !important;
-}
-html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) .input-area-container input-area-v2 {
-  width: 100% !important;
-  max-width: 100% !important;
-}
-/* === end Content Width Presets (v0.3.1 #21) === */
 
 /* === Reference Composer Surface & Model Capsule (v0.3.0) === */
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"],
@@ -1000,14 +722,6 @@ html[data-op-enabled="true"][data-op-composer="true"][data-op-composer-glow="tru
     content: none !important;
     opacity: 0 !important;
   }
-}
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) input-area-v2:has([data-op-composer-surface="true"]) {
-  background-color: transparent !important;
-  background-image: none !important;
-  box-shadow: none !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-  min-height: 0 !important;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is(textarea, [contenteditable="true"], .ql-editor, #prompt-textarea) {
   min-height: 38px;
@@ -1189,24 +903,7 @@ html[data-op-enabled="true"][data-op-composer="true"][data-op-motion="off"]:not(
   transition: none !important;
 }
 
-/* === v0.3.1 #19 two-row composer ===
- * Prototype Composer Surface: attachment preview, then the editor on a full-width row, then the leading +
- * on the left, the Model Capsule immediately to its right via flex order + margin-inline-end: auto, and
- * voice/send controls on the right. Only the host's own grid columns/areas and toolbar flex layout are
- * overridden on the verified grid (data-op-composer-grid / data-op-composer-toolbar); no node is moved
- * or wrapped (ADR-0002). Removing the marks, composerRestyle off or Native Palette restores native layout. */
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] {
-  grid-template-columns: auto minmax(0, 1fr) !important;
-  grid-template-areas: "header header" "primary primary" "leading trailing" !important;
-  row-gap: 0 !important;
-  column-gap: 8px !important;
-}
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] {
-  grid-template-columns: auto minmax(0, 1fr) !important;
-  grid-template-areas: "file-preview file-preview" "text-input text-input" "leading-actions trailing-actions" !important;
-  row-gap: 0 !important;
-  column-gap: 8px !important;
-}
+/* === v0.3.1 #19 two-row composer === */
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] [data-op-composer-grid="true"],
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :has(> [data-op-composer-grid="true"]) {
   padding-top: 0 !important;
@@ -1279,51 +976,30 @@ html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-pal
   flex-basis: auto !important;
   width: auto !important;
 }
-/* Review fix P1: ChatGPT's area names are inferred. On a grid without named areas the adapter marks the
- * existing children it identified by role (data-op-composer-leading/-primary/-trailing) and these rules
- * name their areas; any other child (the attachment header) spans the first free row. */
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] > [data-op-composer-leading="true"] { grid-area: leading !important; }
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] > [data-op-composer-primary="true"] { grid-area: primary !important; }
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] > [data-op-composer-trailing="true"] { grid-area: trailing !important; }
-html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"]:has(> [data-op-composer-primary="true"]) > :not([data-op-composer-leading="true"], [data-op-composer-primary="true"], [data-op-composer-trailing="true"]) {
-  grid-column: 1 / -1 !important;
-}
 
-/* === v0.3.1 #20 conversation heading typography ===
- * Outside Native Palette, h1–h4 inside User and Assistant Turns follow the message body font family, use
- * the palette's primary foreground (--op-fg) and rank h1 ≥ h2 ≥ h3 ≥ h4 by weight (700/650/600/600).
- * Sizes stay host-owned: both hosts already step them down, and the weight ladder never lowers ChatGPT's
- * native 600, so its hierarchy cannot regress; it fixes Gemini's h2 (380) being lighter than h3 (470).
- * Scoped to message bodies only (live ChatGPT/Gemini markers plus legacy ones); the sidebar, host chrome
- * and extension-owned controls keep their own typography. No reading-font option: the body font stays
- * whatever the host or the user chose, and headings inherit it. */
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-markdown-text-style="assistant-message"],[data-user-message-bubble],[data-message-author-role],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn .markdown,model-response :is(.md-content,.markdown),user-query) :is(h1,h2,h3,h4):not([data-op-owned] *) {
-  font-family: inherit !important;
-  color: var(--op-fg) !important;
-  font-weight: var(--op-heading-weight) !important;
-}
-/* Per-level weights for the rule above; the variable is read only inside the scoped message headings. */
+/* === v0.3.1 #20 conversation heading typography === */
+/* Per-level weights for the scoped message headings in host-chatgpt.css and host-gemini.css. */
 html[data-op-enabled="true"] h1 { --op-heading-weight: 700; }
 html[data-op-enabled="true"] h2 { --op-heading-weight: 650; }
 html[data-op-enabled="true"] :is(h3,h4) { --op-heading-weight: 600; }
 
 /* === Native Math Surface Readability & Overflow (v0.4.1 #33) === */
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-turn-key], [data-content-search-unit-key$=":user"], [data-content-search-unit-key$=":assistant"], [data-markdown-text-style="assistant-message"], [data-user-message-bubble="true"], [data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response) :is(.math-block, .math-inline, .katex-display, .katex, .katex-html, .katex-mathml, mjx-container):not([data-op-owned], [data-op-owned] *, pre, pre *) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] :is(.math-block, .math-inline, .katex-display, .katex, .katex-html, .katex-mathml, mjx-container):not([data-op-owned], [data-op-owned] *, pre, pre *) {
   color: var(--op-fg) !important;
   background-color: transparent !important;
   background-image: none !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-turn-key], [data-content-search-unit-key$=":user"], [data-content-search-unit-key$=":assistant"], [data-markdown-text-style="assistant-message"], [data-user-message-bubble="true"], [data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response) :is(.math-block, .math-inline, .katex-display, .katex, mjx-container):not([data-op-owned], [data-op-owned] *, pre, pre *) *:not([data-op-owned], [data-op-owned] *, pre, pre *) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] :is(.math-block, .math-inline, .katex-display, .katex, mjx-container):not([data-op-owned], [data-op-owned] *, pre, pre *) :is(.katex-html, .katex-mathml, .katex, .base, .strut, .mord, .mrel, .mbin, .mop, .mopen, .mclose, .mpunct, .minner, .mfrac, .sqrt, .accent, .sizing, .vlist, .vlist-r, .vlist-t, .delimsizing, .delimcenter, .op-symbol, .frac-line, .overline-line, .underline-line, .svg-align, math, mi, mo, mn, mrow, mfrac, msup, msub, msqrt, mjx-math, mjx-mrow, mjx-mi, mjx-mo, mjx-mn, mjx-msup, mjx-msub, mjx-mfrac, mjx-mtr, mjx-mtd, mjx-c, mjx-texatom, svg) {
   color: var(--op-fg) !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-turn-key], [data-content-search-unit-key$=":user"], [data-content-search-unit-key$=":assistant"], [data-markdown-text-style="assistant-message"], [data-user-message-bubble="true"], [data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response) :is(.math-block, .katex-display, mjx-container[display="true"]):not([data-op-owned], [data-op-owned] *, pre, pre *) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] :is(.math-block, .katex-display, mjx-container[display="true"]):not([data-op-owned], [data-op-owned] *, pre, pre *) {
   display: block !important;
   width: auto !important;
   min-width: 0 !important;
   overflow-x: auto !important;
   overflow-y: hidden !important;
 }
-html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) :is([data-turn-key], [data-content-search-unit-key$=":user"], [data-content-search-unit-key$=":assistant"], [data-markdown-text-style="assistant-message"], [data-user-message-bubble="true"], [data-message-author-role], [data-turn], [data-testid="user-message"], [data-testid="assistant-message"], .agent-turn, user-query, model-response) :is(.katex-display, mjx-container[display="true"]):not(.md-content > *):not([data-op-owned], [data-op-owned] *, pre, pre *) {
+html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] :is(.katex-display, mjx-container[display="true"]):not(.md-content > *):not([data-op-owned], [data-op-owned] *, pre, pre *) {
   max-width: 100% !important;
 }
 
@@ -1340,6 +1016,11 @@ html[data-op-enabled="true"] .op-formula-preview[data-op-owned] {
   font-size: 16px;
   line-height: 1.6;
   border-radius: 0 0 calc(var(--op-radius-md) - 1px) calc(var(--op-radius-md) - 1px);
+  contain: layout style paint;
+}
+html[data-op-enabled="true"] .op-formula-preview[data-op-owned][data-op-formula-deferred="true"] {
+  content-visibility: auto;
+  contain-intrinsic-block-size: auto 72px;
 }
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) .op-formula-preview[data-op-owned] {
   background: var(--op-code-well);

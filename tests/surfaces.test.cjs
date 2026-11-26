@@ -218,9 +218,9 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     usesScrollerAlphaFade: host === 'chatgpt',
     conversationOnlyBackdrops: host === 'gemini',
     contentWidth: { native: 768, targets: [], composerTargets: [] },
-    userTurns: () => (homeMode ? [] : [userTurn]),
-    assistantTurns: () => (homeMode ? [] : [assistantTurn]),
-    primarySurface: () => primary,
+    userTurns: () => (options.userTurns ? options.userTurns() : (homeMode ? [] : [userTurn])),
+    assistantTurns: () => (options.assistantTurns ? options.assistantTurns() : (homeMode ? [] : [assistantTurn])),
+    primarySurface: () => (options.primarySurface ? options.primarySurface() : primary),
     composerSurface: () => composer,
     composerGrid: () => ({ element: gridEl, slots: null, trailing: trailingEl }),
     composerEmptyHeaders: () => options.emptyHeaders || [],
@@ -251,9 +251,10 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
     activeModelLabel: () => currentModel,
     sidebarSurfaces: () => [],
     sidebarActiveTargets: () => [],
-    codeBlocks: () => [...currentCodeBlocks],
+    cornerFloatingObstacles: (...args) => (options.cornerFloatingObstacles ? options.cornerFloatingObstacles(...args) : []),
+    codeBlocks: () => (options.codeBlocks ? options.codeBlocks() : [...currentCodeBlocks]),
     thoughtBlocks: () => [],
-    isAssistantNode: () => false,
+    isAssistantNode: options.isAssistantNode || (() => false),
     isStreaming: () => streamingNow,
     scrollContainer: () => (options.useCustomScroller ? scrollerEl : body)
   };
@@ -282,14 +283,25 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
   h.context.innerHeight = 900;
   h.context.matchMedia = () => ({ matches: false, addEventListener() {}, removeEventListener() {} });
   h.context.ResizeObserver = class { observe() {} disconnect() {} };
-  h.context.MutationObserver = class { observe() {} disconnect() {} };
-  h.context.requestAnimationFrame = () => 1;
+  const observers = [];
+  const rafQueue = [];
+  h.context.MutationObserver = class {
+    constructor(cb) { this.cb = cb; this.calls = []; observers.push(this); }
+    observe(target, opts) { this.calls.push({ target, opts }); }
+    disconnect() {}
+  };
+  h.context.requestAnimationFrame = cb => {
+    if (options.captureRaf) { rafQueue.push(cb); return rafQueue.length; }
+    return 1;
+  };
   h.context.cancelAnimationFrame = () => {};
   let nowMs = 100;
   h.context.performance = { now: () => nowMs };
+  if (options.documentExtra) Object.assign(h.context.document, options.documentExtra);
+  if (options.contextExtra) Object.assign(h.context, options.contextExtra);
   if (options.loadFormula) {
     h.context.globalThis = h.context;
-    h.load('vendor/temml/temml.js');
+    h.load('vendor/temml/temml.min.js');
     h.load('src/formula.js');
   }
   h.load('src/adapters.js');
@@ -305,7 +317,7 @@ function createRuntimeDom(initialConfig = {}, options = {}) {
   };
   h.load('src/content.js');
   return {
-    h, elements, body, makeEl,
+    h, elements, body, makeEl, observers, rafQueue,
     runtime: h.context.ObsidianPrismRuntime,
     setModel(label) { currentModel = label; },
     setAttachments(list) { currentAttachments = list; },
@@ -2110,4 +2122,467 @@ test('v0.4.4 #46: runtime marks data-op-thread-footer and scans footer siblings 
   assert.equal(threadFooterEl.getAttribute('data-op-thread-footer'), null);
   assert.equal(footerSpacer.getAttribute('data-op-composer-empty-sibling'), null);
   assert.equal(footerDisclaimer.getAttribute('data-op-composer-disclaimer'), null);
+});
+
+test('v0.4.5 #50: batch Formula Preview init avoids per-block codeBlocks rescans, negative-caches failed/non-LaTeX blocks until changed, deduplicates dock avoidance, and performs zero steady-state attribute writes', async () => {
+  let codeBlocksCalls = 0;
+  let obstacleCalls = 0;
+  let surfacesRef = [];
+  let headersRef = [];
+  let presRef = [];
+  const ctx = createRuntimeDom({ language: 'zh-CN', formulaPreview: true }, {
+    host: 'chatgpt',
+    loadFormula: true,
+    codeBlocks: () => { codeBlocksCalls++; return presRef; },
+    codeSurfaces: () => surfacesRef,
+    codeHeaders: () => headersRef,
+    cornerFloatingObstacles: () => { obstacleCalls++; return []; },
+    textOf: node => node?.textContent || ''
+  });
+  const e = Object.fromEntries(ctx.elements);
+  const makeNode = ctx.makeEl;
+
+  let temmlRenderCalls = 0;
+  const origTemmlRender = ctx.h.context.temml.render;
+  ctx.h.context.temml.render = function (...args) {
+    temmlRenderCalls++;
+    return origTemmlRender.apply(this, args);
+  };
+
+  function makeCodeSurface(lang, text) {
+    const surface = makeNode('div', { class: 'code-shell' });
+    const header = makeNode('div', { class: 'code-shell-header' });
+    const label = makeNode('span'); label.textContent = lang;
+    const actions = makeNode('div');
+    const copyBtn = makeNode('button', { 'aria-label': 'Copy' }); copyBtn.textContent = 'Copy';
+    actions.append(copyBtn);
+    header.append(label, actions);
+    const pre = makeNode('pre');
+    const code = makeNode('code', { class: `language-${lang.toLowerCase()}` });
+    code.textContent = text;
+    pre.append(code);
+    surface.append(header, pre);
+    e.assistantTurn.append(surface);
+    surfacesRef.push(surface);
+    headersRef.push(header);
+    presRef.push(pre);
+    return { surface, header, pre, code };
+  }
+
+  // 4 valid LaTeX blocks, 2 invalid LaTeX blocks, 2 plain JS blocks
+  for (let i = 0; i < 4; i++) makeCodeSurface('LaTeX', `E_${i} = \\frac{1}{${i + 1}}`);
+  const invalid1 = makeCodeSurface('LaTeX', '\\begin{aligned} \\frac{1}{');
+  const invalid2 = makeCodeSurface('LaTeX', '\\invalidmacro{\\frac{1}{');
+  const jsBlock = makeCodeSurface('JavaScript', 'const x = 1;\nconsole.log(x);');
+  makeCodeSurface('JavaScript', 'export function f(a) { return a + 1; }');
+
+  codeBlocksCalls = 0;
+  obstacleCalls = 0;
+  temmlRenderCalls = 0;
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+
+  assert.equal(ctx.runtime.diagnostics().formulaBlocks, 4, 'only valid LaTeX blocks stay registered');
+  assert.ok(codeBlocksCalls <= 2, `batch init should not call codeBlocks per formula (got ${codeBlocksCalls})`);
+  assert.equal(obstacleCalls, 1, `single scan should evaluate cornerFloatingObstacles once (got ${obstacleCalls})`);
+  assert.equal(temmlRenderCalls, 6, 'initial scan renders 4 valid + 2 invalid blocks once');
+
+  // Instrument setAttribute/removeAttribute across root and owned/code controls for a steady-state no-op scan
+  let steadyWrites = 0;
+  const rootEl = ctx.h.context.document.documentElement;
+  const watched = [rootEl];
+  const walk = node => {
+    if (!node || typeof node !== 'object') return;
+    watched.push(node);
+    for (const c of node.children || []) walk(c);
+  };
+  walk(ctx.h.context.document.body);
+  const restorers = [];
+  for (const node of new Set(watched)) {
+    const origSet = node.setAttribute;
+    const origRm = node.removeAttribute;
+    node.setAttribute = function (...a) { steadyWrites++; return origSet.apply(this, a); };
+    node.removeAttribute = function (...a) { steadyWrites++; return origRm.apply(this, a); };
+    restorers.push(() => { node.setAttribute = origSet; node.removeAttribute = origRm; });
+  }
+
+  codeBlocksCalls = 0;
+  obstacleCalls = 0;
+  temmlRenderCalls = 0;
+  steadyWrites = 0;
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+
+  for (const r of restorers) r();
+  assert.equal(temmlRenderCalls, 0, 'failed LaTeX blocks must not re-render on unchanged steady-state scan');
+  assert.ok(codeBlocksCalls <= 2, `steady-state scan should not trigger extra codeBlocks rescans (got ${codeBlocksCalls})`);
+  assert.equal(obstacleCalls, 1, `steady-state scan should evaluate cornerFloatingObstacles once (got ${obstacleCalls})`);
+  assert.equal(steadyWrites, 0, `unchanged steady-state scan must perform zero attribute writes (got ${steadyWrites})`);
+
+  // When a previously failed LaTeX block is fixed, negative cache invalidates and renders Formula Preview
+  invalid1.code.textContent = '\\alpha + \\beta = \\gamma';
+  // When a non-LaTeX block changes language & source to LaTeX, negative cache invalidates too
+  jsBlock.code.setAttribute('class', 'language-latex');
+  jsBlock.code.textContent = 'x^2 + y^2 = z^2';
+  temmlRenderCalls = 0;
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+
+  assert.equal(ctx.runtime.diagnostics().formulaBlocks, 6, 'fixed invalid block and converted block both render');
+  assert.equal(temmlRenderCalls, 2, 'only the two newly changed blocks call temml.render');
+  assert.ok(invalid1.surface.querySelector('.op-formula-preview')?.querySelector('math'));
+  assert.ok(jsBlock.surface.querySelector('.op-formula-preview')?.querySelector('math'));
+
+  // invalid2 remained unchanged and still did not re-render
+  assert.equal(invalid2.surface.querySelector('.op-formula-preview'), null);
+
+  ctx.runtime.stop();
+});
+
+test('v0.4.5 #51: scroll ignores sidebar/code scrollers, decouples cornerFloatingObstacles from inner message scroll, avoids per-turn scrollContainer walks, and skips unchanged rail updates', async () => {
+  let obstacleCalls = 0;
+  let scrollContainerCalls = 0;
+  let userTurnsCalls = 0;
+  const docListeners = new Map();
+  let rafQueue = [];
+
+  const ctx = createRuntimeDom({ railOutline: true, contextVial: true }, {
+    host: 'chatgpt',
+    useCustomScroller: true,
+    cornerFloatingObstacles: () => { obstacleCalls++; return []; }
+  });
+  const e = Object.fromEntries(ctx.elements);
+  // Recreate fresh runtime with captured scroll listener & controllable rAF
+  ctx.runtime.stop();
+  delete ctx.h.context.ObsidianPrismRuntime;
+
+  e.primary.append(e.scrollerEl);
+  e.scrollerEl.append(e.assistantTurn);
+  const extraTurns = [];
+  for (let i = 0; i < 8; i++) {
+    const ut = ctx.makeEl('div', { 'data-message-author-role': 'user' });
+    ut.textContent = `Question ${i + 1}`;
+    ut.getBoundingClientRect = () => ({ left: 200, top: i * 300 - 250, right: 800, bottom: i * 300 - 190, width: 600, height: 60 });
+    e.scrollerEl.append(ut);
+    extraTurns.push(ut);
+  }
+  const sidebarEl = ctx.makeEl('aside', { 'data-op-sidebar-surface': 'true' });
+  e.body.append(sidebarEl);
+  const preEl = ctx.makeEl('pre');
+  e.assistantTurn.append(preEl);
+
+  const origDocAdd = ctx.h.context.document.addEventListener;
+  ctx.h.context.document.addEventListener = (type, fn, opts) => {
+    if (!docListeners.has(type)) docListeners.set(type, []);
+    docListeners.get(type).push(fn);
+    return origDocAdd?.call(ctx.h.context.document, type, fn, opts);
+  };
+  ctx.h.context.requestAnimationFrame = fn => { rafQueue.push(fn); return rafQueue.length; };
+  const flushRaf = () => { const q = rafQueue; rafQueue = []; for (const fn of q) fn(); };
+
+  const origForHost = ctx.h.context.ObsidianPrismAdapters.forHost;
+  const baseAdapter = origForHost('chatgpt');
+  const wrappedAdapter = {
+    ...baseAdapter,
+    userTurns: () => { userTurnsCalls++; return extraTurns; },
+    scrollContainer: node => { scrollContainerCalls++; return e.scrollerEl; },
+    cornerFloatingObstacles: () => { obstacleCalls++; return []; }
+  };
+  ctx.h.context.ObsidianPrismAdapters = {
+    ...ctx.h.context.ObsidianPrismAdapters,
+    forHost: () => wrappedAdapter
+  };
+  ctx.h.load('src/content.js');
+  await new Promise(resolve => setTimeout(resolve, 25));
+
+  const fireScroll = target => {
+    for (const fn of docListeners.get('scroll') || []) fn({ target });
+    flushRaf();
+  };
+
+  // 1) Scrolling sidebar or code block must be completely ignored
+  obstacleCalls = 0; scrollContainerCalls = 0; userTurnsCalls = 0;
+  fireScroll(sidebarEl);
+  fireScroll(preEl);
+  assert.equal(obstacleCalls, 0, 'sidebar/code scroll must not trigger cornerFloatingObstacles');
+  assert.equal(userTurnsCalls, 0, 'sidebar/code scroll must not recompute userTurns');
+  assert.equal(scrollContainerCalls, 0, 'sidebar/code scroll must not call scrollContainer');
+
+  // 2) Scrolling inner message scroller must NOT trigger cornerFloatingObstacles or per-turn scrollContainer walks
+  obstacleCalls = 0; scrollContainerCalls = 0; userTurnsCalls = 0;
+  fireScroll(e.scrollerEl);
+  assert.equal(obstacleCalls, 0, 'inner conversation scroll must not re-scan full-page corner floating obstacles');
+  assert.equal(userTurnsCalls, 0, 'inner scroll should reuse cached userTurns from latest scan');
+  assert.ok(scrollContainerCalls <= 1, `nearestTurn must not call scrollContainer per turn (got ${scrollContainerCalls})`);
+
+  // 3) Second scroll with unchanged active turn performs zero rail attribute writes
+  const railEl = ctx.body.querySelector('#op-rail-root');
+  assert.ok(railEl, 'Conversation Rail should be mounted');
+  let railAttrWrites = 0;
+  for (const btn of railEl.querySelectorAll('[data-turn]')) {
+    const origSet = btn.setAttribute.bind(btn);
+    const origRm = btn.removeAttribute.bind(btn);
+    btn.setAttribute = (...a) => { railAttrWrites++; return origSet(...a); };
+    btn.removeAttribute = (...a) => { railAttrWrites++; return origRm(...a); };
+  }
+  fireScroll(e.scrollerEl);
+  assert.equal(railAttrWrites, 0, 'unchanged active turn on scroll must perform zero rail DOM writes');
+
+  ctx.h.context.ObsidianPrismRuntime.stop();
+});
+
+test('v0.4.5 #51: code header SVG paint classification caches across unchanged scans and refreshes on palette change', async () => {
+  let svgStyleReads = 0;
+  let headerRef = null;
+  const ctx = createRuntimeDom({ palette: 'obsidian', themeMode: 'dark' }, {
+    host: 'chatgpt',
+    codeHeaders: () => (headerRef ? [headerRef] : []),
+    getComputedStyle: node => {
+      if (node.tagName === 'SVG' || node.tagName === 'PATH') svgStyleReads++;
+      if (node.tagName === 'PATH') return { fill: 'rgb(200, 200, 200)', stroke: 'none' };
+      return { fill: 'none', stroke: 'none', position: 'static', display: 'block', visibility: 'visible', opacity: '1', paddingBottom: '0px' };
+    }
+  });
+  const e = Object.fromEntries(ctx.elements);
+  headerRef = ctx.makeEl('div', { class: 'code-header' });
+  const svg = ctx.makeEl('svg');
+  const pathNode = ctx.makeEl('path');
+  svg.append(pathNode);
+  headerRef.append(svg);
+  e.codeSurface.append(headerRef);
+
+  svgStyleReads = 0;
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+  assert.equal(pathNode.getAttribute('data-op-code-icon-fill'), 'true');
+  const firstReads = svgStyleReads;
+  assert.ok(firstReads > 0, 'initial scan inspects SVG computed paint');
+
+  svgStyleReads = 0;
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+  assert.equal(svgStyleReads, 0, 'unchanged steady-state scan reuses cached SVG paint marks with zero getComputedStyle calls');
+  assert.equal(pathNode.getAttribute('data-op-code-icon-fill'), 'true');
+
+  // Switching palette invalidates SVG cache and re-evaluates
+  svgStyleReads = 0;
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'warm', themeMode: 'dark' }
+  });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.ok(svgStyleReads > 0, 'palette change invalidates SVG paint cache');
+  assert.equal(pathNode.getAttribute('data-op-code-icon-fill'), 'true');
+
+  ctx.runtime.stop();
+});
+
+test('v0.4.5 #52: incremental Context Vial & dirty-subsystem MutationObserver only re-estimate mutated assistant turn without rescanning surfaces or rail', async () => {
+  const estimatedTurns = [];
+  const cleanedTurns = [];
+  let primaryCalls = 0;
+  let uTurns = [];
+  let aTurns = [];
+  let primaryRef = null;
+
+  const ctx = createRuntimeDom({ language: 'en-US', streamChoreography: false }, {
+    host: 'chatgpt',
+    userTurns: () => uTurns,
+    assistantTurns: () => aTurns,
+    primarySurface: () => { primaryCalls++; return primaryRef; },
+    isAssistantNode: node => aTurns.some(t => t === node || t.contains?.(node) || node?.parentElement && t.contains?.(node.parentElement)),
+    cleanTurnText: node => { cleanedTurns.push(node); return node?.textContent || ''; },
+    estimateTurnTokens: node => {
+      estimatedTurns.push(node);
+      const len = (node?.textContent || '').length;
+      return { prose: Math.ceil(len / 4), code: 0, total: Math.ceil(len / 4) };
+    }
+  });
+  const e = Object.fromEntries(ctx.elements);
+  primaryRef = e.primary;
+  const makeT = (role, txt) => {
+    const t = ctx.makeEl('article', { 'data-turn': role });
+    t.textContent = txt;
+    e.primary.append(t);
+    return t;
+  };
+  uTurns = [makeT('user', 'Question 1'), makeT('user', 'Question 2'), makeT('user', 'Question 3')];
+  aTurns = [makeT('assistant', 'Answer 1'), makeT('assistant', 'Answer 2'), makeT('assistant', 'Answer 3')];
+  const p = ctx.makeEl('p');
+  const txtNode = { nodeType: 3, nodeValue: 'streaming ', textContent: 'streaming ', isConnected: true, parentElement: p };
+  p.append(txtNode);
+  aTurns[2].append(p);
+
+  // Run initial full scan with the 6 turns
+  ctx.advanceTime(1000);
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+  assert.ok(estimatedTurns.length >= 6, 'initial scan estimates all turns');
+
+  // Now simulate assistant prose streaming characterData mutation on aTurns[2]
+  estimatedTurns.length = 0;
+  cleanedTurns.length = 0;
+  primaryCalls = 0;
+  txtNode.nodeValue += 'more tokens here';
+  aTurns[2].textContent = 'Answer 3 streaming more tokens here';
+  ctx.advanceTime(900);
+  const bodyObserver = ctx.observers[0];
+  bodyObserver.cb([{ type: 'characterData', target: txtNode, oldValue: 'streaming ', addedNodes: [], removedNodes: [] }]);
+  await new Promise(resolve => setTimeout(resolve, 310));
+
+  assert.equal(estimatedTurns.length, 1, `expected only 1 mutated assistant turn re-estimated, got ${estimatedTurns.length}`);
+  assert.equal(estimatedTurns[0], aTurns[2], 'only the mutated assistant turn should be re-estimated during streaming');
+  assert.equal(cleanedTurns.length, 0, 'assistant streaming must not recompute Conversation Rail user-turn text');
+  assert.equal(primaryCalls, 0, 'assistant prose-only streaming must not re-run full surface discovery');
+
+  ctx.runtime.stop();
+});
+
+test('v0.4.5 #52: MutationObserver gates characterDataOldValue on streamChoreography and paintHighlights reuses Range on rAF', async () => {
+  let createdRanges = 0;
+  const highlightsMap = new Map();
+  let aTurnRef = null;
+  const ctx = createRuntimeDom({ streamChoreography: false }, {
+    host: 'chatgpt',
+    captureRaf: true,
+    isAssistantNode: node => Boolean(aTurnRef && (node === aTurnRef || aTurnRef.contains?.(node) || (node?.parentElement && aTurnRef.contains?.(node.parentElement)))),
+    documentExtra: {
+      createRange() {
+        createdRanges++;
+        return {
+          startNode: null, startOffset: 0, endNode: null, endOffset: 0,
+          setStart(n, o) { this.startNode = n; this.startOffset = o; },
+          setEnd(n, o) { this.endNode = n; this.endOffset = o; }
+        };
+      }
+    },
+    contextExtra: {
+      Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
+      CSS: { highlights: highlightsMap },
+      Highlight: class { constructor(...ranges) { this.ranges = ranges; } }
+    }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const e = Object.fromEntries(ctx.elements);
+  aTurnRef = e.assistantTurn;
+  const bodyObserver = ctx.observers[0];
+  const initialObserve = bodyObserver.calls[bodyObserver.calls.length - 1];
+  assert.equal(initialObserve.opts.characterDataOldValue, false, 'characterDataOldValue must be false when streamChoreography is disabled');
+
+  // Enable streamChoreography -> MutationObserver re-observes with characterDataOldValue: true
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, streamChoreography: true }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const enabledObserve = bodyObserver.calls[bodyObserver.calls.length - 1];
+  assert.equal(enabledObserve.opts.characterDataOldValue, true, 'characterDataOldValue must flip to true when streamChoreography is enabled');
+
+  // Stream a text mutation -> creates 1 Range, schedules rAF, and reuses that same Range across frames
+  const p = ctx.makeEl('p');
+  const textNode = { nodeType: 3, nodeValue: 'hello world', isConnected: true, parentElement: p };
+  p.append(textNode);
+  e.assistantTurn.append(p);
+  createdRanges = 0;
+  ctx.rafQueue.length = 0;
+  bodyObserver.cb([{ type: 'characterData', target: textNode, oldValue: 'hello ', addedNodes: [], removedNodes: [] }]);
+  assert.equal(createdRanges, 1, 'addTextFade should allocate Range once per fade entry');
+  assert.equal(highlightsMap.size, 0, 'addTextFade must defer initial CSS.highlights paint to requestAnimationFrame instead of painting synchronously in mutation delivery');
+  assert.ok(ctx.rafQueue.length >= 1, 'paintHighlights should schedule fade frames via requestAnimationFrame');
+
+  // Advance 2 frames (70ms each) -> first rAF paints highlights, subsequent frame reuses same Range (0 new createRange calls)
+  const frame1 = ctx.rafQueue.shift();
+  frame1();
+  assert.ok(highlightsMap.size >= 1, 'first rAF tick should publish fade highlight to CSS.highlights');
+  ctx.advanceTime(70);
+  const frame2 = ctx.rafQueue.shift();
+  frame2();
+  assert.equal(createdRanges, 1, 'subsequent rAF paintHighlights frames must reuse existing Range without calling createRange again');
+
+  ctx.runtime.stop();
+});
+
+test('v0.4.5 #53: Ambient Stage lazily mounts zero-text glyph layer and scopes data-op-aura to #op-ambient-stage; overlaid dock marks data-op-thread-overlaid reversibly', async () => {
+  let aTurnRef = null;
+  const ctx = createRuntimeDom({ ambientTexture: 'glyphs', ambientStyle: 'aurora', ambientIntensity: 65, semanticAura: true }, {
+    host: 'chatgpt',
+    isAssistantNode: node => Boolean(aTurnRef && (node === aTurnRef || aTurnRef.contains?.(node) || (node?.parentElement && aTurnRef.contains?.(node.parentElement))))
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const e = Object.fromEntries(ctx.elements);
+  aTurnRef = e.assistantTurn;
+
+  const stage = e.primary.querySelector('#op-ambient-stage');
+  assert.ok(stage, '#op-ambient-stage should be mounted');
+  const glyphs = stage.querySelector('.op-ambient-glyphs');
+  assert.ok(glyphs, '.op-ambient-glyphs should be mounted when ambientTexture === glyphs');
+  assert.equal(glyphs.textContent || '', '', '.op-ambient-glyphs must not inject 5,587-char DOM text node');
+  assert.equal(stage.getAttribute('data-op-ambient-active'), 'true');
+
+  // Switching ambientTexture away from glyphs must lazily unmount .op-ambient-glyphs
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, ambientTexture: 'grid', ambientStyle: 'aurora', ambientIntensity: 65, semanticAura: true }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(stage.querySelector('.op-ambient-glyphs'), null, '.op-ambient-glyphs should unmount when ambientTexture !== glyphs');
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, ambientTexture: 'glyphs', ambientStyle: 'aurora', ambientIntensity: 65, semanticAura: true }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(stage.querySelector('.op-ambient-glyphs'), '.op-ambient-glyphs should remount when ambientTexture switches back to glyphs');
+
+  // Overlaid dock must mark thread column directly (eliminating html:has([data-op-composer-overlaid="true"]))
+  assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), 'true');
+  assert.equal(e.threadCol.getAttribute('data-op-thread-overlaid'), 'true', 'overlaid dock must set reversible data-op-thread-overlaid on thread column');
+
+  // Streaming activity must set data-op-aura on #op-ambient-stage, NOT on <html>
+  const p = ctx.makeEl('p');
+  const txt = { nodeType: 3, nodeValue: 'hello', isConnected: true, parentElement: p };
+  p.append(txt);
+  e.assistantTurn.append(p);
+  ctx.observers[0].cb([{ type: 'characterData', target: txt, oldValue: '', addedNodes: [], removedNodes: [] }]);
+  assert.equal(e.docEl.getAttribute('data-op-aura'), null, 'data-op-aura must not mutate <html> root');
+  assert.equal(stage.getAttribute('data-op-aura'), 'streaming', 'data-op-aura must be set on #op-ambient-stage');
+
+  // Native Palette and stop must clear data-op-thread-overlaid cleanly
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'host', themeMode: 'dark' }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(e.threadCol.getAttribute('data-op-thread-overlaid'), null, 'Native Palette must clear data-op-thread-overlaid');
+
+  ctx.runtime.stop();
+  assert.equal(e.threadCol.getAttribute('data-op-thread-overlaid'), null);
+});
+
+test('v0.4.5 review: syncRail clears dirtyRailTurns independently even when contextVial is disabled', async () => {
+  let cleanCalls = 0;
+  let uTurnRef = null;
+  const ctx = createRuntimeDom({ contextVial: false, railOutline: true }, {
+    host: 'chatgpt',
+    cleanTurnText: node => {
+      if (node === uTurnRef) cleanCalls++;
+      return node.textContent || 'prompt';
+    }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const e = Object.fromEntries(ctx.elements);
+  uTurnRef = e.userTurn;
+
+  // Mutate the user turn while contextVial is disabled -> rail should recompute once, then cache-hit on steady scans
+  const p = ctx.makeEl('p');
+  const txt = { nodeType: 3, nodeValue: 'edited prompt', isConnected: true, parentElement: p };
+  p.append(txt);
+  e.userTurn.append(p);
+  e.userTurn.textContent = 'edited prompt';
+  cleanCalls = 0;
+  ctx.observers[0].cb([{ type: 'characterData', target: txt, oldValue: 'prompt', addedNodes: [], removedNodes: [] }]);
+  await new Promise(resolve => setTimeout(resolve, 210));
+  assert.equal(cleanCalls, 1, 'mutated user turn should recompute rail text once');
+
+  // Trigger a second scan without mutating the user turn again (via unrelated structural attribute)
+  cleanCalls = 0;
+  ctx.observers[0].cb([{ type: 'attributes', attributeName: 'aria-current', target: e.sidebar, addedNodes: [], removedNodes: [] }]);
+  await new Promise(resolve => setTimeout(resolve, 210));
+  assert.equal(cleanCalls, 0, 'subsequent scan must cache-hit railTurnTextCache without leaking dirty state from disabled contextVial');
+
+  ctx.runtime.stop();
 });

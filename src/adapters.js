@@ -34,7 +34,7 @@
       ],
       /* v0.3.1 #21 / v0.4.0 #26 Content Width Presets: the reading (text) width is 48rem natively (the 808px
        * transcript = 48rem + 2 × 20px padding, probe 2026-11-22). This declaration owns the width
-       * limiters: hosts.css repeats them in its static width rules (CSS cannot read it) and
+       * limiters: styles/host-chatgpt.css repeats them in its static width rules (CSS cannot read it) and
        * tests/content-width.test.cjs fails if the two drift. The runtime reads only `native`.
        * Bridges --thread-content-max-width onto main and dock containers, sizes both transcript and
        * #thread-bottom column wrapper, and keeps direct-form fallback if #thread-bottom > form exists. */
@@ -103,7 +103,7 @@
       ],
       /* v0.3.1 #21: Gemini caps every markdown block at 708px (not the outer panel), plus the
        * User Turn, the response footer, the disclaimer and the 660px input area (probe 2026-11-22).
-       * Owned here and mirrored by the hosts.css width rules (see the ChatGPT note above). */
+       * Owned here and mirrored by the styles/host-gemini.css width rules (see the ChatGPT note above). */
       contentWidth: {
         native: 708,
         targets: ['chat-window', '.md-content > *', 'user-query', '.response-footer', 'hallucination-disclaimer'],
@@ -138,6 +138,36 @@
     }
   });
 
+  let activeScanCache = null;
+  const NULL_ARG_KEY = Symbol('null-arg');
+  function getStyle(node, view) {
+    if (!node || !view?.getComputedStyle) return null;
+    const cache = activeScanCache?.computed;
+    if (cache && cache.has(node)) return cache.get(node);
+    const style = view.getComputedStyle(node);
+    if (cache) cache.set(node, style);
+    return style;
+  }
+  function getScanNodeCache(key, arg, factory) {
+    if (!activeScanCache) return factory();
+    let map = activeScanCache.byNode.get(key);
+    if (!map) { map = new Map(); activeScanCache.byNode.set(key, map); }
+    const argKey = arg === undefined || arg === null ? NULL_ARG_KEY : arg;
+    if (map.has(argKey)) return map.get(argKey);
+    const val = factory();
+    map.set(argKey, val);
+    return val;
+  }
+  function filterOutermost(nodes) {
+    if (!nodes || nodes.length <= 1) return nodes || [];
+    const set = new Set(nodes);
+    return nodes.filter(node => {
+      for (let anc = node.parentElement; anc; anc = anc.parentElement) {
+        if (set.has(anc)) return false;
+      }
+      return true;
+    });
+  }
   function elementOf(node) {
     return node && (node.nodeType === 1 ? node : node.parentElement);
   }
@@ -146,41 +176,115 @@
     if (!el) return false;
     return typeof el.closest === 'function' ? Boolean(el.closest('[data-op-owned]')) : Boolean(el.hasAttribute?.('data-op-owned'));
   }
-  function isVisible(node) {
-    if (!node || !node.isConnected || node.closest('[hidden], [aria-hidden="true"]')) return false;
-    const view = node.ownerDocument?.defaultView;
-    if (!view?.getComputedStyle) return true;
-    for (let current = node; current; current = current.parentElement) {
-      if (current !== node && current.tagName === 'DETAILS' && !current.open) {
-        const summary = [...current.children].find(child => child.tagName === 'SUMMARY');
-        if (!summary?.contains(node)) return false;
-      }
-      const style = view.getComputedStyle(current);
-      if (style.display === 'none' || ['hidden','collapse'].includes(style.visibility) || style.contentVisibility === 'hidden' || style.opacity === '0') return false;
+  function hasHiddenAttr(node, visCache) {
+    if (typeof node.hasAttribute !== 'function' && typeof node.closest === 'function') {
+      return Boolean(node.closest('[hidden], [aria-hidden="true"]'));
     }
-    return true;
+    for (let cur = node; cur; cur = cur.parentElement) {
+      if (visCache && visCache.get(cur) === true) return false;
+      if (cur.hasAttribute?.('hidden') || cur.getAttribute?.('aria-hidden') === 'true') return true;
+      if (!cur.parentElement && typeof cur.closest === 'function') {
+        return Boolean(cur.closest('[hidden], [aria-hidden="true"]'));
+      }
+    }
+    return false;
+  }
+  function isVisible(node) {
+    if (!node || !node.isConnected) return false;
+    const visCache = activeScanCache?.vis;
+    if (visCache && visCache.has(node)) return visCache.get(node);
+    if (hasHiddenAttr(node, visCache)) {
+      if (visCache) visCache.set(node, false);
+      return false;
+    }
+    if (typeof node.checkVisibility === 'function') {
+      const ownView = node.ownerDocument?.defaultView;
+      if (node.style?.contentVisibility === 'hidden') {
+        if (visCache) visCache.set(node, false);
+        return false;
+      }
+      const vis = node.checkVisibility({
+        checkOpacity: true,
+        checkVisibilityCSS: true,
+        opacityProperty: true,
+        visibilityProperty: true,
+        contentVisibilityAuto: false
+      });
+      if (vis) {
+        // `checkVisibility({ contentVisibilityAuto: false })` skips descendants of `content-visibility: hidden`
+        // ancestors, but still returns `true` for the node carrying `content-visibility: hidden` itself.
+        const ownStyle = ownView ? getStyle(node, ownView) : null;
+        const hiddenSelf = ownStyle?.contentVisibility === 'hidden';
+        if (visCache) visCache.set(node, !hiddenSelf);
+        return !hiddenSelf;
+      }
+      // `checkVisibility()` returns false for boxless `display: contents` wrappers even when visible;
+      // fall through to the computed-style ancestor walk only when the node itself is `display: contents`.
+      const ownStyle = ownView ? getStyle(node, ownView) : null;
+      if (!ownStyle || ownStyle.display !== 'contents') {
+        if (visCache) visCache.set(node, false);
+        return false;
+      }
+    }
+    const view = node.ownerDocument?.defaultView;
+    if (!view?.getComputedStyle) {
+      if (visCache) visCache.set(node, true);
+      return true;
+    }
+    const chain = [];
+    let visible = true;
+    for (let current = node; current; current = current.parentElement) {
+      const closedDetails = current !== node && current.tagName === 'DETAILS' && !current.open;
+      if (closedDetails) {
+        const summary = [...current.children].find(child => child.tagName === 'SUMMARY');
+        if (!summary?.contains(node)) { visible = false; break; }
+      }
+      if (!closedDetails && visCache && visCache.has(current)) {
+        visible = visCache.get(current);
+        break;
+      }
+      const style = getStyle(current, view);
+      if (style && (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || style.contentVisibility === 'hidden' || style.opacity === '0')) {
+        visible = false;
+        if (visCache) visCache.set(current, false);
+        break;
+      }
+      if (!closedDetails) chain.push(current);
+    }
+    if (visCache) {
+      if (visible) {
+        for (const el of chain) visCache.set(el, true);
+      } else {
+        visCache.set(node, false);
+      }
+    }
+    return visible;
   }
   function topLevelMatches(selectors, root = document) {
-    const nodes = [...root.querySelectorAll(selectors)].filter(node => !isOwned(node));
-    const all = new Set(nodes);
-    return nodes.filter(node => {
-      for (let ancestor = node.parentElement; ancestor; ancestor = ancestor.parentElement) {
-        if (all.has(ancestor)) return false;
-      }
-      return true;
-    });
+    return filterOutermost([...root.querySelectorAll(selectors)].filter(node => !isOwned(node)));
   }
-  // A detached copy excludes our sibling controls without mutating framework-owned text.
+  function collectLiveDomText(node, root, selector) {
+    let out = '';
+    for (let child = node.firstChild; child; child = child.nextSibling) {
+      if (child.nodeType === 3 || child.nodeType === 4) {
+        out += child.nodeValue || '';
+      } else if (child.nodeType === 1) {
+        if (child !== root && (child.hasAttribute?.('data-op-owned') || child.matches?.(selector))) continue;
+        out += collectLiveDomText(child, root, selector);
+      }
+    }
+    return out;
+  }
+  function isLiveDomNode(element) {
+    return Boolean(element && 'firstChild' in element && 'nextSibling' in element);
+  }
+  // Zero-clone subtree text traversal excludes owned/hidden controls without mutating host text.
   function textOf(element) {
     if (!element) return '';
     const hiddenSelector = '[data-op-owned],script,style,[hidden],[aria-hidden="true"]';
     if (element.matches?.(hiddenSelector)) return '';
-    if (!element.querySelector?.(hiddenSelector)) return element.textContent || '';
-    if (typeof element.cloneNode === 'function') {
-      const copy = element.cloneNode(true);
-      copy.querySelectorAll(hiddenSelector).forEach(node => node.remove());
-      return copy.textContent || '';
-    }
+    if (element.childElementCount === 0 || !element.querySelector?.(hiddenSelector)) return element.textContent || '';
+    if (isLiveDomNode(element)) return collectLiveDomText(element, element, hiddenSelector);
     const collect = node => {
       if (!node) return '';
       if (node.nodeType === 3) return node.nodeValue ?? node.textContent ?? '';
@@ -213,13 +317,11 @@
     if (!element) return '';
     const selector = options && options.excludeCode ? `${TURN_NOISE_SELECTOR},pre` : TURN_NOISE_SELECTOR;
     if (element.matches && element.matches(selector)) return '';
-    if (typeof element.cloneNode === 'function') {
-      if (!element.querySelector || !element.querySelector(selector)) {
+    if (isLiveDomNode(element)) {
+      if (element.childElementCount === 0 || !element.querySelector || !element.querySelector(selector)) {
         return (element.textContent || '').trim();
       }
-      const copy = element.cloneNode(true);
-      copy.querySelectorAll(selector).forEach(node => node.remove());
-      return (copy.textContent || '').trim();
+      return collectLiveDomText(element, element, selector).trim();
     }
     const collectText = node => {
       if (!node) return '';
@@ -238,18 +340,36 @@
   }
   function visibleText(element) {
     if (!isVisible(element)) return '';
+    const view = element.ownerDocument?.defaultView;
+    if (view?.getComputedStyle && getStyle(element, view)?.contentVisibility === 'hidden') return '';
     // innerText follows rendered visibility, including collapsed native details.
     return typeof element.innerText === 'string' ? element.innerText.trim() : textOf(element).trim();
   }
   function estimateTokens(text, options = {}) {
     const source = String(text || '');
-    if (!source.trim()) return 0;
+    const len = source.length;
+    if (!len) return 0;
+    let hasNonSpace = false;
     let cjk = 0;
     let other = 0;
-    for (const character of source) {
-      if (/[\u2e80-\u9fff\uac00-\ud7af\uf900-\ufaff]/u.test(character)) cjk++;
-      else other++;
+    for (let i = 0; i < len; i++) {
+      const code = source.charCodeAt(i);
+      if (!hasNonSpace && code > 32 && code !== 160 && code !== 0xfeff &&
+          !(code >= 0x2000 && code <= 0x200a) && code !== 0x2028 && code !== 0x2029 &&
+          code !== 0x202f && code !== 0x205f && code !== 0x3000) {
+        hasNonSpace = true;
+      }
+      if ((code >= 0x2e80 && code <= 0x9fff) || (code >= 0xac00 && code <= 0xd7af) || (code >= 0xf900 && code <= 0xfaff)) {
+        cjk++;
+      } else {
+        if (code >= 0xd800 && code <= 0xdbff && i + 1 < len) {
+          const next = source.charCodeAt(i + 1);
+          if (next >= 0xdc00 && next <= 0xdfff) i++;
+        }
+        other++;
+      }
     }
+    if (!hasNonSpace && !source.trim()) return 0;
     const divisor = options && options.mode === 'code' ? 3.2 : 4;
     return Math.ceil(cjk * 0.7 + other / divisor);
   }
@@ -258,7 +378,10 @@
     const prose = estimateTokens(cleanTurnText(turn, { excludeCode: true }));
     let code = 0;
     if (typeof turn.querySelectorAll === 'function') {
-      const pres = [...turn.querySelectorAll('pre')].filter(pre =>
+      const rawPres = typeof turn.getElementsByTagName === 'function'
+        ? [...turn.getElementsByTagName('pre')]
+        : [...turn.querySelectorAll('pre')];
+      const pres = rawPres.filter(pre =>
         !isOwned(pre) &&
         !pre.closest?.('[hidden],[aria-hidden="true"]') &&
         !pre.parentElement?.closest?.('pre')
@@ -305,13 +428,35 @@
   }
   // A node whose computed overflow-y lets it scroll (it need not overflow right now).
   function isScrollContainer(node, view) {
-    return Boolean(node && /(auto|scroll)/.test(view?.getComputedStyle?.(node)?.overflowY || ''));
+    return Boolean(node && /(auto|scroll)/.test(getStyle(node, view)?.overflowY || ''));
   }
   function scrollContainer(element) {
+    const scrollCache = activeScanCache?.scroll;
+    if (element && scrollCache && scrollCache.has(element)) return scrollCache.get(element);
+    const visited = scrollCache ? [] : null;
+    let found = null;
     for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
-      if (isScrollContainer(parent, parent.ownerDocument?.defaultView) && parent.scrollHeight > parent.clientHeight + 1) return parent;
+      if (scrollCache && scrollCache.has(parent)) {
+        found = scrollCache.get(parent);
+        break;
+      }
+      if (visited) visited.push(parent);
+      if (isScrollContainer(parent, parent.ownerDocument?.defaultView) && parent.scrollHeight > parent.clientHeight + 1) {
+        found = parent;
+        break;
+      }
     }
-    return element?.ownerDocument?.scrollingElement || global.document?.scrollingElement || null;
+    const resolved = found || element?.ownerDocument?.scrollingElement || global.document?.scrollingElement || null;
+    if (scrollCache && element) {
+      scrollCache.set(element, resolved);
+      if (visited) {
+        for (const anc of visited) {
+          if (anc === found) break;
+          scrollCache.set(anc, resolved);
+        }
+      }
+    }
+    return resolved;
   }
   // v0.3.1 #18: live ChatGPT message markers lead; the rest are the v0.3.0 markers.
   const MESSAGE_AREAS = '[data-content-search-unit-key],[data-user-message-bubble],[data-markdown-text-style="assistant-message"],[data-message-author-role],[data-turn="user"],[data-turn="assistant"],article[data-testid^="conversation-turn-"],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response,[data-test-id="model-response"],.model-response-text';
@@ -565,17 +710,43 @@
     }
     return [...new Set([...surfaces, ...threadFooter])].filter(node => !isProtectedBackdrop(node) && !isHomeThreadFooter(spec, node, view));
   }
-  function findSidebars(spec, root) {
+  function queryOutside(root, skipNode, selector) {
+    if (!skipNode || !root) return root?.querySelectorAll ? [...root.querySelectorAll(selector)] : [];
+    const body = root.body || (root.nodeType === 1 ? root : null);
+    if (!body || !body.children || typeof body.contains !== 'function' || !body.contains(skipNode)) {
+      return root.querySelectorAll ? [...root.querySelectorAll(selector)] : [];
+    }
+    const out = [];
+    const walk = parent => {
+      for (const child of parent.children || []) {
+        if (child === skipNode || isOwned(child)) continue;
+        if (child.contains?.(skipNode)) {
+          if (child.matches?.(selector)) out.push(child);
+          walk(child);
+        } else {
+          if (child.matches?.(selector)) out.push(child);
+          if (child.querySelectorAll) {
+            for (const m of child.querySelectorAll(selector)) out.push(m);
+          }
+        }
+      }
+    };
+    walk(body);
+    return out;
+  }
+  function findSidebars(spec, root, primaryArg, composerArg) {
     const result = [];
-    const primary = findPrimary(spec, root);
-    const composer = findComposer(spec, root);
+    const primary = primaryArg !== undefined ? primaryArg : findPrimary(spec, root);
+    const composer = composerArg !== undefined ? composerArg : findComposer(spec, root);
     const add = node => {
       if (!node || isOwned(node) || !isVisible(node) || node.closest(MESSAGE_AREAS)) return;
       if ((primary && (node === primary || node.contains?.(primary))) ||
           (composer && (node === composer || node.contains?.(composer)))) return;
       if (!result.includes(node)) result.push(node);
     };
-    for (const selector of spec.sidebars) root.querySelectorAll(selector).forEach(add);
+    if (spec.sidebars.length) {
+      queryOutside(root, primary, spec.sidebars.join(',')).forEach(add);
+    }
     // New ChatGPT shells sometimes expose only semantic nav/aside elements.
     // Constrain the fallback to a tall left-edge navigation surface with controls.
     const doc = root.ownerDocument || root;
@@ -592,24 +763,26 @@
         const narrow = rect.width >= 28 && rect.width <= Math.min(560, viewportWidth * .55) && rect.right <= viewportWidth * .66;
         return tall && leftAligned && narrow;
       };
-      for (const node of root.querySelectorAll('aside,nav,[role="navigation"],[aria-label="Main navigation"],[aria-label="Chat history"],[aria-label="主导航"],[aria-label="聊天记录"]')) {
+      for (const node of queryOutside(root, primary, 'aside,nav,[role="navigation"],[aria-label="Main navigation"],[aria-label="Chat history"],[aria-label="主导航"],[aria-label="聊天记录"]')) {
         if (isSideNavigation(node)) add(node);
       }
-      const visited = new Set();
       // Conversation links offer a semantic fallback when a release replaces nav
-      // with generic divs. Inspect only a bounded sample, never the whole DOM.
-      for (const link of [...root.querySelectorAll(spec.sidebarLinks)].slice(0, 24)) {
-        if (link.closest('main,[role="main"]') || isOwned(link)) continue;
-        for (let node = link.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth++) {
-          if (visited.has(node)) break;
-          visited.add(node);
-          if (node.matches('body,html')) break;
-          if (isSideNavigation(node)) add(node);
+      // with generic divs. Skip the full-document scan when a recognized sidebar already holds them.
+      if (spec.sidebarLinks && !result.some(surface => surface.querySelector?.(spec.sidebarLinks))) {
+        const visited = new Set();
+        for (const link of queryOutside(root, primary, spec.sidebarLinks).slice(0, 24)) {
+          if (link.closest('main,[role="main"]') || isOwned(link)) continue;
+          for (let node = link.parentElement, depth = 0; node && depth < 8; node = node.parentElement, depth++) {
+            if (visited.has(node)) break;
+            visited.add(node);
+            if (node.matches('body,html')) break;
+            if (isSideNavigation(node)) add(node);
+          }
         }
       }
     }
     // A single outer surface per sidebar prevents nested, doubled glass frames.
-    return result.filter(node => !result.some(parent => parent !== node && parent.contains(node)));
+    return filterOutermost(result);
   }
   const ACTIVE_NAV_STATE = '[aria-current="page"],[aria-current="true"],[data-active="true"],[aria-selected="true"]';
   const NAV_ROW = 'a[href],button,[role="link"],[role="button"],[role="option"]';
@@ -706,30 +879,78 @@
       return 0;
     });
   }
+  function mergeSortedByDocumentOrder(a, b) {
+    if (!a.length) return [...b];
+    if (!b.length) return [...a];
+    if (typeof a[0]?.compareDocumentPosition !== 'function') return [...a, ...b];
+    const out = [];
+    let i = 0, j = 0;
+    while (i < a.length && j < b.length) {
+      const left = a[i], right = b[j];
+      if (left === right) { out.push(left); i++; j++; continue; }
+      const pos = left.compareDocumentPosition(right);
+      if (pos & 4) { out.push(left); i++; }
+      else { out.push(right); j++; }
+    }
+    while (i < a.length) out.push(a[i++]);
+    while (j < b.length) out.push(b[j++]);
+    return out;
+  }
   function findTurns(spec, role, root) {
     const selector = role === 'user' ? spec.users : spec.assistants;
-    const explicit = topLevelMatches(selector, root).filter(isVisible);
-    if (!spec.turnContainers) return sortByDocumentOrder(explicit);
+    if (!spec.turnContainers) return topLevelMatches(selector, root).filter(isVisible);
+    const cacheable = Boolean(activeScanCache && activeScanCache.root === root);
+    let explicitByRole = cacheable ? activeScanCache.values.get('explicitTurns') : null;
+    if (!explicitByRole) {
+      const explicitUsers = topLevelMatches(spec.users, root).filter(isVisible);
+      const explicitAssistants = topLevelMatches(spec.assistants, root).filter(isVisible);
+      const anyAncestors = new Set();
+      for (const list of [explicitUsers, explicitAssistants]) {
+        for (const node of list) {
+          anyAncestors.add(node);
+          for (let anc = node.parentElement; anc && anc !== root; anc = anc.parentElement) {
+            if (anyAncestors.has(anc)) break;
+            anyAncestors.add(anc);
+          }
+        }
+      }
+      explicitByRole = { user: explicitUsers, assistant: explicitAssistants, anyAncestors };
+      if (cacheable) activeScanCache.values.set('explicitTurns', explicitByRole);
+    }
+    const explicit = explicitByRole[role];
     const result = [...explicit];
     const seen = new Set(explicit);
-    const containers = topLevelMatches(spec.turnContainers, root).filter(isVisible);
+    const anyAncestors = explicitByRole.anyAncestors;
+    let containers;
+    if (cacheable && activeScanCache.values.has('turnContainers')) {
+      containers = activeScanCache.values.get('turnContainers');
+    } else {
+      containers = topLevelMatches(spec.turnContainers, root);
+      if (cacheable) activeScanCache.values.set('turnContainers', containers);
+    }
     for (const container of containers) {
-      if (seen.has(container) || result.some(node => node.contains(container) || container.contains(node))) continue;
+      if (seen.has(container) || anyAncestors.has(container)) continue;
+      let insideSeen = false;
+      for (let anc = container.parentElement; anc && anc !== root; anc = anc.parentElement) {
+        if (seen.has(anc)) { insideSeen = true; break; }
+      }
+      if (insideSeen || !isVisible(container)) continue;
       if (container.querySelector(spec.users) || container.querySelector(spec.assistants)) continue;
       const heading = container.querySelector('.sr-only');
       const srText = heading ? textOf(heading).trim().toLowerCase() : '';
       const turnAttr = container.getAttribute('data-turn');
       const isUser = turnAttr === 'user' || Boolean(container.querySelector('.user-message-bubble-color')) || /^(you said|你说|您说)/i.test(srText);
       const isAssistant = turnAttr === 'assistant' || Boolean(container.querySelector('.agent-turn')) || /^(chatgpt said|chatgpt\s*说)/i.test(srText);
-      if (role === 'user' && isUser && !isAssistant) {
+      if ((role === 'user' && isUser && !isAssistant) || (role === 'assistant' && isAssistant && !isUser)) {
         seen.add(container);
-        result.push(container);
-      } else if (role === 'assistant' && isAssistant && !isUser) {
-        seen.add(container);
+        for (let anc = container.parentElement; anc && anc !== root; anc = anc.parentElement) {
+          if (anyAncestors.has(anc)) break;
+          anyAncestors.add(anc);
+        }
         result.push(container);
       }
     }
-    return sortByDocumentOrder(result);
+    return result.length === explicit.length ? result : sortByDocumentOrder(result);
   }
   function normalizeModelText(raw) {
     return String(raw || '').replace(/[⌄▾▼›❯]/g, ' ').replace(/\s+/g, ' ').trim();
@@ -759,7 +980,37 @@
     });
     return resolved;
   }
-  function findCodeSurfaces(spec, messages, root) {
+  function hasAncestorIn(node, set) {
+    for (let cur = node; cur; cur = cur.parentElement) {
+      if (set.has(cur)) return true;
+    }
+    return false;
+  }
+  function commonContainerFor(messages, primary, root) {
+    if (messages.length <= 4) return null;
+    if (activeScanCache && activeScanCache.root === root && activeScanCache.values.has('commonMsgRoot')) {
+      return activeScanCache.values.get('commonMsgRoot');
+    }
+    let chosen = null;
+    if (primary && typeof primary.querySelectorAll === 'function' && typeof primary.contains === 'function' && messages.every(m => primary.contains(m))) {
+      chosen = primary;
+    } else if (root && typeof root.querySelectorAll === 'function' && typeof root.contains === 'function' && messages.every(m => root.contains(m))) {
+      chosen = root;
+    }
+    if (activeScanCache && activeScanCache.root === root) activeScanCache.values.set('commonMsgRoot', chosen);
+    return chosen;
+  }
+  function queryBatchPres(batchRoot, root) {
+    if (activeScanCache && activeScanCache.root === root && activeScanCache.values.has('batchPres')) {
+      return activeScanCache.values.get('batchPres');
+    }
+    const pres = typeof batchRoot.getElementsByTagName === 'function'
+      ? [...batchRoot.getElementsByTagName('pre')]
+      : [...batchRoot.querySelectorAll('pre')];
+    if (activeScanCache && activeScanCache.root === root) activeScanCache.values.set('batchPres', pres);
+    return pres;
+  }
+  function findCodeSurfaces(spec, messages, root, primary) {
     const surfaces = [];
     const seen = new Set();
     const add = node => {
@@ -768,54 +1019,167 @@
       seen.add(node);
       surfaces.push(node);
     };
+    const processSurface = node => {
+      if ((node.tagName || '').toUpperCase() === 'CODE-BLOCK') {
+        let inner = null;
+        for (const child of node.children || []) {
+          if (child.classList?.contains('code-block') && !isOwned(child) && isVisible(child) && child.querySelector('pre, .code-block-decoration')) {
+            inner = child;
+            break;
+          }
+        }
+        if (!inner) {
+          inner = [...node.querySelectorAll('.code-block')].find(
+            candidate => !isOwned(candidate) && isVisible(candidate) && candidate.querySelector('pre, .code-block-decoration')
+          );
+        }
+        if (inner) { add(inner); return; }
+      }
+      add(node);
+    };
+    const processPre = (pre, stopAt) => {
+      if (isOwned(pre)) return;
+      for (let anc = pre; anc; anc = anc.parentElement) {
+        if (seen.has(anc)) return;
+        if (anc === stopAt) break;
+      }
+      if (!isVisible(pre)) return;
+      const parent = pre.parentElement;
+      const owner = (parent && !isOwned(parent) && spec.codeWells && parent.matches?.(spec.codeWells))
+        ? parent.parentElement
+        : parent;
+      const singlePre = owner && (typeof owner.getElementsByTagName === 'function'
+        ? owner.getElementsByTagName('pre').length === 1
+        : owner.querySelectorAll('pre').length === 1);
+      if (owner && !isOwned(owner) && !owner.matches(MESSAGE_AREAS) && !owner.matches('.markdown') &&
+          spec.codeHeaders && singlePre && owner.querySelector(spec.codeHeaders)) {
+        add(owner);
+      } else {
+        add(pre);
+      }
+    };
+    const batchRoot = messages.length ? commonContainerFor(messages, primary, root) : null;
+    if (batchRoot) {
+      const msgSet = new Set(messages);
+      const pres = queryBatchPres(batchRoot, root);
+      if (spec.codeSurfaces && spec.codeSurfaces.includes('code-block') && typeof batchRoot.getElementsByTagName === 'function') {
+        for (const node of batchRoot.getElementsByTagName('code-block')) {
+          if (hasAncestorIn(node, msgSet)) processSurface(node);
+        }
+      }
+      for (const pre of pres) {
+        if (!hasAncestorIn(pre, msgSet)) continue;
+        if (spec.codeSurfaces && typeof pre.closest === 'function') {
+          const card = pre.closest(spec.codeSurfaces);
+          if (card && card !== batchRoot && hasAncestorIn(card, msgSet)) {
+            processSurface(card);
+            continue;
+          }
+        }
+        processPre(pre, batchRoot);
+      }
+      return filterOutermost(surfaces);
+    }
     const scope = messages.length ? messages : [root];
     for (const container of scope) {
       if (spec.codeSurfaces) {
-        for (const node of container.querySelectorAll(spec.codeSurfaces)) {
-          if ((node.tagName || '').toUpperCase() === 'CODE-BLOCK') {
-            const inner = [...node.querySelectorAll('.code-block')].find(
-              candidate => !isOwned(candidate) && isVisible(candidate) && candidate.querySelector('pre, .code-block-decoration')
-            );
-            if (inner) {
-              add(inner);
-              continue;
+        for (const node of container.querySelectorAll(spec.codeSurfaces)) processSurface(node);
+      }
+      for (const pre of container.querySelectorAll('pre')) processPre(pre, container);
+    }
+    return filterOutermost(surfaces);
+  }
+  function findCodeHeaders(spec, messages, primary, root, knownSurfaces = null) {
+    if (!spec.codeHeaders || !messages.length) return [];
+    const out = [];
+    const seen = new Set();
+    const collectInSurface = (node, depth) => {
+      if (!node || depth > 3) return;
+      for (let child = node.firstElementChild; child; child = child.nextElementSibling) {
+        const tag = (child.localName || child.tagName || '').toLowerCase();
+        if (tag === 'pre' || child.hasAttribute?.('data-op-owned')) continue;
+        if (child.matches?.(spec.codeHeaders)) {
+          if (!seen.has(child) && isVisible(child)) {
+            seen.add(child);
+            out.push(child);
+          }
+          continue;
+        }
+        collectInSurface(child, depth + 1);
+      }
+    };
+    const batchRoot = commonContainerFor(messages, primary, root);
+    if (batchRoot) {
+      if (Array.isArray(knownSurfaces) && knownSurfaces.length) {
+        for (const surface of knownSurfaces) {
+          if (surface && typeof surface.firstElementChild !== 'undefined') {
+            collectInSurface(surface, 0);
+          } else if (surface?.querySelectorAll) {
+            for (const hdr of surface.querySelectorAll(spec.codeHeaders)) {
+              if (!seen.has(hdr) && !isOwned(hdr) && isVisible(hdr)) { seen.add(hdr); out.push(hdr); }
             }
           }
-          add(node);
+        }
+        return out;
+      }
+      const msgSet = new Set(messages);
+      for (const hdr of batchRoot.querySelectorAll(spec.codeHeaders)) {
+        if (!seen.has(hdr) && !isOwned(hdr) && hasAncestorIn(hdr, msgSet) && isVisible(hdr)) {
+          seen.add(hdr);
+          out.push(hdr);
         }
       }
-      for (const pre of container.querySelectorAll('pre')) {
-        if (isOwned(pre) || !isVisible(pre)) continue;
-        if (surfaces.some(surface => surface.contains(pre))) continue;
-        const parent = pre.parentElement;
-        const owner = (parent && !isOwned(parent) && spec.codeWells && parent.matches?.(spec.codeWells))
-          ? parent.parentElement
-          : parent;
-        if (owner && !isOwned(owner) && !owner.matches(MESSAGE_AREAS) && !owner.matches('.markdown') &&
-            spec.codeHeaders && owner.querySelector(spec.codeHeaders) && owner.querySelectorAll('pre').length === 1) {
-          add(owner);
-        } else {
-          add(pre);
+      return out;
+    }
+    for (const message of messages) {
+      for (const hdr of message.querySelectorAll(spec.codeHeaders)) {
+        if (!seen.has(hdr) && !isOwned(hdr) && isVisible(hdr)) {
+          seen.add(hdr);
+          out.push(hdr);
         }
       }
     }
-    return surfaces.filter(node => !surfaces.some(other => other !== node && other.contains(node)));
+    return out;
   }
-  function findCodeHeaders(spec, messages) {
-    if (!spec.codeHeaders) return [];
+  function findCodeBlocks(messages, primary, root) {
+    if (!messages.length) return [];
     const out = [];
+    const seen = new Set();
+    const batchRoot = commonContainerFor(messages, primary, root);
+    if (batchRoot) {
+      const msgSet = new Set(messages);
+      for (const pre of queryBatchPres(batchRoot, root)) {
+        if (!seen.has(pre) && !isOwned(pre) && hasAncestorIn(pre, msgSet) && !pre.parentElement?.closest?.('pre')) {
+          seen.add(pre);
+          out.push(pre);
+        }
+      }
+      return out;
+    }
     for (const message of messages) {
-      for (const hdr of message.querySelectorAll(spec.codeHeaders)) {
-        if (!isOwned(hdr) && isVisible(hdr) && !out.includes(hdr)) out.push(hdr);
+      for (const pre of message.querySelectorAll('pre')) {
+        if (!seen.has(pre) && !isOwned(pre) && !pre.parentElement?.closest?.('pre')) {
+          seen.add(pre);
+          out.push(pre);
+        }
       }
     }
     return out;
   }
   function findCodeSurfaceFor(spec, pre, surfaces) {
     if (!pre) return null;
-    if (Array.isArray(surfaces)) {
-      const matched = surfaces.find(surface => surface === pre || surface.contains?.(pre));
-      if (matched) return matched;
+    if (Array.isArray(surfaces) && surfaces.length) {
+      const surfaceSet = surfaces.length > 4
+        ? getScanNodeCache('codeSurfaceSet', surfaces, () => new Set(surfaces))
+        : null;
+      if (surfaceSet && pre.parentElement !== undefined) {
+        for (let cur = pre; cur; cur = cur.parentElement) {
+          if (surfaceSet.has(cur)) return cur;
+        }
+      } else {
+        const matched = surfaces.find(surface => surface === pre || surface.contains?.(pre));
+        if (matched) return matched;
+      }
     }
     const closestSurface = spec.codeSurfaces && typeof pre.closest === 'function' ? pre.closest(spec.codeSurfaces) : null;
     if (closestSurface && !isOwned(closestSurface) && !closestSurface.matches?.(MESSAGE_AREAS) && !closestSurface.matches?.('.markdown')) {
@@ -851,9 +1215,25 @@
     return isWell ? parent : pre;
   }
   function findCodeHeaderFor(spec, surface, pre, headers) {
-    if (Array.isArray(headers)) {
-      const matched = headers.find(header => surface && surface !== pre && surface.contains?.(header));
-      if (matched) return matched;
+    if (Array.isArray(headers) && headers.length && surface && surface !== pre) {
+      const byAncestor = headers.length > 4
+        ? getScanNodeCache('codeHeaderByAncestor', headers, () => {
+          const map = new Map();
+          for (const header of headers) {
+            for (let cur = header?.parentElement, d = 0; cur && d < 6; cur = cur.parentElement, d++) {
+              if (!map.has(cur)) map.set(cur, header);
+            }
+          }
+          return map;
+        })
+        : null;
+      if (byAncestor) {
+        const fast = byAncestor.get(surface);
+        if (fast) return fast;
+      } else {
+        const matched = headers.find(header => surface.contains?.(header));
+        if (matched) return matched;
+      }
     }
     if (!spec.codeHeaders) return null;
     const scope = surface && surface !== pre ? surface : pre?.parentElement;
@@ -875,10 +1255,15 @@
       }
     }
     const list = [...candidates];
-    return list.filter(node => !list.some(other => other !== node && other.contains(node)));
+    return filterOutermost(list);
   }
   function findVisibleAttachments(spec, messages, composer, root) {
-    return collectAttachments(spec.attachments, [...messages, composer?.parentElement || composer, root]);
+    const rawScopes = [...messages, composer?.parentElement || composer, root].filter(s => s && typeof s.querySelectorAll === 'function');
+    if (root && typeof root.querySelectorAll === 'function' && typeof root.contains === 'function' &&
+        rawScopes.every(s => s === root || root.contains(s))) {
+      return collectAttachments(spec.attachments, [root]);
+    }
+    return collectAttachments(spec.attachments, rawScopes);
   }
   function findComposerAttachments(spec, composer) {
     if (!composer || isOwned(composer)) return [];
@@ -903,7 +1288,7 @@
         if (!chips.includes(node)) chips.push(node);
       }
     }
-    return chips.filter(node => !chips.some(other => other !== node && other.contains(node)));
+    return filterOutermost(chips);
   }
   // v0.3.1 #19 two-row composer: the host's own grid that lays out the editor row, as { element, slots, trailing }.
   // It qualifies when its direct children are placed by every expected area name (slots: null). Children
@@ -912,7 +1297,7 @@
   // grid. When no child carries a named area, a host with composerGridSlots identifies the slots by role
   // instead: leading holds the add button, primary the editor, trailing is the only control-bearing child
   // after primary. content.js marks those existing children reversibly (data-op-composer-<slot>) and
-  // hosts.css names their areas; nothing is moved or wrapped (ADR-0002). An unknown layout stays native.
+  // styles/host-*.css name their areas; nothing is moved or wrapped (ADR-0002). An unknown layout stays native.
   const COMPOSER_SLOT_MARKS = ['data-op-composer-leading', 'data-op-composer-primary', 'data-op-composer-trailing'];
   const isAreaName = value => Boolean(value) && !/^(?:auto|-?\d+|span(?:\s+\d+)?)$/.test(value);
   function composerGridSlots(spec, grid, editor, view) {
@@ -1182,7 +1567,7 @@
     );
     const classifyTrailingSibling = (sib, boundary, { insideDock = false } = {}) => {
       if (isExcludedTrailingNode(sib, composer, dock)) return;
-      const sibStyle = view?.getComputedStyle?.(sib);
+      const sibStyle = getStyle(sib, view);
       if (isScrollNode(sib, sibStyle)) return;
       const selfMarked = sib.getAttribute?.('data-op-composer-disclaimer') === 'true';
       if (!selfMarked && sibStyle && sibStyle.display === 'none') return;
@@ -1225,9 +1610,9 @@
       if (dock.parentElement && !dock.parentElement.matches?.('body,html')) {
         for (const sib of precedingSiblings(dock)) {
           if (!sib || sib === dock || sib.contains?.(dock) || sib.contains?.(composer) || isOwned(sib)) continue;
-          if (sib.matches?.(OVERLAY_EXCLUDED) || sib.closest?.(OVERLAY_EXCLUDED) || sib.querySelector?.(OVERLAY_EXCLUDED)) continue;
-          const sibStyle = view?.getComputedStyle?.(sib);
+          const sibStyle = getStyle(sib, view);
           if (isScrollNode(sib, sibStyle)) continue;
+          if (sib.matches?.(OVERLAY_EXCLUDED) || sib.closest?.(OVERLAY_EXCLUDED) || sib.querySelector?.(OVERLAY_EXCLUDED)) continue;
           scanExplicitInside(sib, dock.parentElement);
         }
       }
@@ -1256,7 +1641,7 @@
         }
       }
     }
-    const dedupedDisclaimers = disclaimers.filter(node => !disclaimers.some(other => other !== node && other.contains?.(node)));
+    const dedupedDisclaimers = filterOutermost(disclaimers);
     return { empty, disclaimers: dedupedDisclaimers };
   }
   function findComposerEmptyHeaders(spec, composer, grid, addTrigger, modelTrigger) {
@@ -1310,9 +1695,23 @@
   function findColumnSurfaces(selector, primary, anchor, filter = null) {
     if (!selector || !primary) return [];
     const out = [];
-    for (const node of primary.querySelectorAll(selector)) {
-      if (!isOwned(node) && isVisible(node) && primary.contains(node) && (!anchor || node.contains(anchor) || anchor.contains(node)) && (!filter || filter(node))) {
-        if (!out.includes(node)) out.push(node);
+    const consider = node => {
+      if (!node || isOwned(node) || !isVisible(node)) return;
+      if (filter && !filter(node)) return;
+      if (!out.includes(node)) out.push(node);
+    };
+    if (anchor && primary.contains?.(anchor)) {
+      const ancestors = [];
+      for (let node = anchor; node && node !== primary; node = node.parentElement) {
+        if (node.matches?.(selector)) ancestors.push(node);
+      }
+      for (let i = ancestors.length - 1; i >= 0; i--) consider(ancestors[i]);
+      if (typeof anchor.querySelectorAll === 'function') {
+        for (const node of anchor.querySelectorAll(selector)) consider(node);
+      }
+    } else {
+      for (const node of primary.querySelectorAll(selector)) {
+        if (!anchor || node.contains(anchor) || anchor.contains(node)) consider(node);
       }
     }
     if (!out.length && anchor) {
@@ -1377,11 +1776,11 @@
     const excludeZone = 'dialog,[role="dialog"],[aria-modal="true"],nav,[role="navigation"],[data-op-owned],[data-op-composer-backdrop="true"]';
     const mainSelector = 'main,[role="main"],chat-window';
     const raw = [...scope.querySelectorAll('button,[role="button"],a[href]')].filter(node => {
-      if (!isVisible(node)) return false;
       if (node.closest?.(excludeZone) || node.closest?.(MESSAGE_AREAS)) return false;
       if (composer && (composer.contains?.(node) || node.contains?.(composer))) return false;
       if (composerCard && composerCard !== composer && (composerCard.contains?.(node) || node.contains?.(composerCard))) return false;
-      if (node.matches?.(mainSelector) || node.querySelector?.(mainSelector)) return false;
+      if (node.matches?.(mainSelector) || ((node.children?.length || 0) > 0 && node.querySelector?.(mainSelector))) return false;
+      if (!isVisible(node)) return false;
       return true;
     });
     const candidates = raw.length > 240 ? [...raw.slice(0, 120), ...raw.slice(-120)] : raw;
@@ -1391,7 +1790,7 @@
         if (cur.matches?.(`body,html,${mainSelector}`) || cur.matches?.(excludeZone)) break;
         if (cur === composer || cur === composerCard) break;
         if ((composer && cur.contains?.(composer)) || (composerCard && cur.contains?.(composerCard)) || cur.querySelector?.(mainSelector)) break;
-        const pos = view.getComputedStyle(cur).position;
+        const pos = getStyle(cur, view)?.position;
         if (!['fixed', 'absolute', 'sticky'].includes(pos)) continue;
         const rect = normalizeBox(cur.getBoundingClientRect?.());
         if (!rect || rect.width > 260 || rect.height > 160) continue;
@@ -1546,10 +1945,60 @@
   function forHost(host, root = document) {
     const spec = HOSTS[host];
     if (!spec) return null;
+    const cached = (key, fn) => {
+      if (!activeScanCache || activeScanCache.root !== root) return fn();
+      if (activeScanCache.values.has(key)) return activeScanCache.values.get(key);
+      const val = fn();
+      activeScanCache.values.set(key, val);
+      return val;
+    };
+    const cachedByArg = (key, arg, fn) => {
+      if (!activeScanCache || activeScanCache.root !== root) return fn();
+      let map = activeScanCache.byNode.get(key);
+      if (!map) { map = new Map(); activeScanCache.byNode.set(key, map); }
+      const argKey = arg === undefined || arg === null ? NULL_ARG_KEY : arg;
+      if (map.has(argKey)) return map.get(argKey);
+      const val = fn();
+      map.set(argKey, val);
+      return val;
+    };
+    function withScanCache(fn) {
+      const prev = activeScanCache;
+      activeScanCache = { root, vis: new WeakMap(), computed: new WeakMap(), scroll: new WeakMap(), values: new Map(), byNode: new Map() };
+      try { return fn(); }
+      finally { activeScanCache = prev; }
+    }
     const collect = selectors => topLevelMatches(selectors, root).filter(isVisible);
-    const userTurns = () => findTurns(spec, 'user', root);
-    const assistantTurns = () => findTurns(spec, 'assistant', root);
-    const messages = () => sortByDocumentOrder([...userTurns(), ...assistantTurns()]);
+    const userTurns = () => cached('userTurns', () => findTurns(spec, 'user', root));
+    const assistantTurns = () => cached('assistantTurns', () => findTurns(spec, 'assistant', root));
+    const messages = () => cached('messages', () => mergeSortedByDocumentOrder(userTurns(), assistantTurns()));
+    const primarySurface = () => cached('primarySurface', () => findPrimary(spec, root));
+    const composerSurface = () => cached('composerSurface', () => findComposer(spec, root));
+    const modelSelectorTrigger = () => cached('modelSelectorTrigger', () => findModelTrigger(spec, root));
+    const composerGrid = composer => {
+      const comp = composer === undefined ? composerSurface() : composer;
+      return cachedByArg('composerGrid', comp, () => findComposerGrid(spec, comp));
+    };
+    const composerAddTrigger = composer => {
+      const comp = composer === undefined ? composerSurface() : composer;
+      return cachedByArg('composerAddTrigger', comp, () => findComposerAddTrigger(spec, comp));
+    };
+    const composerBackdropSurfaces = composer => {
+      const comp = composer === undefined ? composerSurface() : composer;
+      return cachedByArg('composerBackdrops', comp, () => findComposerBackdrops(spec, comp));
+    };
+    const composerScrimSurface = composer => {
+      const comp = composer === undefined ? composerSurface() : composer;
+      return cachedByArg('composerScrim', comp, () => findComposerScrim(spec, comp));
+    };
+    const threadFooterLayer = composer => {
+      const comp = composer === undefined ? composerSurface() : composer;
+      return cachedByArg('threadFooter', comp, () => findThreadFooterLayer(spec, comp));
+    };
+    const sidebarSurfaces = () => cached('sidebarSurfaces', () => findSidebars(spec, root, primarySurface(), composerSurface()));
+    const codeSurfaces = () => cached('codeSurfaces', () => findCodeSurfaces(spec, messages(), root, primarySurface()));
+    const codeHeaders = () => cached('codeHeaders', () => findCodeHeaders(spec, messages(), primarySurface(), root, codeSurfaces()));
+    const codeBlocks = () => cached('codeBlocks', () => findCodeBlocks(messages(), primarySurface(), root));
     return Object.freeze({
       host,
       usesOverlayScrim: Boolean(spec.usesOverlayScrim),
@@ -1561,68 +2010,72 @@
         userTurnTargets: Object.freeze([...(spec.contentWidth.userTurnTargets || [])]),
         composerTargets: Object.freeze([...spec.contentWidth.composerTargets])
       }),
+      withScanCache,
       userTurns,
       assistantTurns,
       conversationRoot: () => root.querySelector(spec.conversation) || root.body || root,
-      primarySurface: () => findPrimary(spec, root),
-      composerSurface: () => findComposer(spec, root),
-      composerCardSurface: (composer) => findComposerCard(spec, composer === undefined ? findComposer(spec, root) : composer),
-      composerBackdropSurfaces: (composer) => findComposerBackdrops(spec, composer === undefined ? findComposer(spec, root) : composer),
-      composerScrimSurface: (composer) => findComposerScrim(spec, composer === undefined ? findComposer(spec, root) : composer),
-      threadFooterLayer: (composer) => findThreadFooterLayer(spec, composer === undefined ? findComposer(spec, root) : composer),
+      primarySurface,
+      composerSurface,
+      composerCardSurface: (composer) => {
+        const comp = composer === undefined ? composerSurface() : composer;
+        return cachedByArg('composerCard', comp, () => findComposerCard(spec, comp));
+      },
+      composerBackdropSurfaces,
+      composerScrimSurface,
+      threadFooterLayer,
       composerBelowSiblings: (composer, dock) => {
-        const comp = composer === undefined ? findComposer(spec, root) : composer;
-        const resolvedDock = dock === undefined ? (findComposerScrim(spec, comp) || findThreadFooterLayer(spec, comp)) : dock;
-        const primary = findPrimary(spec, root);
+        const comp = composer === undefined ? composerSurface() : composer;
+        const resolvedDock = dock === undefined ? (composerScrimSurface(comp) || threadFooterLayer(comp)) : dock;
+        const primary = primarySurface();
         const allMessages = messages();
         return findComposerBelowSiblings(comp, resolvedDock, primary, allMessages[allMessages.length - 1] || null);
       },
-      composerGrid: (composer) => findComposerGrid(spec, composer === undefined ? findComposer(spec, root) : composer),
+      composerGrid,
       composerEmptyHeaders: (composer, grid) => {
-        const comp = composer === undefined ? findComposer(spec, root) : composer;
-        const resolvedGrid = grid === undefined ? findComposerGrid(spec, comp) : grid;
-        return findComposerEmptyHeaders(spec, comp, resolvedGrid, findComposerAddTrigger(spec, comp), findModelTrigger(spec, root));
+        const comp = composer === undefined ? composerSurface() : composer;
+        const resolvedGrid = grid === undefined ? composerGrid(comp) : grid;
+        return findComposerEmptyHeaders(spec, comp, resolvedGrid, composerAddTrigger(comp), modelSelectorTrigger());
       },
-      composerAddTrigger: (composer) => findComposerAddTrigger(spec, composer === undefined ? findComposer(spec, root) : composer),
-      modelSelectorTrigger: () => findModelTrigger(spec, root),
+      composerAddTrigger,
+      modelSelectorTrigger,
       composerToolbar: (trailing, modelTrigger) => findComposerToolbar(
-        trailing === undefined ? findComposerGrid(spec, findComposer(spec, root))?.trailing : trailing,
-        modelTrigger === undefined ? findModelTrigger(spec, root) : modelTrigger
+        trailing === undefined ? composerGrid(composerSurface())?.trailing : trailing,
+        modelTrigger === undefined ? modelSelectorTrigger() : modelTrigger
       ),
       modelCapsuleSlot: (trailing, modelTrigger) => findModelCapsuleSlot(
-        trailing === undefined ? findComposerGrid(spec, findComposer(spec, root))?.trailing : trailing,
-        modelTrigger === undefined ? findModelTrigger(spec, root) : modelTrigger
+        trailing === undefined ? composerGrid(composerSurface())?.trailing : trailing,
+        modelTrigger === undefined ? modelSelectorTrigger() : modelTrigger
       ),
       composerPrimaryAction: (composer) => {
-        const comp = composer === undefined ? findComposer(spec, root) : composer;
-        const grid = findComposerGrid(spec, comp);
-        return findComposerPrimaryAction(spec, comp, findComposerAddTrigger(spec, comp), findModelTrigger(spec, root), grid?.trailing || null);
+        const comp = composer === undefined ? composerSurface() : composer;
+        const grid = composerGrid(comp);
+        return findComposerPrimaryAction(spec, comp, composerAddTrigger(comp), modelSelectorTrigger(), grid?.trailing || null);
       },
-      composerAttachments: (composer) => findComposerAttachments(spec, composer === undefined ? findComposer(spec, root) : composer),
-      activeModelLabel: () => findActiveModelLabel(spec, root),
+      composerAttachments: (composer) => findComposerAttachments(spec, composer === undefined ? composerSurface() : composer),
+      activeModelLabel: () => cached('activeModelLabel', () => findActiveModelLabel(spec, root)),
       composerChips: (composer) => {
-        const comp = composer === undefined ? findComposer(spec, root) : composer;
-        return findComposerChips(spec, comp, findComposerAddTrigger(spec, comp), findModelTrigger(spec, root));
+        const comp = composer === undefined ? composerSurface() : composer;
+        return findComposerChips(spec, comp, composerAddTrigger(comp), modelSelectorTrigger());
       },
-      visibleAttachments: (composer) => findVisibleAttachments(spec, messages(), composer === undefined ? findComposer(spec, root) : composer, root),
-      codeSurfaces: () => findCodeSurfaces(spec, messages(), root),
-      codeHeaders: () => findCodeHeaders(spec, messages()),
+      visibleAttachments: (composer) => findVisibleAttachments(spec, messages(), composer === undefined ? composerSurface() : composer, root),
+      codeSurfaces,
+      codeHeaders,
       codeSurfaceFor: (pre, surfaces) => findCodeSurfaceFor(spec, pre, surfaces),
       codeHeaderFor: (surface, pre, headers) => findCodeHeaderFor(spec, surface, pre, headers),
       codeWellFor: (pre) => findCodeWellFor(spec, pre),
-      threadTailSpacers: () => findThreadTailSpacers(spec, findPrimary(spec, root), messages()),
-      threadColumns: () => findThreadColumnSurfaces(spec, findPrimary(spec, root), messages()[0]),
-      composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, findPrimary(spec, root), composer === undefined ? findComposer(spec, root) : composer),
-      sidebarSurfaces: () => findSidebars(spec, root),
-      sidebarActiveTargets: (sidebars) => findSidebarActiveTargets(sidebars === undefined ? findSidebars(spec, root) : sidebars),
-      cornerFloatingObstacles: (composer) => findCornerFloatingObstacles(root, composer === undefined ? findComposer(spec, root) : composer, spec),
-      codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))].filter(pre => !isOwned(pre) && !pre.parentElement?.closest?.('pre')),
-      thoughtBlocks: () => collect(spec.thoughts),
+      threadTailSpacers: () => findThreadTailSpacers(spec, primarySurface(), messages()),
+      threadColumns: () => findThreadColumnSurfaces(spec, primarySurface(), messages()[0]),
+      composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, primarySurface(), composer === undefined ? composerSurface() : composer),
+      sidebarSurfaces,
+      sidebarActiveTargets: (sidebars) => findSidebarActiveTargets(sidebars === undefined ? sidebarSurfaces() : sidebars),
+      cornerFloatingObstacles: (composer) => findCornerFloatingObstacles(root, composer === undefined ? composerSurface() : composer, spec),
+      codeBlocks,
+      thoughtBlocks: () => cached('thoughtBlocks', () => collect(spec.thoughts)),
       isAssistantNode(node) {
         const element = elementOf(node);
         return Boolean(element && !isOwned(element) && !element.closest('[contenteditable="true"], input, textarea, script, style') && element.closest(spec.assistants));
       },
-      isStreaming: () => collect(spec.streaming).length > 0,
+      isStreaming: () => cached('isStreaming', () => collect(spec.streaming).length > 0),
       scrollContainer
     });
   }

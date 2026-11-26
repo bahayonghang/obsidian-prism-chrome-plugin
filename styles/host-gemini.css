@@ -1,0 +1,195 @@
+/* Obsidian Prism Web — Gemini-specific host bridge.
+ * Loaded exclusively on gemini.google.com. Modified 2026-11-26. GPL-3.0-only. */
+
+/* Gemini's Material tokens are limited to its primary chat surface. */
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] {
+  --gem-sys-color--background: var(--op-canvas) !important;
+  --gem-sys-color--surface: var(--op-canvas) !important;
+  --gem-sys-color--surface-dim: var(--op-muted) !important;
+  --gem-sys-color--surface-bright: var(--op-card) !important;
+  --gem-sys-color--surface-container-lowest: var(--op-tonal-0) !important;
+  --gem-sys-color--surface-container-low: var(--op-muted) !important;
+  --gem-sys-color--surface-container: var(--op-card) !important;
+  --gem-sys-color--surface-container-high: var(--op-secondary) !important;
+  --gem-sys-color--surface-container-highest: var(--op-tonal-3) !important;
+  --gem-sys-color--on-surface: var(--op-fg) !important;
+  --gem-sys-color--on-surface-variant: var(--op-fg-secondary) !important;
+  --gem-sys-color--outline: var(--op-border-strong) !important;
+  --gem-sys-color--outline-variant: var(--op-border) !important;
+  --gem-sys-color--primary: var(--op-accent) !important;
+  --bard-color-surface: var(--op-canvas) !important;
+  --bard-color-background: var(--op-canvas) !important;
+  --bard-color-on-surface: var(--op-fg) !important;
+  background-color: var(--op-canvas) !important;
+  color: var(--op-fg) !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) .user-query-bubble-with-background {
+  background: color-mix(in srgb,var(--op-accent) 8%,var(--op-secondary)) !important;
+  border-radius: var(--op-radius-lg) !important;
+  color: var(--op-fg) !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) [data-op-main-surface="true"] :is(main,.conversation-container,.chat-container,.conversation-container-scrollable,.chat-history-scroll-container) {
+  background-color: transparent !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) model-response a:not([role="button"]) {
+  color: var(--op-link) !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"][data-op-sticky-code="true"] code-block .code-block-decoration {
+  position: sticky !important;
+  top: 0;
+  z-index: 5;
+}
+html[data-op-enabled="true"][data-op-host="gemini"][data-op-sticky-code="true"]:not([data-op-effective-palette="host"]) code-block .code-block-decoration {
+  background: var(--op-code-header) !important;
+  color: var(--op-code-header-fg) !important;
+  border-bottom: 1px solid var(--op-border) !important;
+}
+
+/* === Bottom Spacing & Composer Scrim (v0.3.0) === */
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) [data-op-composer-dock="true"] {
+  min-height: 0 !important;
+  padding-top: 16px !important;
+  padding-bottom: 5px !important;
+  margin-bottom: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"][data-op-home="false"]:not([data-op-effective-palette="host"]) :is([data-op-composer-disclaimer="true"], [data-op-composer-dock="true"] hallucination-disclaimer) {
+  display: none !important;
+}
+
+/* === Code Surface Readability (v0.3.0) === */
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) code-block:has(.code-block) {
+  display: block !important;
+  background: transparent !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  padding: 0 !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) :is(code-block:not(:has(.code-block)), code-block .code-block) {
+  display: block !important;
+  padding: 0 !important;
+  overflow: visible !important;
+  background: var(--op-code-surface) !important;
+  border: 1px solid var(--op-border-strong) !important;
+  border-radius: var(--op-radius-md) !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) code-block:has(.code-block) > .code-block {
+  margin: 0 !important;
+  max-width: 100% !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"], code-block:not(:has(.code-block)), code-block .code-block) .formatted-code-block-internal-container {
+  background: var(--op-code-well) !important;
+  color: var(--op-code-fg) !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block:not(:has(.code-block)), code-block .code-block) :is(.formatted-code-block-internal-container, pre) {
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 0 calc(var(--op-radius-md) - 1px) calc(var(--op-radius-md) - 1px) !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block:not(:has(.code-block)), code-block .code-block) > .formatted-code-block-internal-container:first-child,
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) :is([data-op-code-surface="true"]:not(pre), code-block:not(:has(.code-block)), code-block .code-block) > .formatted-code-block-internal-container:first-child > pre {
+  border-radius: calc(var(--op-radius-md) - 1px) !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) code-block .code-block-decoration {
+  background: var(--op-code-header) !important;
+  color: var(--op-code-header-fg) !important;
+  --mat-icon-color: var(--op-code-header-icon) !important;
+  --mdc-icon-button-icon-color: var(--op-code-header-icon) !important;
+  --mat-icon-button-icon-color: var(--op-code-header-icon) !important;
+  --mat-standard-button-toggle-text-color: var(--op-code-header-icon) !important;
+  --gem-sys-color--on-surface: var(--op-code-header-fg) !important;
+  --gem-sys-color--on-surface-variant: var(--op-code-header-icon) !important;
+  margin: 0 !important;
+  border-bottom: 1px solid var(--op-border) !important;
+  border-radius: calc(var(--op-radius-md) - 1px) calc(var(--op-radius-md) - 1px) 0 0 !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) code-block .code-block-decoration :is(span, p, label, strong):not(.mat-icon, .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .google-symbols) {
+  color: var(--op-code-header-fg) !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) code-block .code-block-decoration :is(button, [role="button"], a):not(.op-formula-toggle),
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) code-block .code-block-decoration :is(button, [role="button"], a):not(.op-formula-toggle) span,
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) code-block .code-block-decoration :is(mat-icon, .mat-icon, .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .google-symbols, [fonticon]) {
+  color: var(--op-code-header-icon) !important;
+  --mat-icon-color: var(--op-code-header-icon) !important;
+  border-color: var(--op-border-strong) !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) code-block .code-block-decoration svg {
+  color: var(--op-code-header-icon) !important;
+}
+
+/* === Content Width Presets (v0.3.1 #21) === */
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) chat-window {
+  --bard-chat-window-content-width-default: var(--op-reading-width, 744px) !important;
+  --bard-chat-window-content-width: var(--op-reading-width, 708px) !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) user-query {
+  width: 100% !important;
+  max-width: var(--op-reading-width, 708px) !important;
+  margin-left: max(0px, calc((100% - var(--op-reading-width, 708px)) / 2 + var(--op-reading-shift, 0px))) !important;
+  margin-right: auto !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(.md-content > *,.response-footer,hallucination-disclaimer) {
+  max-width: var(--op-reading-width, 708px) !important;
+  margin-left: max(0px, calc((100% - var(--op-reading-width, 708px)) / 2 + var(--op-reading-shift, 0px))) !important;
+  margin-right: auto !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(user-query > user-query-content,user-query .user-query-container) {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) user-query :has(.user-query-bubble-with-background) {
+  max-width: 100% !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(user-query .user-query-bubble-with-background,user-query-content.user-query-bubble-with-background) {
+  width: fit-content !important;
+  max-width: min(100%, calc(var(--op-reading-width, 708px) * 0.8)) !important;
+  margin-left: auto !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) :is(user-query .user-query-bubble-with-background :is(.query-text, .query-text-line),user-query .user-query-bubble-with-background > *) {
+  max-width: 100% !important;
+}
+/* The Gemini input area is natively 48px narrower than the reading column (660 vs 708) and keeps that inset. */
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) input-container :has(.input-area-container) {
+  width: 100% !important;
+  max-width: none !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) .input-area-container {
+  width: 100% !important;
+  max-width: calc(var(--op-reading-width, 708px) - 48px) !important;
+  margin-left: max(0px, calc((100% - var(--op-reading-width, 708px) + 48px) / 2 + var(--op-reading-shift, 0px))) !important;
+  margin-right: auto !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) .input-area-container :has(input-area-v2) {
+  max-width: 100% !important;
+}
+html[data-op-enabled="true"][data-op-host="gemini"]:is([data-op-content-width="wide"],[data-op-content-width="full"]) .input-area-container input-area-v2 {
+  width: 100% !important;
+  max-width: 100% !important;
+}
+/* === end Content Width Presets (v0.3.1 #21) === */
+
+/* === Reference Composer Surface & Model Capsule (v0.3.0) === */
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) input-area-v2:has([data-op-composer-surface="true"]) {
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  padding-top: 0 !important;
+  padding-bottom: 0 !important;
+  min-height: 0 !important;
+}
+
+/* === v0.3.1 #19 two-row composer === */
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] {
+  grid-template-columns: auto minmax(0, 1fr) !important;
+  grid-template-areas: "file-preview file-preview" "text-input text-input" "leading-actions trailing-actions" !important;
+  row-gap: 0 !important;
+  column-gap: 8px !important;
+}
+
+/* === v0.3.1 #20 conversation heading typography === */
+html[data-op-enabled="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) :is(model-response :is(.md-content,.markdown),user-query) :is(h1,h2,h3,h4):not([data-op-owned] *) {
+  font-family: inherit !important;
+  color: var(--op-fg) !important;
+  font-weight: var(--op-heading-weight) !important;
+}

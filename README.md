@@ -46,8 +46,8 @@ Windows若只有 `py` 命令，可将最后一步改为 `py -3 scripts/build.py`
 |---|---|
 | `dist/chrome/` | Chrome解压扩展目录 |
 | `dist/firefox/` | Firefox临时加载目录，使用独立Firefox清单 |
-| `dist/obsidian-prism-web-0.4.4-chrome.zip` | Chrome开发/提交包 |
-| `dist/obsidian-prism-web-0.4.4-firefox.zip` | Firefox开发/提交包，未签名 |
+| `dist/obsidian-prism-web-0.4.5-chrome.zip` | Chrome开发/提交包 |
+| `dist/obsidian-prism-web-0.4.5-firefox.zip` | Firefox开发/提交包，未签名 |
 | `dist/SHA256SUMS` | 两个ZIP的SHA-256校验值 |
 
 构建采用明确文件白名单，不包含Git目录、测试数据、开发依赖或本地密钥。相同源码与Python/zlib环境可生成相同ZIP字节。
@@ -84,6 +84,8 @@ v0.4.2 新增与 Host Surface 解耦的设置界面独立明暗控制 `uiThemeMo
 v0.4.3 根治 ChatGPT 对话页输入框两侧与下方的不透明底栏黑带：底栏识别改以宿主稳定标记 `data-thread-scroll-footer` / `data-thread-composer-backdrop` 为主，祖先遍历兜底且不把零尺寸的 `display: contents` 包装计入层数，只清除底栏及其伪元素的绘制、不改定位，也不新增遮罩或正文淡出；同时按控件形状重新设计侧栏激活高亮——图标栏里的方形图标按钮显示为「图标瓷片」（均匀强调色填充与 1px 内描边、强调色图标、无左边条），会话等文字行只保留覆盖整行的一层高亮。侧栏样式选「原生」或使用原生配色时保持宿主原样。
 
 v0.4.4 根治 Gemini 输入框左右两侧的暗色矩形「黑框」，对齐原版 Obsidian Prism 光学 `Composer Surface` 质感，并收紧 ChatGPT 底部大面积空白：Gemini 与 ChatGPT 统一采用纯透明底栏策略（关闭 Gemini 叠层模糊遮罩，仅清除宿主底部容器及伪元素的原生渐变/绘制，保留叠层停靠区对滚动末尾的动态 `--op-dock-clearance` 留白）；双端输入框卡片收紧至 `6px / 12px / 16px` 紧凑圆角、不透明漫反光实底（清除宿主 `backdrop-filter`）、强制四边 `1px` 实线物理描边与顶缘内高光，移除静态弥散外雾与聚焦 `3px` 外环并改为悬停/聚焦态纯 CSS `1px` 贴边棱镜光谱细边，拉升单行编辑区呼吸空间（`min-height: 38px`），将 `+` 与 `Model Capsule` 统一为 `28px` 中性微凸药丸（保留四芒星与档位强调色），并严格限定 `30×30` 实心主操作圆钮仅用于发送与停止按钮（ChatGPT 空态开始语音与双端麦克风归为 `28×28` 透明幽灵圆钮）；同时修复 ChatGPT `threadColumns` 对外层 `--thread-content-*` 非滚动应用壳的误匹配（消除 `48px` 悬空），在活跃对话开启重塑时收敛 `Thread Footer` 内部 `::after` 占位与免责声明使输入框底距视口收紧至 `6–8px`，并将 `[data-thread-composer-backdrop="true"]` 接入 `Content Width Preset` 桥接与 `Bottom Dock` 自动避让。
+
+v0.4.5 面向 ChatGPT 与 Gemini 长对话、快速滚动与高频流式输出完成全链路性能优化并建立离线 1×/25× 自动化性能回归门禁（`npm run test:perf -- --assert`，不随扩展打包，详见 [PERFORMANCE_PLAN.md](docs/PERFORMANCE_PLAN.md)）：根治 `Formula Preview` 批量初始化 $O(N^2)$ 强制样式重算与非法公式死循环（引入负缓存、长对话首尾优先分块渲染与前序 `data-op-formula-deferred` 延迟排版）；引入单次扫描作用域缓存、`checkVisibility()`（兼容无盒子 `display: contents` 回退）与三阶段读写/几何分离，消除滚动期间全页按钮扫描并改用 $O(\log N)$ 二分定位当前轮次；移除文本提取与估算路径的 `cloneNode(true)` 深拷贝，改为零拷贝活 DOM 遍历、增量 Context Vial / Conversation Rail 缓存、分域 `MutationObserver`（流式正文直走 `vialOnly` 快路径）与 rAF 复用 `Range` 淡入高亮；将单体 `styles/hosts.css` 按站点拆分为 `styles/common.css`、`styles/host-chatgpt.css` 与 `styles/host-gemini.css` 并清除根级 `html:has()` 与通配 `*` 右端选择器，`#op-ambient-stage` 升级为 `contain: strict`、内联 SVG 字符瓦片（0 字符 DOM 节点）与局部 `data-op-aura`；同时复用 `early-boot.js` 预加载配置、优化 Popup 翻译与权限检查，并将 `vendor/temml/temml.js` 精简为同版本官方压缩产物 `vendor/temml/temml.min.js`（减重 61.6%，配套 `check.mjs` 严格 Chromium UTF-8 守卫），零新增权限与零残留可逆关闭保持不变。
 
 旧配色与浓度会保留，宠物设置自动失效。想直接查看新版完整环境效果，可先选择“流光”场景，再在“光影”中微调。正文中的光场会主动减弱，首页的光场更明显。完整设置页可通过弹窗右上角按钮打开。
 

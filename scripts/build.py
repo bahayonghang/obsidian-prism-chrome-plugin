@@ -15,14 +15,17 @@ FIXED_TIME = (2026, 11, 21, 0, 0, 0)
 # Explicit allowlist: never discover and bundle the developer's working directory.
 FILES = (
     "LICENSE", "NOTICE", "THIRD_PARTY_NOTICES.md", "README.md", "PRIVACY.md", "MODIFICATIONS.md",
-    "docs/ARCHITECTURE.md", "docs/TESTING.md", "docs/IMPLEMENTATION_PLAN.md", "docs/UX_REFRESH_PLAN.md", "docs/REGRESSION_FIX_PLAN.md",
+    "docs/ARCHITECTURE.md", "docs/TESTING.md", "docs/IMPLEMENTATION_PLAN.md", "docs/UX_REFRESH_PLAN.md", "docs/REGRESSION_FIX_PLAN.md", "docs/PERFORMANCE_PLAN.md",
     "icons/icon.svg", "icons/icon-16.png", "icons/icon-48.png", "icons/icon-128.png",
-    "styles/prism-tokens.css", "styles/hosts.css",
-    "vendor/temml/temml.js", "vendor/temml/temml-local.css",
+    "styles/prism-tokens.css", "styles/common.css", "styles/host-chatgpt.css", "styles/host-gemini.css",
+    "vendor/temml/temml.min.js", "vendor/temml/temml-local.css",
     "src/config-schema.js", "src/early-boot.js", "src/formula.js", "src/adapters.js", "src/content.js", "src/background.js",
     "popup/popup.html", "popup/popup.css", "popup/popup.js",
 )
 HOSTS = ["https://chatgpt.com/*", "https://chat.openai.com/*", "https://gemini.google.com/*"]
+CHATGPT_HOSTS = ["https://chatgpt.com/*", "https://chat.openai.com/*"]
+GEMINI_HOSTS = ["https://gemini.google.com/*"]
+EXPECTED_CONTENT_MATCHES = [HOSTS, CHATGPT_HOSTS, GEMINI_HOSTS, HOSTS]
 OPTIONAL_HOSTS = ["https://*/*", "http://localhost/*", "http://127.0.0.1/*"]
 
 
@@ -44,10 +47,10 @@ def validate_manifest(manifest: dict, browser: str, version: str) -> None:
     require(manifest.get("permissions") == ["storage"], f"{browser}: unexpected mandatory permissions")
     require(manifest.get("host_permissions") == HOSTS, f"{browser}: unexpected default hosts")
     require(manifest.get("optional_host_permissions") == OPTIONAL_HOSTS, f"{browser}: unexpected optional hosts")
-    require(len(manifest.get("content_scripts", [])) == 2, f"{browser}: unexpected content script groups")
+    require(len(manifest.get("content_scripts", [])) == len(EXPECTED_CONTENT_MATCHES), f"{browser}: unexpected content script groups")
     references = [manifest["action"]["default_popup"], manifest["options_ui"]["page"].split("?")[0]]
-    for script in manifest["content_scripts"]:
-        require(script.get("matches") == HOSTS and script.get("all_frames") is False, f"{browser}: injection scope changed")
+    for idx, script in enumerate(manifest["content_scripts"]):
+        require(script.get("matches") == EXPECTED_CONTENT_MATCHES[idx] and script.get("all_frames") is False, f"{browser}: injection scope changed")
         references.extend(script.get("js", []) + script.get("css", []))
     references.extend(manifest["icons"].values())
     if browser == "chrome":

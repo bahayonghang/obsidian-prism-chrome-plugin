@@ -20,8 +20,11 @@
   let previewSchemeOverride = null;
   let keyConfigured = false;
   let permissionRevision = 0;
+  let lastCheckedPermissionEndpoint = null;
   let keyStatusEndpoint = null;
   let keyStatusRevision = 0;
+  let bootLoaded = false;
+  let lastTranslatedLang = '';
   let statusKey = '';
   let statusIsError = false;
   const $ = id => document.getElementById(id);
@@ -72,17 +75,21 @@
   $('panel-about').innerHTML = card('creditsTitle','<div class="credits"><p data-i18n="creditsBody"></p><p data-i18n="independentNote"></p><div class="links"><a href="https://github.com/RMvdesi/obsidian-prism" target="_blank" rel="noreferrer" data-i18n="upstream"></a><a href="https://github.com/bahayonghang/obsidian-prism-chrome-plugin" target="_blank" rel="noreferrer" data-i18n="source"></a><a href="../LICENSE" target="_blank" data-i18n="license"></a><a href="../NOTICE" target="_blank" data-i18n="notices"></a><a href="../THIRD_PARTY_NOTICES.md" target="_blank" data-i18n="thirdParties"></a><a href="../PRIVACY.md" target="_blank" data-i18n="privacy"></a></div></div><div class="notice"><p data-i18n="privacyNote"></p></div>')+
     card('backupTitle','<p class="preview-note" data-i18n="backupHint"></p><div class="button-row"><button type="button" id="btn-export" data-i18n="btnExport"></button><button type="button" id="btn-import" data-i18n="btnImport"></button><button type="button" class="danger" id="btn-reset" data-i18n="btnReset"></button></div><input class="file-input" type="file" id="file-import" accept="application/json,.json">');
   function status(key,error) { statusKey=key;statusIsError=Boolean(error);$('status-msg').textContent=tr(key);$('status-msg').dataset.error=String(statusIsError); }
-  function translateLabels() {
-    document.documentElement.lang=current.language;
+  function translateLabels(force = false) {
+    const langChanged = force || lastTranslatedLang !== current.language;
+    if (langChanged) {
+      lastTranslatedLang = current.language;
+      document.documentElement.lang=current.language;
+      for (const node of document.querySelectorAll('[data-i18n]')) node.textContent=tr(node.dataset.i18n);
+      for (const node of document.querySelectorAll('[data-title]')) {node.title=tr(node.dataset.title);node.setAttribute('aria-label',tr(node.dataset.title));}
+      document.querySelector('.tabs').setAttribute('aria-label',tr('controlsLabel'));
+      document.querySelector('.preset-row').setAttribute('aria-label',tr('scenePresets'));
+      document.querySelector('.preview-sites').setAttribute('aria-label',tr('previewSite'));
+      for(const node of document.querySelectorAll('[data-label]')) node.setAttribute('aria-label',tr(node.dataset.label));
+    }
     $('status-msg').textContent=statusKey?tr(statusKey):'';
     $('status-msg').dataset.error=String(statusIsError);
-    for (const node of document.querySelectorAll('[data-i18n]')) node.textContent=tr(node.dataset.i18n);
-    for (const node of document.querySelectorAll('[data-title]')) {node.title=tr(node.dataset.title);node.setAttribute('aria-label',tr(node.dataset.title));}
     $('key-status').textContent=tr(keyConfigured?'keySaved':'keyEmpty');
-    document.querySelector('.tabs').setAttribute('aria-label',tr('controlsLabel'));
-    document.querySelector('.preset-row').setAttribute('aria-label',tr('scenePresets'));
-    document.querySelector('.preview-sites').setAttribute('aria-label',tr('previewSite'));
-    for(const node of document.querySelectorAll('[data-label]')) node.setAttribute('aria-label',tr(node.dataset.label));
     const modeKey=current.uiThemeMode==='light'?'modeLight':current.uiThemeMode==='dark'?'modeDark':'modeAuto';
     const uiThemeLabel=tr('uiThemeToggle')+': '+tr(modeKey);
     const uiThemeBtn=$('btn-ui-theme');
@@ -134,8 +141,9 @@
     for(const box of document.querySelectorAll('[data-native]')) box.checked=current[box.dataset.native]==='host';
     for(const swatch of document.querySelectorAll('[data-accent]')) swatch.setAttribute('aria-pressed',String(swatch.dataset.accent===current.accentTone));
     $('val-ambientIntensity').textContent=current.ambientIntensity+'%';
-    translateLabels();preview();checkPermission();
-    if(keyStatusEndpoint!==current.thoughtEndpoint) checkKeyStatus();
+    translateLabels();preview();
+    if(activeTab==='translation' && lastCheckedPermissionEndpoint!==current.thoughtEndpoint) checkPermission();
+    if(bootLoaded && keyStatusEndpoint!==current.thoughtEndpoint) checkKeyStatus();
   }
   function save(patch) {
     const stamp=++revision;
@@ -221,6 +229,7 @@
   for(const button of document.querySelectorAll('[data-preset]')) button.addEventListener('click',()=>queueSave(Schema.SCENE_PRESETS[button.dataset.preset]));
   async function checkPermission() {
     const stamp=++permissionRevision;
+    lastCheckedPermissionEndpoint=current.thoughtEndpoint;
     let granted=false;
     try {if(current.thoughtEndpoint) granted=await Schema.callApi(api.permissions,'contains',Schema.permissionRequest(current.thoughtEndpoint));} catch (_) {}
     if(stamp!==permissionRevision) return;
@@ -285,8 +294,7 @@
   try {$('version-label').textContent=api.runtime.getManifest().version;}catch(_){}
   render();
   Schema.loadConfig().then(async config=>{
-    confirmed=config;render();$('settings-fields').disabled=false;status('statusSaved');
-    try {keyConfigured=(await Schema.sendMessage({type:'OP_SECRETS_STATUS'})).configured;translateLabels();}catch(_){}
+    bootLoaded=true;confirmed=config;render();$('settings-fields').disabled=false;status('statusSaved');
   }).catch(()=>status('loadError',true));
   document.addEventListener('visibilitychange',()=>preview());
   if(globalThis.matchMedia) {

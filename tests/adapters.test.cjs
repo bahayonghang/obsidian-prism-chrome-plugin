@@ -2058,3 +2058,156 @@ test('v0.4.4 #46: threadFooterLayer resolves live Thread Footer for spacing/disc
     assert.equal(below.disclaimers.includes(safe), false);
   }
 });
+
+test('v0.4.5 #51: withScanCache memoizes repeated turn queries and ancestor visibility while keeping standalone calls live and closed details accurate', () => {
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main');
+  const list = el('div');
+  const turns = [];
+  for (let i = 0; i < 10; i++) {
+    const t = el('div', { 'data-turn-key': `t-${i}` });
+    const msg = el('div', { 'data-content-search-unit-key': `c:${i}:user`, 'data-user-message-bubble': 'true' }, { textContent: `Prompt ${i}` });
+    t.append(msg);
+    list.append(t);
+    turns.push(t);
+  }
+  // Closed details edge case inside scan cache
+  const details = el('details'); details.open = false;
+  const summary = el('summary');
+  const hiddenBody = el('div');
+  details.append(summary, hiddenBody);
+  list.append(details);
+  main.append(list);
+  body.append(main);
+
+  let gcsCount = 0;
+  let qsaCount = 0;
+  const origGcs = doc.defaultView.getComputedStyle;
+  doc.defaultView.getComputedStyle = node => { gcsCount++; return origGcs(node); };
+  const origQsa = doc.querySelectorAll;
+  doc.querySelectorAll = sel => { qsaCount++; return origQsa(sel); };
+
+  const A = adapters();
+  const adapter = A.forHost('chatgpt', doc);
+  assert.equal(typeof adapter.withScanCache, 'function', 'adapter must expose withScanCache');
+
+  adapter.withScanCache(() => {
+    const first = adapter.userTurns();
+    const second = adapter.userTurns();
+    const blocks = adapter.codeBlocks();
+    const surfaces = adapter.codeSurfaces();
+    assert.equal(first.length, 10);
+    assert.equal(second.length, 10);
+    assert.equal(blocks.length, 0);
+    assert.equal(surfaces.length, 0);
+    // Closed details visibility must stay exact under scan cache
+    assert.equal(A.isVisible(summary), true);
+    assert.equal(A.isVisible(hiddenBody), false);
+  });
+  const cachedGcs = gcsCount;
+  const cachedQsa = qsaCount;
+  // Shared ancestors (list, main, body) are only checked once instead of 10x3 times (~26 unique nodes total)
+  assert.ok(cachedGcs <= 28, `expected ancestor-memoized gCS <= 28, got ${cachedGcs}`);
+  assert.ok(cachedQsa <= 12, `expected cached qsa <= 12 across repeated userTurns/codeBlocks/codeSurfaces calls, got ${cachedQsa}`);
+
+  // Standalone call outside withScanCache reflects live DOM additions immediately
+  const extra = el('div', { 'data-turn-key': 't-10' });
+  extra.append(el('div', { 'data-content-search-unit-key': 'c:10:user', 'data-user-message-bubble': 'true' }, { textContent: 'New prompt' }));
+  list.append(extra);
+  assert.equal(adapter.userTurns().length, 11, 'standalone calls outside scan cache must stay live');
+});
+
+test('v0.4.5 #51: cornerFloatingObstacles skips excluded message and nav buttons before calling getComputedStyle', () => {
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main');
+  const turn = el('div', { 'data-message-author-role': 'assistant' });
+  for (let i = 0; i < 20; i++) {
+    turn.append(el('button', {}, { textContent: `Action ${i}` }));
+  }
+  main.append(turn);
+  const nav = el('nav');
+  for (let i = 0; i < 15; i++) {
+    nav.append(el('a', { href: `/c/${i}` }, { textContent: `Chat ${i}` }));
+  }
+  const floatingBtn = el('button', { 'aria-label': 'Help' }, {
+    rect: { left: 1210, top: 830, right: 1250, bottom: 870, width: 40, height: 40 },
+    style: { display: 'block', visibility: 'visible', opacity: '1', position: 'fixed' }
+  });
+  body.append(nav, main, floatingBtn);
+
+  let gcsCount = 0;
+  const origGcs = doc.defaultView.getComputedStyle;
+  doc.defaultView.getComputedStyle = node => { gcsCount++; return origGcs(node); };
+
+  const adapter = adapters().forHost('chatgpt', doc);
+  const obstacles = adapter.cornerFloatingObstacles(null);
+  assert.equal(obstacles.length, 1, 'still detects the real corner floating button');
+  assert.ok(gcsCount <= 10, `excluded message/nav buttons must not invoke getComputedStyle (got ${gcsCount})`);
+});
+
+test('v0.4.5 #52: textOf and cleanTurnText traverse DOM text with zero cloneNode calls', () => {
+  const A = adapters();
+  const makeLiveNode = (tagName, attrs = {}) => {
+    const node = domNode(tagName, attrs);
+    node.childNodes = [];
+    node.nextSibling = null;
+    Object.defineProperty(node, 'firstChild', { get() { return this.childNodes[0] || null; } });
+    Object.defineProperty(node, 'textContent', {
+      get() {
+        return this.childNodes.map(c => (c.nodeType === 3 ? c.nodeValue : c.textContent)).join('');
+      }
+    });
+    node.cloneNode = () => { throw new Error('cloneNode must never be called by textOf or cleanTurnText'); };
+    node.append = function (...kids) {
+      for (const kid of kids) {
+        const prev = this.childNodes[this.childNodes.length - 1] || null;
+        if (prev) prev.nextSibling = kid;
+        kid.nextSibling = null;
+        kid.parentElement = this;
+        this.childNodes.push(kid);
+        if (kid.nodeType === 1) this.children.push(kid);
+      }
+      return this;
+    };
+    return node;
+  };
+  const makeText = value => ({ nodeType: 3, nodeValue: value, nextSibling: null, parentElement: null });
+
+  const turn = makeLiveNode('article', { 'data-turn': 'assistant' });
+  const srOnly = makeLiveNode('h6', { class: 'sr-only' }); srOnly.append(makeText('ChatGPT said:'));
+  const owned = makeLiveNode('div', { 'data-op-owned': '' }); owned.append(makeText('Translate'));
+  const hidden = makeLiveNode('span', { hidden: '' }); hidden.append(makeText('Secret'));
+  const ariaHidden = makeLiveNode('span', { 'aria-hidden': 'true' }); ariaHidden.append(makeText('Icon'));
+  const script = makeLiveNode('script'); script.append(makeText('alert(1)'));
+  const btn = makeLiveNode('button'); btn.append(makeText('Copy'));
+  const p = makeLiveNode('p');
+  const em = makeLiveNode('em'); em.append(makeText('bold'));
+  p.append(makeText('Hello '), em, makeText(' world!'));
+  const pre = makeLiveNode('pre');
+  const code = makeLiveNode('code');
+  const hiddenInsideCode = makeLiveNode('span', { 'data-op-owned': '' }); hiddenInsideCode.append(makeText('NOISE'));
+  code.append(makeText('const x = '), hiddenInsideCode, makeText('42;'));
+  pre.append(code);
+  turn.append(srOnly, owned, hidden, ariaHidden, script, btn, p, pre);
+
+  assert.equal(A.textOf(code), 'const x = 42;');
+  assert.equal(A.textOf(p), 'Hello bold world!');
+  assert.equal(A.cleanTurnText(turn, { excludeCode: true }), 'Hello bold world!');
+  assert.equal(A.cleanTurnText(turn), 'Hello bold world!const x = 42;');
+});
+
+test('v0.4.5 #52: charCodeAt estimateTokens matches CJK, Latin, code mode, Unicode whitespace, and surrogate pairs', () => {
+  const A = adapters();
+  assert.equal(A.estimateTokens(''), 0);
+  assert.equal(A.estimateTokens(' \t\n\u00a0\u3000 '), 0);
+  assert.equal(A.estimateTokens('abcd'), 1);
+  assert.equal(A.estimateTokens('abcdefgh'), 2);
+  assert.equal(A.estimateTokens('一二三四五六七八九十'), 7);
+  assert.equal(A.estimateTokens('한글테스트'), Math.ceil(5 * 0.7));
+  assert.equal(A.estimateTokens('\uf900\uf901'), Math.ceil(2 * 0.7));
+  assert.equal(A.estimateTokens('😀😀😀😀'), 1, 'astral emoji surrogate pairs count as 1 code point each');
+  assert.equal(A.estimateTokens('a😀b😀'), 1);
+  assert.equal(A.estimateTokens('a😀b😀c'), 2);
+  assert.equal(A.estimateTokens('const x = 1;', { mode: 'code' }), 4);
+  assert.equal(A.estimateTokens('你好world'), Math.ceil(2 * 0.7 + 5 / 4));
+});
