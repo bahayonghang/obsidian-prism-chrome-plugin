@@ -2058,3 +2058,89 @@ test('v0.4.4 #46: threadFooterLayer resolves live Thread Footer for spacing/disc
     assert.equal(below.disclaimers.includes(safe), false);
   }
 });
+
+test('v0.4.5 #51: withScanCache memoizes repeated turn queries and ancestor visibility while keeping standalone calls live and closed details accurate', () => {
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main');
+  const list = el('div');
+  const turns = [];
+  for (let i = 0; i < 10; i++) {
+    const t = el('div', { 'data-turn-key': `t-${i}` });
+    const msg = el('div', { 'data-content-search-unit-key': `c:${i}:user`, 'data-user-message-bubble': 'true' }, { textContent: `Prompt ${i}` });
+    t.append(msg);
+    list.append(t);
+    turns.push(t);
+  }
+  // Closed details edge case inside scan cache
+  const details = el('details'); details.open = false;
+  const summary = el('summary');
+  const hiddenBody = el('div');
+  details.append(summary, hiddenBody);
+  list.append(details);
+  main.append(list);
+  body.append(main);
+
+  let gcsCount = 0;
+  let qsaCount = 0;
+  const origGcs = doc.defaultView.getComputedStyle;
+  doc.defaultView.getComputedStyle = node => { gcsCount++; return origGcs(node); };
+  const origQsa = doc.querySelectorAll;
+  doc.querySelectorAll = sel => { qsaCount++; return origQsa(sel); };
+
+  const A = adapters();
+  const adapter = A.forHost('chatgpt', doc);
+  assert.equal(typeof adapter.withScanCache, 'function', 'adapter must expose withScanCache');
+
+  adapter.withScanCache(() => {
+    const first = adapter.userTurns();
+    const second = adapter.userTurns();
+    const blocks = adapter.codeBlocks();
+    const surfaces = adapter.codeSurfaces();
+    assert.equal(first.length, 10);
+    assert.equal(second.length, 10);
+    assert.equal(blocks.length, 0);
+    assert.equal(surfaces.length, 0);
+    // Closed details visibility must stay exact under scan cache
+    assert.equal(A.isVisible(summary), true);
+    assert.equal(A.isVisible(hiddenBody), false);
+  });
+  const cachedGcs = gcsCount;
+  const cachedQsa = qsaCount;
+  // Shared ancestors (list, main, body) are only checked once instead of 10x3 times (~26 unique nodes total)
+  assert.ok(cachedGcs <= 28, `expected ancestor-memoized gCS <= 28, got ${cachedGcs}`);
+  assert.ok(cachedQsa <= 12, `expected cached qsa <= 12 across repeated userTurns/codeBlocks/codeSurfaces calls, got ${cachedQsa}`);
+
+  // Standalone call outside withScanCache reflects live DOM additions immediately
+  const extra = el('div', { 'data-turn-key': 't-10' });
+  extra.append(el('div', { 'data-content-search-unit-key': 'c:10:user', 'data-user-message-bubble': 'true' }, { textContent: 'New prompt' }));
+  list.append(extra);
+  assert.equal(adapter.userTurns().length, 11, 'standalone calls outside scan cache must stay live');
+});
+
+test('v0.4.5 #51: cornerFloatingObstacles skips excluded message and nav buttons before calling getComputedStyle', () => {
+  const { doc, body, el } = makeDoc('chatgpt');
+  const main = el('main');
+  const turn = el('div', { 'data-message-author-role': 'assistant' });
+  for (let i = 0; i < 20; i++) {
+    turn.append(el('button', {}, { textContent: `Action ${i}` }));
+  }
+  main.append(turn);
+  const nav = el('nav');
+  for (let i = 0; i < 15; i++) {
+    nav.append(el('a', { href: `/c/${i}` }, { textContent: `Chat ${i}` }));
+  }
+  const floatingBtn = el('button', { 'aria-label': 'Help' }, {
+    rect: { left: 1210, top: 830, right: 1250, bottom: 870, width: 40, height: 40 },
+    style: { display: 'block', visibility: 'visible', opacity: '1', position: 'fixed' }
+  });
+  body.append(nav, main, floatingBtn);
+
+  let gcsCount = 0;
+  const origGcs = doc.defaultView.getComputedStyle;
+  doc.defaultView.getComputedStyle = node => { gcsCount++; return origGcs(node); };
+
+  const adapter = adapters().forHost('chatgpt', doc);
+  const obstacles = adapter.cornerFloatingObstacles(null);
+  assert.equal(obstacles.length, 1, 'still detects the real corner floating button');
+  assert.ok(gcsCount <= 10, `excluded message/nav buttons must not invoke getComputedStyle (got ${gcsCount})`);
+});

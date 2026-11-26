@@ -2227,3 +2227,140 @@ test('v0.4.5 #50: batch Formula Preview init avoids per-block codeBlocks rescans
 
   ctx.runtime.stop();
 });
+
+test('v0.4.5 #51: scroll ignores sidebar/code scrollers, decouples cornerFloatingObstacles from inner message scroll, avoids per-turn scrollContainer walks, and skips unchanged rail updates', async () => {
+  let obstacleCalls = 0;
+  let scrollContainerCalls = 0;
+  let userTurnsCalls = 0;
+  const docListeners = new Map();
+  let rafQueue = [];
+
+  const ctx = createRuntimeDom({ railOutline: true, contextVial: true }, {
+    host: 'chatgpt',
+    useCustomScroller: true,
+    cornerFloatingObstacles: () => { obstacleCalls++; return []; }
+  });
+  const e = Object.fromEntries(ctx.elements);
+  // Recreate fresh runtime with captured scroll listener & controllable rAF
+  ctx.runtime.stop();
+  delete ctx.h.context.ObsidianPrismRuntime;
+
+  e.primary.append(e.scrollerEl);
+  e.scrollerEl.append(e.assistantTurn);
+  const extraTurns = [];
+  for (let i = 0; i < 8; i++) {
+    const ut = ctx.makeEl('div', { 'data-message-author-role': 'user' });
+    ut.textContent = `Question ${i + 1}`;
+    ut.getBoundingClientRect = () => ({ left: 200, top: i * 300 - 250, right: 800, bottom: i * 300 - 190, width: 600, height: 60 });
+    e.scrollerEl.append(ut);
+    extraTurns.push(ut);
+  }
+  const sidebarEl = ctx.makeEl('aside', { 'data-op-sidebar-surface': 'true' });
+  e.body.append(sidebarEl);
+  const preEl = ctx.makeEl('pre');
+  e.assistantTurn.append(preEl);
+
+  const origDocAdd = ctx.h.context.document.addEventListener;
+  ctx.h.context.document.addEventListener = (type, fn, opts) => {
+    if (!docListeners.has(type)) docListeners.set(type, []);
+    docListeners.get(type).push(fn);
+    return origDocAdd?.call(ctx.h.context.document, type, fn, opts);
+  };
+  ctx.h.context.requestAnimationFrame = fn => { rafQueue.push(fn); return rafQueue.length; };
+  const flushRaf = () => { const q = rafQueue; rafQueue = []; for (const fn of q) fn(); };
+
+  const origForHost = ctx.h.context.ObsidianPrismAdapters.forHost;
+  const baseAdapter = origForHost('chatgpt');
+  const wrappedAdapter = {
+    ...baseAdapter,
+    userTurns: () => { userTurnsCalls++; return extraTurns; },
+    scrollContainer: node => { scrollContainerCalls++; return e.scrollerEl; },
+    cornerFloatingObstacles: () => { obstacleCalls++; return []; }
+  };
+  ctx.h.context.ObsidianPrismAdapters = {
+    ...ctx.h.context.ObsidianPrismAdapters,
+    forHost: () => wrappedAdapter
+  };
+  ctx.h.load('src/content.js');
+  await new Promise(resolve => setTimeout(resolve, 25));
+
+  const fireScroll = target => {
+    for (const fn of docListeners.get('scroll') || []) fn({ target });
+    flushRaf();
+  };
+
+  // 1) Scrolling sidebar or code block must be completely ignored
+  obstacleCalls = 0; scrollContainerCalls = 0; userTurnsCalls = 0;
+  fireScroll(sidebarEl);
+  fireScroll(preEl);
+  assert.equal(obstacleCalls, 0, 'sidebar/code scroll must not trigger cornerFloatingObstacles');
+  assert.equal(userTurnsCalls, 0, 'sidebar/code scroll must not recompute userTurns');
+  assert.equal(scrollContainerCalls, 0, 'sidebar/code scroll must not call scrollContainer');
+
+  // 2) Scrolling inner message scroller must NOT trigger cornerFloatingObstacles or per-turn scrollContainer walks
+  obstacleCalls = 0; scrollContainerCalls = 0; userTurnsCalls = 0;
+  fireScroll(e.scrollerEl);
+  assert.equal(obstacleCalls, 0, 'inner conversation scroll must not re-scan full-page corner floating obstacles');
+  assert.equal(userTurnsCalls, 0, 'inner scroll should reuse cached userTurns from latest scan');
+  assert.ok(scrollContainerCalls <= 1, `nearestTurn must not call scrollContainer per turn (got ${scrollContainerCalls})`);
+
+  // 3) Second scroll with unchanged active turn performs zero rail attribute writes
+  const railEl = ctx.body.querySelector('#op-rail-root');
+  assert.ok(railEl, 'Conversation Rail should be mounted');
+  let railAttrWrites = 0;
+  for (const btn of railEl.querySelectorAll('[data-turn]')) {
+    const origSet = btn.setAttribute.bind(btn);
+    const origRm = btn.removeAttribute.bind(btn);
+    btn.setAttribute = (...a) => { railAttrWrites++; return origSet(...a); };
+    btn.removeAttribute = (...a) => { railAttrWrites++; return origRm(...a); };
+  }
+  fireScroll(e.scrollerEl);
+  assert.equal(railAttrWrites, 0, 'unchanged active turn on scroll must perform zero rail DOM writes');
+
+  ctx.h.context.ObsidianPrismRuntime.stop();
+});
+
+test('v0.4.5 #51: code header SVG paint classification caches across unchanged scans and refreshes on palette change', async () => {
+  let svgStyleReads = 0;
+  let headerRef = null;
+  const ctx = createRuntimeDom({ palette: 'obsidian', themeMode: 'dark' }, {
+    host: 'chatgpt',
+    codeHeaders: () => (headerRef ? [headerRef] : []),
+    getComputedStyle: node => {
+      if (node.tagName === 'SVG' || node.tagName === 'PATH') svgStyleReads++;
+      if (node.tagName === 'PATH') return { fill: 'rgb(200, 200, 200)', stroke: 'none' };
+      return { fill: 'none', stroke: 'none', position: 'static', display: 'block', visibility: 'visible', opacity: '1', paddingBottom: '0px' };
+    }
+  });
+  const e = Object.fromEntries(ctx.elements);
+  headerRef = ctx.makeEl('div', { class: 'code-header' });
+  const svg = ctx.makeEl('svg');
+  const pathNode = ctx.makeEl('path');
+  svg.append(pathNode);
+  headerRef.append(svg);
+  e.codeSurface.append(headerRef);
+
+  svgStyleReads = 0;
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+  assert.equal(pathNode.getAttribute('data-op-code-icon-fill'), 'true');
+  const firstReads = svgStyleReads;
+  assert.ok(firstReads > 0, 'initial scan inspects SVG computed paint');
+
+  svgStyleReads = 0;
+  ctx.runtime.refresh();
+  await new Promise(resolve => setTimeout(resolve, 190));
+  assert.equal(svgStyleReads, 0, 'unchanged steady-state scan reuses cached SVG paint marks with zero getComputedStyle calls');
+  assert.equal(pathNode.getAttribute('data-op-code-icon-fill'), 'true');
+
+  // Switching palette invalidates SVG cache and re-evaluates
+  svgStyleReads = 0;
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, palette: 'warm', themeMode: 'dark' }
+  });
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.ok(svgStyleReads > 0, 'palette change invalidates SVG paint cache');
+  assert.equal(pathNode.getAttribute('data-op-code-icon-fill'), 'true');
+
+  ctx.runtime.stop();
+});

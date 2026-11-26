@@ -138,6 +138,26 @@
     }
   });
 
+  let activeScanCache = null;
+  const NULL_ARG_KEY = Symbol('null-arg');
+  function getStyle(node, view) {
+    if (!node || !view?.getComputedStyle) return null;
+    const cache = activeScanCache?.computed;
+    if (cache && cache.has(node)) return cache.get(node);
+    const style = view.getComputedStyle(node);
+    if (cache) cache.set(node, style);
+    return style;
+  }
+  function filterOutermost(nodes) {
+    if (!nodes || nodes.length <= 1) return nodes || [];
+    const set = new Set(nodes);
+    return nodes.filter(node => {
+      for (let anc = node.parentElement; anc; anc = anc.parentElement) {
+        if (set.has(anc)) return false;
+      }
+      return true;
+    });
+  }
   function elementOf(node) {
     return node && (node.nodeType === 1 ? node : node.parentElement);
   }
@@ -147,18 +167,46 @@
     return typeof el.closest === 'function' ? Boolean(el.closest('[data-op-owned]')) : Boolean(el.hasAttribute?.('data-op-owned'));
   }
   function isVisible(node) {
-    if (!node || !node.isConnected || node.closest('[hidden], [aria-hidden="true"]')) return false;
-    const view = node.ownerDocument?.defaultView;
-    if (!view?.getComputedStyle) return true;
-    for (let current = node; current; current = current.parentElement) {
-      if (current !== node && current.tagName === 'DETAILS' && !current.open) {
-        const summary = [...current.children].find(child => child.tagName === 'SUMMARY');
-        if (!summary?.contains(node)) return false;
-      }
-      const style = view.getComputedStyle(current);
-      if (style.display === 'none' || ['hidden','collapse'].includes(style.visibility) || style.contentVisibility === 'hidden' || style.opacity === '0') return false;
+    if (!node || !node.isConnected) return false;
+    const visCache = activeScanCache?.vis;
+    if (visCache && visCache.has(node)) return visCache.get(node);
+    if (node.closest('[hidden], [aria-hidden="true"]')) {
+      if (visCache) visCache.set(node, false);
+      return false;
     }
-    return true;
+    const view = node.ownerDocument?.defaultView;
+    if (!view?.getComputedStyle) {
+      if (visCache) visCache.set(node, true);
+      return true;
+    }
+    const chain = [];
+    let visible = true;
+    for (let current = node; current; current = current.parentElement) {
+      const closedDetails = current !== node && current.tagName === 'DETAILS' && !current.open;
+      if (closedDetails) {
+        const summary = [...current.children].find(child => child.tagName === 'SUMMARY');
+        if (!summary?.contains(node)) { visible = false; break; }
+      }
+      if (!closedDetails && visCache && visCache.has(current)) {
+        visible = visCache.get(current);
+        break;
+      }
+      const style = getStyle(current, view);
+      if (style && (style.display === 'none' || style.visibility === 'hidden' || style.visibility === 'collapse' || style.contentVisibility === 'hidden' || style.opacity === '0')) {
+        visible = false;
+        if (visCache) visCache.set(current, false);
+        break;
+      }
+      if (!closedDetails) chain.push(current);
+    }
+    if (visCache) {
+      if (visible) {
+        for (const el of chain) visCache.set(el, true);
+      } else {
+        visCache.set(node, false);
+      }
+    }
+    return visible;
   }
   function topLevelMatches(selectors, root = document) {
     const nodes = [...root.querySelectorAll(selectors)].filter(node => !isOwned(node));
@@ -305,13 +353,35 @@
   }
   // A node whose computed overflow-y lets it scroll (it need not overflow right now).
   function isScrollContainer(node, view) {
-    return Boolean(node && /(auto|scroll)/.test(view?.getComputedStyle?.(node)?.overflowY || ''));
+    return Boolean(node && /(auto|scroll)/.test(getStyle(node, view)?.overflowY || ''));
   }
   function scrollContainer(element) {
+    const scrollCache = activeScanCache?.scroll;
+    if (element && scrollCache && scrollCache.has(element)) return scrollCache.get(element);
+    const visited = scrollCache ? [] : null;
+    let found = null;
     for (let parent = element?.parentElement; parent; parent = parent.parentElement) {
-      if (isScrollContainer(parent, parent.ownerDocument?.defaultView) && parent.scrollHeight > parent.clientHeight + 1) return parent;
+      if (scrollCache && scrollCache.has(parent)) {
+        found = scrollCache.get(parent);
+        break;
+      }
+      if (visited) visited.push(parent);
+      if (isScrollContainer(parent, parent.ownerDocument?.defaultView) && parent.scrollHeight > parent.clientHeight + 1) {
+        found = parent;
+        break;
+      }
     }
-    return element?.ownerDocument?.scrollingElement || global.document?.scrollingElement || null;
+    const resolved = found || element?.ownerDocument?.scrollingElement || global.document?.scrollingElement || null;
+    if (scrollCache && element) {
+      scrollCache.set(element, resolved);
+      if (visited) {
+        for (const anc of visited) {
+          if (anc === found) break;
+          scrollCache.set(anc, resolved);
+        }
+      }
+    }
+    return resolved;
   }
   // v0.3.1 #18: live ChatGPT message markers lead; the rest are the v0.3.0 markers.
   const MESSAGE_AREAS = '[data-content-search-unit-key],[data-user-message-bubble],[data-markdown-text-style="assistant-message"],[data-message-author-role],[data-turn="user"],[data-turn="assistant"],article[data-testid^="conversation-turn-"],[data-testid="user-message"],[data-testid="assistant-message"],.agent-turn,user-query,model-response,[data-test-id="model-response"],.model-response-text';
@@ -609,7 +679,7 @@
       }
     }
     // A single outer surface per sidebar prevents nested, doubled glass frames.
-    return result.filter(node => !result.some(parent => parent !== node && parent.contains(node)));
+    return filterOutermost(result);
   }
   const ACTIVE_NAV_STATE = '[aria-current="page"],[aria-current="true"],[data-active="true"],[aria-selected="true"]';
   const NAV_ROW = 'a[href],button,[role="link"],[role="button"],[role="option"]';
@@ -712,9 +782,21 @@
     if (!spec.turnContainers) return sortByDocumentOrder(explicit);
     const result = [...explicit];
     const seen = new Set(explicit);
+    const explicitAncestors = new Set();
+    for (const node of explicit) {
+      for (let anc = node.parentElement; anc && anc !== root; anc = anc.parentElement) {
+        if (explicitAncestors.has(anc)) break;
+        explicitAncestors.add(anc);
+      }
+    }
     const containers = topLevelMatches(spec.turnContainers, root).filter(isVisible);
     for (const container of containers) {
-      if (seen.has(container) || result.some(node => node.contains(container) || container.contains(node))) continue;
+      if (seen.has(container) || explicitAncestors.has(container)) continue;
+      let insideSeen = false;
+      for (let anc = container.parentElement; anc && anc !== root; anc = anc.parentElement) {
+        if (seen.has(anc)) { insideSeen = true; break; }
+      }
+      if (insideSeen) continue;
       if (container.querySelector(spec.users) || container.querySelector(spec.assistants)) continue;
       const heading = container.querySelector('.sr-only');
       const srText = heading ? textOf(heading).trim().toLowerCase() : '';
@@ -723,9 +805,17 @@
       const isAssistant = turnAttr === 'assistant' || Boolean(container.querySelector('.agent-turn')) || /^(chatgpt said|chatgpt\s*说)/i.test(srText);
       if (role === 'user' && isUser && !isAssistant) {
         seen.add(container);
+        for (let anc = container.parentElement; anc && anc !== root; anc = anc.parentElement) {
+          if (explicitAncestors.has(anc)) break;
+          explicitAncestors.add(anc);
+        }
         result.push(container);
       } else if (role === 'assistant' && isAssistant && !isUser) {
         seen.add(container);
+        for (let anc = container.parentElement; anc && anc !== root; anc = anc.parentElement) {
+          if (explicitAncestors.has(anc)) break;
+          explicitAncestors.add(anc);
+        }
         result.push(container);
       }
     }
@@ -786,7 +876,12 @@
       }
       for (const pre of container.querySelectorAll('pre')) {
         if (isOwned(pre) || !isVisible(pre)) continue;
-        if (surfaces.some(surface => surface.contains(pre))) continue;
+        let covered = false;
+        for (let anc = pre; anc; anc = anc.parentElement) {
+          if (seen.has(anc)) { covered = true; break; }
+          if (anc === container) break;
+        }
+        if (covered) continue;
         const parent = pre.parentElement;
         const owner = (parent && !isOwned(parent) && spec.codeWells && parent.matches?.(spec.codeWells))
           ? parent.parentElement
@@ -799,7 +894,7 @@
         }
       }
     }
-    return surfaces.filter(node => !surfaces.some(other => other !== node && other.contains(node)));
+    return filterOutermost(surfaces);
   }
   function findCodeHeaders(spec, messages) {
     if (!spec.codeHeaders) return [];
@@ -875,7 +970,7 @@
       }
     }
     const list = [...candidates];
-    return list.filter(node => !list.some(other => other !== node && other.contains(node)));
+    return filterOutermost(list);
   }
   function findVisibleAttachments(spec, messages, composer, root) {
     return collectAttachments(spec.attachments, [...messages, composer?.parentElement || composer, root]);
@@ -903,7 +998,7 @@
         if (!chips.includes(node)) chips.push(node);
       }
     }
-    return chips.filter(node => !chips.some(other => other !== node && other.contains(node)));
+    return filterOutermost(chips);
   }
   // v0.3.1 #19 two-row composer: the host's own grid that lays out the editor row, as { element, slots, trailing }.
   // It qualifies when its direct children are placed by every expected area name (slots: null). Children
@@ -1256,7 +1351,7 @@
         }
       }
     }
-    const dedupedDisclaimers = disclaimers.filter(node => !disclaimers.some(other => other !== node && other.contains?.(node)));
+    const dedupedDisclaimers = filterOutermost(disclaimers);
     return { empty, disclaimers: dedupedDisclaimers };
   }
   function findComposerEmptyHeaders(spec, composer, grid, addTrigger, modelTrigger) {
@@ -1377,11 +1472,11 @@
     const excludeZone = 'dialog,[role="dialog"],[aria-modal="true"],nav,[role="navigation"],[data-op-owned],[data-op-composer-backdrop="true"]';
     const mainSelector = 'main,[role="main"],chat-window';
     const raw = [...scope.querySelectorAll('button,[role="button"],a[href]')].filter(node => {
-      if (!isVisible(node)) return false;
       if (node.closest?.(excludeZone) || node.closest?.(MESSAGE_AREAS)) return false;
       if (composer && (composer.contains?.(node) || node.contains?.(composer))) return false;
       if (composerCard && composerCard !== composer && (composerCard.contains?.(node) || node.contains?.(composerCard))) return false;
       if (node.matches?.(mainSelector) || node.querySelector?.(mainSelector)) return false;
+      if (!isVisible(node)) return false;
       return true;
     });
     const candidates = raw.length > 240 ? [...raw.slice(0, 120), ...raw.slice(-120)] : raw;
@@ -1391,7 +1486,7 @@
         if (cur.matches?.(`body,html,${mainSelector}`) || cur.matches?.(excludeZone)) break;
         if (cur === composer || cur === composerCard) break;
         if ((composer && cur.contains?.(composer)) || (composerCard && cur.contains?.(composerCard)) || cur.querySelector?.(mainSelector)) break;
-        const pos = view.getComputedStyle(cur).position;
+        const pos = getStyle(cur, view)?.position;
         if (!['fixed', 'absolute', 'sticky'].includes(pos)) continue;
         const rect = normalizeBox(cur.getBoundingClientRect?.());
         if (!rect || rect.width > 260 || rect.height > 160) continue;
@@ -1546,10 +1641,60 @@
   function forHost(host, root = document) {
     const spec = HOSTS[host];
     if (!spec) return null;
+    const cached = (key, fn) => {
+      if (!activeScanCache || activeScanCache.root !== root) return fn();
+      if (activeScanCache.values.has(key)) return activeScanCache.values.get(key);
+      const val = fn();
+      activeScanCache.values.set(key, val);
+      return val;
+    };
+    const cachedByArg = (key, arg, fn) => {
+      if (!activeScanCache || activeScanCache.root !== root) return fn();
+      let map = activeScanCache.byNode.get(key);
+      if (!map) { map = new Map(); activeScanCache.byNode.set(key, map); }
+      const argKey = arg === undefined || arg === null ? NULL_ARG_KEY : arg;
+      if (map.has(argKey)) return map.get(argKey);
+      const val = fn();
+      map.set(argKey, val);
+      return val;
+    };
+    function withScanCache(fn) {
+      const prev = activeScanCache;
+      activeScanCache = { root, vis: new WeakMap(), computed: new WeakMap(), scroll: new WeakMap(), values: new Map(), byNode: new Map() };
+      try { return fn(); }
+      finally { activeScanCache = prev; }
+    }
     const collect = selectors => topLevelMatches(selectors, root).filter(isVisible);
-    const userTurns = () => findTurns(spec, 'user', root);
-    const assistantTurns = () => findTurns(spec, 'assistant', root);
-    const messages = () => sortByDocumentOrder([...userTurns(), ...assistantTurns()]);
+    const userTurns = () => cached('userTurns', () => findTurns(spec, 'user', root));
+    const assistantTurns = () => cached('assistantTurns', () => findTurns(spec, 'assistant', root));
+    const messages = () => cached('messages', () => sortByDocumentOrder([...userTurns(), ...assistantTurns()]));
+    const primarySurface = () => cached('primarySurface', () => findPrimary(spec, root));
+    const composerSurface = () => cached('composerSurface', () => findComposer(spec, root));
+    const modelSelectorTrigger = () => cached('modelSelectorTrigger', () => findModelTrigger(spec, root));
+    const composerGrid = composer => {
+      const comp = composer === undefined ? composerSurface() : composer;
+      return cachedByArg('composerGrid', comp, () => findComposerGrid(spec, comp));
+    };
+    const composerAddTrigger = composer => {
+      const comp = composer === undefined ? composerSurface() : composer;
+      return cachedByArg('composerAddTrigger', comp, () => findComposerAddTrigger(spec, comp));
+    };
+    const composerBackdropSurfaces = composer => {
+      const comp = composer === undefined ? composerSurface() : composer;
+      return cachedByArg('composerBackdrops', comp, () => findComposerBackdrops(spec, comp));
+    };
+    const composerScrimSurface = composer => {
+      const comp = composer === undefined ? composerSurface() : composer;
+      return cachedByArg('composerScrim', comp, () => findComposerScrim(spec, comp));
+    };
+    const threadFooterLayer = composer => {
+      const comp = composer === undefined ? composerSurface() : composer;
+      return cachedByArg('threadFooter', comp, () => findThreadFooterLayer(spec, comp));
+    };
+    const sidebarSurfaces = () => cached('sidebarSurfaces', () => findSidebars(spec, root));
+    const codeSurfaces = () => cached('codeSurfaces', () => findCodeSurfaces(spec, messages(), root));
+    const codeHeaders = () => cached('codeHeaders', () => findCodeHeaders(spec, messages()));
+    const codeBlocks = () => cached('codeBlocks', () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))].filter(pre => !isOwned(pre) && !pre.parentElement?.closest?.('pre')));
     return Object.freeze({
       host,
       usesOverlayScrim: Boolean(spec.usesOverlayScrim),
@@ -1561,68 +1706,72 @@
         userTurnTargets: Object.freeze([...(spec.contentWidth.userTurnTargets || [])]),
         composerTargets: Object.freeze([...spec.contentWidth.composerTargets])
       }),
+      withScanCache,
       userTurns,
       assistantTurns,
       conversationRoot: () => root.querySelector(spec.conversation) || root.body || root,
-      primarySurface: () => findPrimary(spec, root),
-      composerSurface: () => findComposer(spec, root),
-      composerCardSurface: (composer) => findComposerCard(spec, composer === undefined ? findComposer(spec, root) : composer),
-      composerBackdropSurfaces: (composer) => findComposerBackdrops(spec, composer === undefined ? findComposer(spec, root) : composer),
-      composerScrimSurface: (composer) => findComposerScrim(spec, composer === undefined ? findComposer(spec, root) : composer),
-      threadFooterLayer: (composer) => findThreadFooterLayer(spec, composer === undefined ? findComposer(spec, root) : composer),
+      primarySurface,
+      composerSurface,
+      composerCardSurface: (composer) => {
+        const comp = composer === undefined ? composerSurface() : composer;
+        return cachedByArg('composerCard', comp, () => findComposerCard(spec, comp));
+      },
+      composerBackdropSurfaces,
+      composerScrimSurface,
+      threadFooterLayer,
       composerBelowSiblings: (composer, dock) => {
-        const comp = composer === undefined ? findComposer(spec, root) : composer;
-        const resolvedDock = dock === undefined ? (findComposerScrim(spec, comp) || findThreadFooterLayer(spec, comp)) : dock;
-        const primary = findPrimary(spec, root);
+        const comp = composer === undefined ? composerSurface() : composer;
+        const resolvedDock = dock === undefined ? (composerScrimSurface(comp) || threadFooterLayer(comp)) : dock;
+        const primary = primarySurface();
         const allMessages = messages();
         return findComposerBelowSiblings(comp, resolvedDock, primary, allMessages[allMessages.length - 1] || null);
       },
-      composerGrid: (composer) => findComposerGrid(spec, composer === undefined ? findComposer(spec, root) : composer),
+      composerGrid,
       composerEmptyHeaders: (composer, grid) => {
-        const comp = composer === undefined ? findComposer(spec, root) : composer;
-        const resolvedGrid = grid === undefined ? findComposerGrid(spec, comp) : grid;
-        return findComposerEmptyHeaders(spec, comp, resolvedGrid, findComposerAddTrigger(spec, comp), findModelTrigger(spec, root));
+        const comp = composer === undefined ? composerSurface() : composer;
+        const resolvedGrid = grid === undefined ? composerGrid(comp) : grid;
+        return findComposerEmptyHeaders(spec, comp, resolvedGrid, composerAddTrigger(comp), modelSelectorTrigger());
       },
-      composerAddTrigger: (composer) => findComposerAddTrigger(spec, composer === undefined ? findComposer(spec, root) : composer),
-      modelSelectorTrigger: () => findModelTrigger(spec, root),
+      composerAddTrigger,
+      modelSelectorTrigger,
       composerToolbar: (trailing, modelTrigger) => findComposerToolbar(
-        trailing === undefined ? findComposerGrid(spec, findComposer(spec, root))?.trailing : trailing,
-        modelTrigger === undefined ? findModelTrigger(spec, root) : modelTrigger
+        trailing === undefined ? composerGrid(composerSurface())?.trailing : trailing,
+        modelTrigger === undefined ? modelSelectorTrigger() : modelTrigger
       ),
       modelCapsuleSlot: (trailing, modelTrigger) => findModelCapsuleSlot(
-        trailing === undefined ? findComposerGrid(spec, findComposer(spec, root))?.trailing : trailing,
-        modelTrigger === undefined ? findModelTrigger(spec, root) : modelTrigger
+        trailing === undefined ? composerGrid(composerSurface())?.trailing : trailing,
+        modelTrigger === undefined ? modelSelectorTrigger() : modelTrigger
       ),
       composerPrimaryAction: (composer) => {
-        const comp = composer === undefined ? findComposer(spec, root) : composer;
-        const grid = findComposerGrid(spec, comp);
-        return findComposerPrimaryAction(spec, comp, findComposerAddTrigger(spec, comp), findModelTrigger(spec, root), grid?.trailing || null);
+        const comp = composer === undefined ? composerSurface() : composer;
+        const grid = composerGrid(comp);
+        return findComposerPrimaryAction(spec, comp, composerAddTrigger(comp), modelSelectorTrigger(), grid?.trailing || null);
       },
-      composerAttachments: (composer) => findComposerAttachments(spec, composer === undefined ? findComposer(spec, root) : composer),
-      activeModelLabel: () => findActiveModelLabel(spec, root),
+      composerAttachments: (composer) => findComposerAttachments(spec, composer === undefined ? composerSurface() : composer),
+      activeModelLabel: () => cached('activeModelLabel', () => findActiveModelLabel(spec, root)),
       composerChips: (composer) => {
-        const comp = composer === undefined ? findComposer(spec, root) : composer;
-        return findComposerChips(spec, comp, findComposerAddTrigger(spec, comp), findModelTrigger(spec, root));
+        const comp = composer === undefined ? composerSurface() : composer;
+        return findComposerChips(spec, comp, composerAddTrigger(comp), modelSelectorTrigger());
       },
-      visibleAttachments: (composer) => findVisibleAttachments(spec, messages(), composer === undefined ? findComposer(spec, root) : composer, root),
-      codeSurfaces: () => findCodeSurfaces(spec, messages(), root),
-      codeHeaders: () => findCodeHeaders(spec, messages()),
+      visibleAttachments: (composer) => findVisibleAttachments(spec, messages(), composer === undefined ? composerSurface() : composer, root),
+      codeSurfaces,
+      codeHeaders,
       codeSurfaceFor: (pre, surfaces) => findCodeSurfaceFor(spec, pre, surfaces),
       codeHeaderFor: (surface, pre, headers) => findCodeHeaderFor(spec, surface, pre, headers),
       codeWellFor: (pre) => findCodeWellFor(spec, pre),
-      threadTailSpacers: () => findThreadTailSpacers(spec, findPrimary(spec, root), messages()),
-      threadColumns: () => findThreadColumnSurfaces(spec, findPrimary(spec, root), messages()[0]),
-      composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, findPrimary(spec, root), composer === undefined ? findComposer(spec, root) : composer),
-      sidebarSurfaces: () => findSidebars(spec, root),
-      sidebarActiveTargets: (sidebars) => findSidebarActiveTargets(sidebars === undefined ? findSidebars(spec, root) : sidebars),
-      cornerFloatingObstacles: (composer) => findCornerFloatingObstacles(root, composer === undefined ? findComposer(spec, root) : composer, spec),
-      codeBlocks: () => [...new Set(messages().flatMap(message => [...message.querySelectorAll('pre')]))].filter(pre => !isOwned(pre) && !pre.parentElement?.closest?.('pre')),
-      thoughtBlocks: () => collect(spec.thoughts),
+      threadTailSpacers: () => findThreadTailSpacers(spec, primarySurface(), messages()),
+      threadColumns: () => findThreadColumnSurfaces(spec, primarySurface(), messages()[0]),
+      composerColumns: (composer) => findColumnSurfaces(spec.composerColumns, primarySurface(), composer === undefined ? composerSurface() : composer),
+      sidebarSurfaces,
+      sidebarActiveTargets: (sidebars) => findSidebarActiveTargets(sidebars === undefined ? sidebarSurfaces() : sidebars),
+      cornerFloatingObstacles: (composer) => findCornerFloatingObstacles(root, composer === undefined ? composerSurface() : composer, spec),
+      codeBlocks,
+      thoughtBlocks: () => cached('thoughtBlocks', () => collect(spec.thoughts)),
       isAssistantNode(node) {
         const element = elementOf(node);
         return Boolean(element && !isOwned(element) && !element.closest('[contenteditable="true"], input, textarea, script, style') && element.closest(spec.assistants));
       },
-      isStreaming: () => collect(spec.streaming).length > 0,
+      isStreaming: () => cached('isStreaming', () => collect(spec.streaming).length > 0),
       scrollContainer
     });
   }

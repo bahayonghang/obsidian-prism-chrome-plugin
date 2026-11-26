@@ -32,6 +32,9 @@
   let dock = null;
   let ambient = null;
   let activeTurn = -1;
+  let renderedActiveTurn = -2;
+  let cachedUserTurns = [];
+  let cachedMessageScroller = null;
   let railSignature = '';
   let lastEstimate = 0;
   let lastModelLabel = '';
@@ -52,7 +55,9 @@
   const formulas = new Map();
   const savedFoldState = new WeakMap();
   let formulaSkipCache = new WeakMap();
+  let codeHeaderSvgCache = new WeakMap();
   const thoughts = new Map();
+  const runWithScanCache = fn => (typeof adapter.withScanCache === 'function' ? adapter.withScanCache(fn) : fn());
   const fades = ['op-stream-f0','op-stream-f1','op-stream-f2','op-stream-f3','op-stream-f4'];
   const systemTheme = matchMedia('(prefers-color-scheme: dark)');
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
@@ -125,6 +130,7 @@
     dockObserver?.disconnect(); dockObserver = null; observedDock = null;
     dockScroller = dockOverlaidHost = alphaFadeScroller = alphaFadeDock = null;
     railSignature = ''; lastEstimate = 0; lastModelLabel = ''; lastAttachments = 0; activeTurn = -1;
+    renderedActiveTurn = -2; cachedUserTurns = []; cachedMessageScroller = null;
     if (permanent) {
       stopped = true;
       surfaceObserver?.disconnect(); surfaceObserver = null; primarySurface = null;
@@ -147,6 +153,7 @@
     for (const entry of formulas.values()) { clearTimeout(entry.debounceTimer); entry.debounceTimer = null; }
     formulas.clear();
     formulaSkipCache = new WeakMap();
+    codeHeaderSvgCache = new WeakMap();
     thoughts.clear();
     rootVarOriginals.clear();
     readingWidth = '';
@@ -494,17 +501,17 @@
     applyFormulaEntry(entry);
     if (syncFold) syncCodes();
   }
-  function syncFormulas() {
+  function syncFormulas(snap) {
     const temml = global.temml;
     const active = Boolean(cfg.formulaPreview !== false && Formula && temml);
-    const current = new Set(active ? adapter.codeBlocks().filter(pre => !Adapters.isOwned(pre)) : []);
+    const current = new Set(active ? (snap ? snap.codeBlocks : adapter.codeBlocks().filter(pre => !Adapters.isOwned(pre))) : []);
     for (const [pre, entry] of formulas) {
       if (!current.has(pre) || !pre.isConnected) cleanupFormula(pre, entry);
     }
     if (!current.size) return;
-    const hostSurfaces = adapter.codeSurfaces?.() || [];
-    const hostHeaders = adapter.codeHeaders?.() || [];
-    const isStreaming = Boolean(adapter.isStreaming?.());
+    const hostSurfaces = snap ? snap.codeSurfaces : (adapter.codeSurfaces?.() || []);
+    const hostHeaders = snap ? snap.codeHeaders : (adapter.codeHeaders?.() || []);
+    const isStreaming = snap ? snap.isStreaming : Boolean(adapter.isStreaming?.());
     for (const pre of current) {
       const code = pre.querySelector('code') || pre;
       const source = Adapters.textOf(code);
@@ -572,8 +579,8 @@
     }
   }
 
-  function syncCodes() {
-    const current = new Set(cfg.longCodeFold ? adapter.codeBlocks().filter(pre => !Adapters.isOwned(pre)) : []);
+  function syncCodes(snap) {
+    const current = new Set(cfg.longCodeFold ? (snap ? snap.codeBlocks : adapter.codeBlocks().filter(pre => !Adapters.isOwned(pre))) : []);
     for (const [pre, entry] of codes) {
       if (!current.has(pre) || !pre.isConnected) cleanupCode(pre, entry);
     }
@@ -653,13 +660,13 @@
     });
     if (!fragment.childNodes.length) fragment.append(make('p','op-rail-empty',t('outlineEmpty')));
     list.replaceChildren(fragment);
-    updateRailActive();
+    updateRailActive(true);
   }
-  function syncRail() {
+  function syncRail(snap) {
     if (lostOwnership()) return;
-    const turns = adapter.userTurns();
+    const turns = snap ? snap.userTurns : adapter.userTurns();
     if (!cfg.railOutline || !turns.length) {
-      rail?.remove(); rail = null; railSignature = ''; return;
+      rail?.remove(); rail = null; railSignature = ''; renderedActiveTurn = -2; return;
     }
     if (!rail) {
       rail = own(make('aside','op-rail'));
@@ -715,30 +722,59 @@
       renderRailList(turns);
     }
   }
-  function updateRailActive() {
-    rail?.querySelectorAll('[data-turn]').forEach(button => {
+  function updateRailActive(force = false) {
+    if (!rail) return;
+    if (!force && renderedActiveTurn === activeTurn) return;
+    renderedActiveTurn = activeTurn;
+    rail.querySelectorAll('[data-turn]').forEach(button => {
       const active = Number(button.dataset.turn) === activeTurn;
-      button.classList.toggle('is-active',active);
+      if (button.classList.contains('is-active') !== active) button.classList.toggle('is-active', active);
       if (active) setAttr(button, 'aria-current', 'location'); else removeAttr(button, 'aria-current');
     });
   }
   function jump(index) {
-    const turns = adapter.userTurns();
+    const turns = cachedUserTurns.length && cachedUserTurns[0]?.isConnected ? cachedUserTurns : adapter.userTurns();
     if (!turns.length) return;
     activeTurn = Math.max(0, Math.min(turns.length-1,index));
     turns[activeTurn].scrollIntoView({behavior:motionAllowed() ? 'smooth' : 'auto',block:'start'});
     updateRailActive();
   }
   function nearestTurn() {
-    const turns = adapter.userTurns();
+    const turns = cachedUserTurns.length && cachedUserTurns[0]?.isConnected ? cachedUserTurns : adapter.userTurns();
     if (!turns.length) return -1;
+    let scroller = cachedMessageScroller?.isConnected ? cachedMessageScroller : null;
+    if (!scroller) {
+      scroller = adapter.scrollContainer(turns[0]);
+      cachedMessageScroller = scroller;
+    }
+    const scrollerTop = (!scroller || scroller === document.scrollingElement) ? 0 : scroller.getBoundingClientRect().top;
+    const targetY = scrollerTop + 48;
+    const n = turns.length;
+    if (n > 4) {
+      const firstTop = turns[0].getBoundingClientRect().top;
+      const lastTop = turns[n - 1].getBoundingClientRect().top;
+      if (lastTop >= firstTop) {
+        if (targetY <= firstTop) return 0;
+        if (targetY >= lastTop) return n - 1;
+        let lo = 0, hi = n - 1;
+        while (lo < hi) {
+          const mid = (lo + hi) >> 1;
+          if (turns[mid].getBoundingClientRect().top < targetY) lo = mid + 1;
+          else hi = mid;
+        }
+        const currDist = Math.abs(turns[lo].getBoundingClientRect().top - targetY);
+        if (lo > 0) {
+          const prevDist = Math.abs(turns[lo - 1].getBoundingClientRect().top - targetY);
+          if (prevDist <= currDist) return lo - 1;
+        }
+        return lo;
+      }
+    }
     let result = 0, distance = Infinity;
-    turns.forEach((turn,index) => {
-      const scroller = adapter.scrollContainer(turn);
-      const top = scroller === document.scrollingElement ? 0 : scroller.getBoundingClientRect().top;
-      const delta = Math.abs(turn.getBoundingClientRect().top - top - 48);
+    for (let index = 0; index < n; index++) {
+      const delta = Math.abs(turns[index].getBoundingClientRect().top - targetY);
       if (delta < distance) { distance = delta; result = index; }
-    });
+    }
     return result;
   }
   function onKey(event) {
@@ -821,7 +857,7 @@
     if (widthBtn.title !== widthTip) widthBtn.title = widthTip;
     setAttr(widthBtn, 'aria-label', widthTip);
   }
-  function syncContextVial() {
+  function syncContextVial(snap) {
     let vial = dock.querySelector('.op-vial-pill');
     if (!cfg.contextVial) {
       vial?.remove();
@@ -840,17 +876,19 @@
       vial.addEventListener('click', () => setDockOpen(popover.hidden));
       dock.append(vial,popover);
     }
-    const modelLabel=adapter.activeModelLabel?.()||'';
-    const attachments=(adapter.visibleAttachments?.()||[]).length;
+    const modelLabel=snap ? snap.modelLabel : (adapter.activeModelLabel?.()||'');
+    const attachments=snap ? snap.attachmentsCount : (adapter.visibleAttachments?.()||[]).length;
     const capacity=Adapters.resolveReferenceCapacity(host,modelLabel,cfg.contextWindowTokens);
     const now=performance.now();
     if (!lastEstimate || now-lastEstimate>750 || lastModelLabel!==modelLabel || lastAttachments!==attachments) {
       let user=0, assistant=0, code=0;
-      for (const node of adapter.userTurns()) {
+      const uTurns = snap ? snap.userTurns : adapter.userTurns();
+      const aTurns = snap ? snap.assistantTurns : adapter.assistantTurns();
+      for (const node of uTurns) {
         const turn=Adapters.estimateTurnTokens(node);
         user+=turn.total; code+=turn.code;
       }
-      for (const node of adapter.assistantTurns()) {
+      for (const node of aTurns) {
         const turn=Adapters.estimateTurnTokens(node);
         assistant+=turn.total; code+=turn.code;
       }
@@ -887,12 +925,12 @@
       details.replaceChildren(fragment);
     }
   }
-  function syncDock() {
+  function syncDock(snap) {
     if (lostOwnership()) return;
     if (!dock) { dock=own(make('aside','op-dock')); dock.id='op-bottom-dock'; document.body.append(dock); }
     if (!dock.isConnected) document.body.append(dock);
     syncWidthToggle();
-    syncContextVial();
+    syncContextVial(snap);
   }
 
   function applyThoughtView(element,entry) {
@@ -901,9 +939,9 @@
     entry.toggle.hidden=!entry.hasTranslation;
     entry.toggle.setAttribute('aria-pressed',String(Boolean(immersive)));
   }
-  function syncThoughts() {
+  function syncThoughts(snap) {
     // Keep our deliberately hidden original in the registry until the host removes it.
-    const current=new Set(cfg.thoughtTranslate ? adapter.thoughtBlocks() : []);
+    const current=new Set(cfg.thoughtTranslate ? (snap ? snap.thoughtBlocks : adapter.thoughtBlocks()) : []);
     for(const [element,entry] of thoughts) {
       if(cfg.thoughtTranslate && element.isConnected && element.classList.contains('op-thought-hidden')) current.add(element);
       if(!current.has(element) || !element.isConnected) cleanupThought(element,entry);
@@ -1018,50 +1056,68 @@
     const normalized = String(value || '').trim();
     return Boolean(normalized) && !/^(?:none|transparent|rgba\(\s*0\s*,\s*0\s*,\s*0\s*,\s*0\s*\)|url\()/i.test(normalized);
   }
-  function markCodeHeaderSvgIcons(header, add) {
+  function markCodeHeaderSvgIcons(header, add, paletteKey) {
     if (typeof getComputedStyle !== 'function') return;
+    const svgs = [...(header.querySelectorAll?.('svg') || [])];
+    const cached = codeHeaderSvgCache.get(header);
+    if (cached && cached.paletteKey === paletteKey && cached.svgs.length === svgs.length &&
+        cached.svgs.every((s, i) => s === svgs[i] && s.isConnected) &&
+        cached.fills.every(n => n.isConnected) && cached.strokes.every(n => n.isConnected)) {
+      for (const n of cached.fills) add(n, 'data-op-code-icon-fill');
+      for (const n of cached.strokes) add(n, 'data-op-code-icon-stroke');
+      return;
+    }
+    const fills = [];
+    const strokes = [];
     const visit = node => {
       if (!node || Adapters.isOwned(node)) return;
       const tag = (node.localName || node.tagName || '').toLowerCase();
       if (CODE_ICON_TAGS.has(tag)) {
         const style = getComputedStyle(node);
         if (style) {
-          if (isPaintedSvgPaint(style.fill)) add(node, 'data-op-code-icon-fill');
-          if (isPaintedSvgPaint(style.stroke)) add(node, 'data-op-code-icon-stroke');
+          if (isPaintedSvgPaint(style.fill)) { fills.push(node); add(node, 'data-op-code-icon-fill'); }
+          if (isPaintedSvgPaint(style.stroke)) { strokes.push(node); add(node, 'data-op-code-icon-stroke'); }
         }
       }
       for (const child of node.children || []) visit(child);
     };
-    for (const svg of header.querySelectorAll?.('svg') || []) visit(svg);
+    for (const svg of svgs) visit(svg);
+    codeHeaderSvgCache.set(header, { paletteKey, svgs, fills, strokes });
   }
-  function syncSurfaces() {
+  function collectSurfaceState() {
     const targets = new Map();
     const add = (element, attribute) => {
       if (!element?.isConnected || Adapters.isOwned(element)) return;
       if (!targets.has(element)) targets.set(element,new Set());
       targets.get(element).add(attribute);
     };
-    const isNativePalette = Schema.resolvePalette(cfg) === 'host';
-    const isHome = !adapter.userTurns().length && !adapter.assistantTurns().length;
-    let dockHost = null, threadFooter = null, nextScroller = null, nextThreadScroller = null, nextOverlaidDock = null, nextAlphaFadeScroller = null, nextAlphaFadeDock = null, nextObservedDock = null;
+    const resolvedPalette = Schema.resolvePalette(cfg);
+    const resolvedScheme = Schema.resolveScheme(cfg);
+    const paletteKey = `${resolvedPalette}:${resolvedScheme}`;
+    const isNativePalette = resolvedPalette === 'host';
+    const uTurns = adapter.userTurns();
+    const aTurns = adapter.assistantTurns();
+    const isHome = !uTurns.length && !aTurns.length;
+    let dockHost = null, threadFooter = null, nextScroller = null, nextThreadScroller = null, nextOverlaidDock = null, nextAlphaFadeScroller = null, nextAlphaFadeDock = null, nextObservedDock = null, messageScroller = null;
     const nextPrimary = adapter.primarySurface?.() || null;
     add(nextPrimary,'data-op-main-surface');
     for (const element of adapter.threadColumns?.() || []) add(element,'data-op-thread-column');
     const composer = adapter.composerSurface?.() || null;
     for (const element of adapter.composerColumns?.(composer) || []) add(element,'data-op-composer-column');
+    const firstTurn = aTurns[0] || uTurns[0];
+    if (firstTurn) messageScroller = adapter.scrollContainer(firstTurn);
     if (!isNativePalette) {
       for (const element of adapter.codeSurfaces?.() || []) add(element,'data-op-code-surface');
       for (const element of adapter.codeHeaders?.() || []) {
         add(element,'data-op-code-header');
-        markCodeHeaderSvgIcons(element, add);
+        markCodeHeaderSvgIcons(element, add, paletteKey);
       }
       if (!isHome) {
         dockHost = adapter.composerScrimSurface?.(composer) || null;
         threadFooter = !dockHost ? (adapter.threadFooterLayer?.(composer) || null) : null;
         add(dockHost, 'data-op-composer-dock');
         if (cfg.composerRestyle) add(threadFooter, 'data-op-thread-footer');
-        const turn = adapter.assistantTurns()[0] || adapter.userTurns()[0];
-        const scroller = turn ? adapter.scrollContainer(turn) : null;
+        const scroller = messageScroller;
         const isOverlaid = dockHost ? Adapters.isComposerDockOverlaid(dockHost, scroller, global) : false;
         if (isOverlaid) {
           nextOverlaidDock = dockHost;
@@ -1123,6 +1179,16 @@
         if (shape === 'tile') add(element,'data-op-sidebar-active-tile');
       }
     }
+    return {
+      targets, nextPrimary, nextObservedDock, nextOverlaidDock, nextThreadScroller,
+      nextAlphaFadeScroller, nextAlphaFadeDock, isHome, messageScroller, composer
+    };
+  }
+  function commitSurfaceState(state) {
+    const {
+      targets, nextPrimary, nextObservedDock, nextOverlaidDock, nextThreadScroller,
+      nextAlphaFadeScroller, nextAlphaFadeDock, isHome
+    } = state;
     const adoptingHandover = adoptHandoverSurfaceMarks();
     for (const [element, attributes] of surfaceMarks) {
       for (const [attribute, original] of attributes) {
@@ -1163,9 +1229,9 @@
     setAttr(document.documentElement, 'data-op-home', home);
     setAttr(document.documentElement, 'data-op-visibility', document.hidden?'hidden':'visible');
   }
-  function syncAmbientBounds() {
+  function syncAmbientBounds(precomputedRect) {
     if (ambient && primarySurface?.isConnected) {
-      const rect=primarySurface.getBoundingClientRect();
+      const rect = precomputedRect || primarySurface.getBoundingClientRect();
       const left=Math.max(0,Math.min(innerWidth,rect.left));
       const top=Math.max(0,Math.min(innerHeight,rect.top));
       const width=Math.max(0,Math.min(innerWidth,rect.right)-left);
@@ -1179,10 +1245,7 @@
   function updateAmbientGeometry() {
     geometryFrame=null;
     if (lostOwnership() || !enabled || stopped || document.hidden) return;
-    syncAmbientBounds();
-    syncDockClearance();
-    syncScrollerFade();
-    syncDockAvoidance();
+    syncAllGeometry({ includeReadingWidth: false });
   }
   function scheduleGeometry() {
     if (lostOwnership() || !enabled || stopped || document.hidden || (!ambient && !dock && !dockOverlaidHost && !alphaFadeDock) || geometryFrame) return;
@@ -1228,8 +1291,10 @@
    * hosts.css applies it only to the adapter's declared width limiters (no per-node marks).
    * `standard`, a disabled site and stop restore both variables, restoring the native width. */
   let readingWidth='';
-  function syncReadingWidth() {
-    const mainWidth=enabled && primarySurface?.isConnected ? primarySurface.getBoundingClientRect().width : 0;
+  function syncReadingWidth(precomputedRect) {
+    const mainWidth = enabled && primarySurface?.isConnected
+      ? (precomputedRect ? precomputedRect.width : primarySurface.getBoundingClientRect().width)
+      : 0;
     const target=mainWidth ? Adapters.contentWidthTarget(adapter.contentWidth?.native,cfg.contentWidth,mainWidth,global.innerWidth||0) : null;
     const next=target ? `${target.width}px ${target.shift}px` : '';
     if (next===readingWidth || !document.documentElement) return;
@@ -1260,56 +1325,60 @@
     if (!scroller || [document.scrollingElement,document.documentElement,document.body].includes(scroller) || scrim.contains(scroller) || (scroller.contains(scrim) && scrimPos !== 'fixed')) return null;
     return scroller;
   }
-  function syncDockClearance() {
+  function readDockClearance() {
     let clearance=0;
     if (enabled && dockScroller?.isConnected && dockOverlaidHost?.isConnected) {
       const box=dockScroller.getBoundingClientRect(), dockRect=dockOverlaidHost.getBoundingClientRect();
       if (typeof dockScroller.contains==='function' && dockScroller.contains(dockOverlaidHost)) {
         if (dockRect.height > 0) clearance=Math.max(0,Math.ceil(dockRect.height + DOCK_GAP));
       } else {
-        const padding=parseFloat(getComputedStyle(dockScroller).paddingBottom)||0;
+        const padding = (typeof getComputedStyle === 'function' ? parseFloat(getComputedStyle(dockScroller)?.paddingBottom) : 0) || 0;
         // Only a dock docked over or floating near the scroller's bottom edge covers the end of the thread.
         if (dockRect.top < box.bottom && dockRect.bottom >= box.bottom - 48 && dockRect.bottom <= box.bottom + 48) {
           clearance=Math.max(0,Math.ceil(box.bottom - padding - dockRect.top + DOCK_GAP));
         }
       }
     }
+    return clearance;
+  }
+  function applyDockClearance(clearance) {
     if (clearance) setRootVar('--op-dock-clearance',clearance+'px'); else clearRootVar('--op-dock-clearance');
   }
-  function syncScrollerFade() {
+  function syncDockClearance() { applyDockClearance(readDockClearance()); }
+  function readScrollerFade() {
     if (enabled && alphaFadeScroller?.isConnected && alphaFadeDock?.isConnected) {
       const sRect = alphaFadeScroller.getBoundingClientRect();
       const dRect = alphaFadeDock.getBoundingClientRect();
-      if (dRect.top < sRect.bottom - 1) {
-        const overlap = Math.max(0, Math.ceil(sRect.bottom - dRect.top));
-        setRootVar('--op-scroller-fade-start', overlap + 'px');
-        setRootVar('--op-scroller-fade-end', Math.max(0, overlap - 24) + 'px');
-        return;
-      }
+      if (dRect.top < sRect.bottom - 1) return Math.max(0, Math.ceil(sRect.bottom - dRect.top));
     }
-    clearRootVar('--op-scroller-fade-start');
-    clearRootVar('--op-scroller-fade-end');
+    return null;
   }
-  function syncDockAvoidance() {
-    if (lostOwnership()) return;
-    if (!enabled || stopped || !dock || !dock.isConnected) {
-      clearRootVar('--op-dock-offset-x');
-      clearRootVar('--op-dock-offset-y');
-      return;
+  function applyScrollerFade(overlap) {
+    if (overlap !== null) {
+      setRootVar('--op-scroller-fade-start', overlap + 'px');
+      setRootVar('--op-scroller-fade-end', Math.max(0, overlap - 24) + 'px');
+    } else {
+      clearRootVar('--op-scroller-fade-start');
+      clearRootVar('--op-scroller-fade-end');
     }
+  }
+  function syncScrollerFade() { applyScrollerFade(readScrollerFade()); }
+  function readDockAvoidance(precomputedComposer) {
+    if (lostOwnership()) return null;
+    if (!enabled || stopped || !dock || !dock.isConnected) return { clear: true };
     const vw = document.documentElement?.clientWidth || global.innerWidth || 0;
     const vh = document.documentElement?.clientHeight || global.innerHeight || 0;
-    if (!(vw > 0) || !(vh > 0)) return;
+    if (!(vw > 0) || !(vh > 0)) return null;
     const dockBox = dock.getBoundingClientRect();
-    if (!(dockBox.width > 0) || !(dockBox.height > 0)) return;
+    if (!(dockBox.width > 0) || !(dockBox.height > 0)) return null;
     const { right: baseRight, bottom: baseBottom } = Adapters.dockEdgeMargin(vw);
-    const composer = adapter.composerSurface?.() || null;
+    const composer = precomputedComposer !== undefined ? precomputedComposer : (adapter.composerSurface?.() || null);
     const composerCard = adapter.composerCardSurface?.(composer) || composer;
     const composerVisible = composerCard && (typeof Adapters.isVisible !== 'function' || Adapters.isVisible(composerCard));
     const composerRect = composerVisible ? composerCard.getBoundingClientRect() : null;
     const railRect = rail && rail.isConnected ? rail.getBoundingClientRect() : null;
     const cornerObstacles = adapter.cornerFloatingObstacles?.(composer) || [];
-    const { offsetX, offsetY } = Adapters.computeDockAvoidance({
+    return Adapters.computeDockAvoidance({
       viewport: { width: vw, height: vh },
       dockSize: { width: dockBox.width, height: dockBox.height },
       baseRight,
@@ -1319,20 +1388,50 @@
       cornerObstacles,
       gap: 10
     });
-    if (offsetX > 0) setRootVar('--op-dock-offset-x', offsetX + 'px'); else clearRootVar('--op-dock-offset-x');
-    if (offsetY > 0) setRootVar('--op-dock-offset-y', offsetY + 'px'); else clearRootVar('--op-dock-offset-y');
-    const popover = dock.querySelector('.op-vial-popover');
+  }
+  function applyDockAvoidance(result) {
+    if (!result) return;
+    if (result.clear) {
+      clearRootVar('--op-dock-offset-x');
+      clearRootVar('--op-dock-offset-y');
+      return;
+    }
+    if (result.offsetX > 0) setRootVar('--op-dock-offset-x', result.offsetX + 'px'); else clearRootVar('--op-dock-offset-x');
+    if (result.offsetY > 0) setRootVar('--op-dock-offset-y', result.offsetY + 'px'); else clearRootVar('--op-dock-offset-y');
+    const popover = dock?.querySelector('.op-vial-popover');
     if (popover && !popover.hidden) syncDockPopoverPosition();
+  }
+  function syncDockAvoidance(precomputedComposer) {
+    applyDockAvoidance(readDockAvoidance(precomputedComposer));
+  }
+  function syncAllGeometry({ includeReadingWidth = true, composer } = {}) {
+    if (lostOwnership() || !enabled || stopped) return;
+    // Batched read phase: measure every geometry box before mutating any root CSS variables.
+    const measured = runWithScanCache(() => {
+      const primaryRect = primarySurface?.isConnected && (includeReadingWidth || ambient)
+        ? primarySurface.getBoundingClientRect()
+        : null;
+      const clearance = readDockClearance();
+      const fadeOverlap = readScrollerFade();
+      const avoidance = readDockAvoidance(composer);
+      return { primaryRect, clearance, fadeOverlap, avoidance };
+    });
+    // Batched write phase: apply all root CSS variables and ambient bounds together.
+    if (includeReadingWidth) syncReadingWidth(measured.primaryRect);
+    syncAmbientBounds(measured.primaryRect);
+    applyDockClearance(measured.clearance);
+    applyScrollerFade(measured.fadeOverlap);
+    applyDockAvoidance(measured.avoidance);
   }
   function primaryResized() {
     if (lostOwnership() || !enabled || stopped) return;
-    syncReadingWidth(); syncDockClearance(); syncScrollerFade(); syncDockAvoidance(); scheduleGeometry();
+    syncAllGeometry({ includeReadingWidth: true });
   }
   function dockResized() {
     if (lostOwnership() || !enabled || stopped) return;
-    syncDockClearance(); syncScrollerFade(); syncDockAvoidance();
+    syncAllGeometry({ includeReadingWidth: false });
   }
-  function syncAmbient() {
+  function syncAmbientDom() {
     if (lostOwnership()) return;
     const needed=(cfg.ambientIntensity>0 && (cfg.ambientStyle!=='none' || cfg.ambientTexture!=='off')) || cfg.semanticAura;
     if (!needed || !primarySurface) {ambient?.remove();ambient=null;return;}
@@ -1347,13 +1446,14 @@
       ambient.append(wash,make('div','op-ambient-grid'),glyphs,make('div','op-ambient-rim'));
     }
     if (ambient.parentElement!==primarySurface) primarySurface.append(ambient);
-    syncAmbientBounds();
   }
   function resetConversation() {
-    activeTurn=-1; railSignature=''; lastEstimate=0; lastModelLabel=''; lastAttachments=0;
+    activeTurn=-1; renderedActiveTurn=-2; cachedUserTurns=[]; cachedMessageScroller=null;
+    railSignature=''; lastEstimate=0; lastModelLabel=''; lastAttachments=0;
     for(const [element,entry] of thoughts) cleanupThought(element,entry);
     for(const [pre,entry] of formulas) cleanupFormula(pre,entry);
     formulaSkipCache = new WeakMap();
+    codeHeaderSvgCache = new WeakMap();
     for(const [pre,entry] of codes) cleanupCode(pre,entry);
     clearActivity();
     closeRail(); setDockOpen(false);
@@ -1363,7 +1463,58 @@
     if(lostOwnership() || !enabled || stopped || document.hidden || !document.body) return;
     passes++;
     if(route!==location.href) {route=location.href;revision++;resetConversation();}
-    syncSurfaces(); syncReadingWidth(); syncDockClearance(); syncScrollerFade(); syncAmbient(); syncFormulas(); syncCodes(); syncRail(); syncDock(); syncThoughts(); pruneOrphanRoots(); syncDockAvoidance();
+    // Phase 1: pure read/discovery inside one scan-scoped cache (zero DOM mutations).
+    const snap = runWithScanCache(() => {
+      const surfaceState = collectSurfaceState();
+      const userTurns = adapter.userTurns();
+      const assistantTurns = adapter.assistantTurns();
+      const needCode = cfg.formulaPreview !== false || cfg.longCodeFold;
+      const codeBlocks = needCode ? adapter.codeBlocks().filter(pre => !Adapters.isOwned(pre)) : [];
+      const needFormula = cfg.formulaPreview !== false && codeBlocks.length > 0;
+      const codeSurfaces = needFormula ? (adapter.codeSurfaces?.() || []) : [];
+      const codeHeaders = needFormula ? (adapter.codeHeaders?.() || []) : [];
+      const isStreaming = needFormula ? Boolean(adapter.isStreaming?.()) : false;
+      const modelLabel = cfg.contextVial ? (adapter.activeModelLabel?.() || '') : '';
+      const attachmentsCount = cfg.contextVial ? (adapter.visibleAttachments?.() || []).length : 0;
+      const thoughtBlocks = cfg.thoughtTranslate ? adapter.thoughtBlocks() : [];
+      return {
+        surfaceState, userTurns, assistantTurns, codeBlocks, codeSurfaces, codeHeaders,
+        isStreaming, modelLabel, attachmentsCount, thoughtBlocks
+      };
+    });
+    cachedUserTurns = snap.userTurns;
+    cachedMessageScroller = snap.surfaceState.messageScroller || null;
+    // Phase 2: pure DOM & attribute writes (zero interleaved layout reads).
+    commitSurfaceState(snap.surfaceState);
+    syncAmbientDom();
+    syncFormulas(snap);
+    syncCodes(snap);
+    syncRail(snap);
+    syncDock(snap);
+    syncThoughts(snap);
+    pruneOrphanRoots();
+    // Phase 3: single batched geometry read -> single batched root-var & bounds write.
+    syncAllGeometry({ includeReadingWidth: true, composer: snap.surfaceState.composer });
+  }
+  function shouldIgnoreScrollTarget(target) {
+    if (!target || target === document || target === document.documentElement || target === document.body || target === document.scrollingElement || target === global) return false;
+    if (Adapters.isOwned(target)) return true;
+    if (target.closest?.('[data-op-sidebar-surface="true"], pre, code, .op-formula-math, dialog, [role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"]')) return true;
+    for (let cur = target; cur; cur = cur.parentElement) {
+      if (Adapters.isOwned(cur)) return true;
+      const tag = (cur.localName || cur.tagName || '').toLowerCase();
+      if (tag === 'pre' || tag === 'code' || tag === 'dialog') return true;
+      if (cur.getAttribute?.('data-op-sidebar-surface') === 'true' || cur.getAttribute?.('aria-modal') === 'true') return true;
+      const role = cur.getAttribute?.('role');
+      if (role === 'dialog' || role === 'menu' || role === 'listbox') return true;
+      if (cur.classList?.contains?.('op-formula-math')) return true;
+    }
+    if (primarySurface?.isConnected && target !== primarySurface && !primarySurface.contains?.(target) && !target.contains?.(primarySurface)) return true;
+    return false;
+  }
+  function isDocumentLevelScroll(target) {
+    if (!target || target === document || target === document.documentElement || target === document.body || target === document.scrollingElement || target === global) return true;
+    return Boolean(primarySurface?.isConnected && target !== primarySurface && target.contains?.(primarySurface));
   }
   function suspend() {
     if (lostOwnership()) return;
@@ -1377,6 +1528,7 @@
     clearActivity();
     for(const [pre,entry] of formulas) cleanupFormula(pre,entry);
     formulaSkipCache = new WeakMap();
+    codeHeaderSvgCache = new WeakMap();
     for(const [pre,entry] of codes) cleanupCode(pre,entry);
     for(const [element,entry] of thoughts) cleanupThought(element,entry);
     rail?.remove();dock?.remove();ambient?.remove();rail=dock=ambient=null;
@@ -1425,11 +1577,13 @@
       if(rail&&!rail.contains(event.target)) closeRail();
       if(dock&&!dock.contains(event.target)) setDockOpen(false);
     });
-    listen(document,'scroll',()=>{
-      if(lostOwnership()) return;
-      scheduleGeometry();
-      if(scrollFrame||document.hidden) return;
-      scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;if(lostOwnership()) return;activeTurn=nearestTurn();updateRailActive();});
+    listen(document,'scroll',event=>{
+      if(lostOwnership() || document.hidden) return;
+      const target = event?.target;
+      if(shouldIgnoreScrollTarget(target)) return;
+      if(isDocumentLevelScroll(target)) scheduleGeometry();
+      if(scrollFrame) return;
+      scrollFrame=requestAnimationFrame(()=>{scrollFrame=null;if(lostOwnership() || document.hidden) return;activeTurn=nearestTurn();updateRailActive();});
     },{capture:true,passive:true});
     listen(window,'resize',()=>{if(lostOwnership()) return;scheduleGeometry();schedule();});
     listen(window,'popstate',schedule);listen(window,'hashchange',schedule);
