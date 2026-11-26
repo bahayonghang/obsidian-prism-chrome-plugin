@@ -267,6 +267,13 @@ test('v0.4.5 #53: isVisible handles boxless display:contents wrappers accurately
   const hiddenBox = makeNode('none', false);
   hiddenBox.parentElement = makeNode('block', true);
   assert.equal(Adapters.isVisible(hiddenBox), false, 'display:none node must stay false');
+
+  // Stylesheet-set content-visibility: hidden (not inline style) must still return false even when checkVisibility returns true
+  const cvHidden = makeNode('block', true);
+  cvHidden.parentElement = ancestor;
+  styles.set(ancestor, { display: 'block', visibility: 'visible', opacity: '1' });
+  styles.set(cvHidden, { display: 'block', visibility: 'visible', opacity: '1', contentVisibility: 'hidden' });
+  assert.equal(Adapters.isVisible(cvHidden), false, 'stylesheet-set content-visibility:hidden must return false');
 });
 
 test('v0.4.5 #53: Formula Preview scopes content-visibility:auto via data-op-formula-deferred only on long threads (>12 formulas, excluding last 2)', () => {

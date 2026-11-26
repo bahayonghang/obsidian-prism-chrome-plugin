@@ -127,3 +127,24 @@ Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
 ### Next Steps
 
 - 在已登录 ChatGPT 与 Gemini 页面加载 dist/chrome 复看，并按所有者授权决定是否推送 dev
+
+
+## Session 7: v0.4.5 全链路性能优化与可复现基准门禁：spec #49 / #50–#54 实施完成、双轴审阅返修并合并到 dev
+<!-- trellis-session: v=3 fp=a94d7c1e6b305f12 -->
+
+**Date**: 2026-11-26
+**Task**: v0.4.5 全链路性能优化与可复现基准门禁（spec #49 / #50–#54）
+**Branch**: `dev`
+
+### Summary
+
+在 `feat/v045-spec-49` 完成 Spec #49 全部 5 张子票（`#50` 离线 1×/25× 基准门禁与 Formula Preview 批量/负缓存/分块/幂等写；`#51` 滚动过滤与二分查找、`withScanCache`、`checkVisibility` + `display: contents`/stylesheet `content-visibility: hidden` 兜底、三阶段读写几何分离与 `ResizeObserver` 防重；`#52` 零深拷贝 `textOf`/`cleanTurnText`、`charCodeAt` 估算、增量 Context Vial/Rail 缓存与分域 `MutationObserver`/rAF 复用 Range；`#53` 拆分为 `styles/common.css` + `host-chatgpt.css` + `host-gemini.css`、移除根 `:has()` 与通配 `*`、环境光 `contain: strict` + 按需内联 SVG 字符瓦片、`ObsidianPrismReady` 复用、Popup 缓存、`vendor/temml/temml.min.js` 单字符 `\uffff` 转义与 `check.mjs` `assertChromeUtf8` 永久守卫；`#54` 对齐 `0.4.5` 与归档 `docs/PERFORMANCE_PLAN.md`）。完成双轴 `/code-review` 返修并通过全量门禁（`npm run check`、`164/164` 单测、收紧版 25× 性能门禁全绿、有头 Chromium `64/64`、Firefox `62/62`、双次确定性打包校验和一致；均为离线夹具，未在真实登录会话验证）。复用发现：上游 `temml@0.14.0` 压缩产物 `temml.min.js` 在模板字面量内含 1 处原始 `U+FFFF` 非字符，会触发 Chromium MV3 `base::IsStringUTF8` 拒绝加载；`Element.prototype.checkVisibility()` 对 `display: contents` 返回 `false` 且对元素自身 `content-visibility: hidden` 返回 `true`，需配套回退与 `getStyle` 校验。
+Docs: [docs/PERFORMANCE_PLAN.md](../../../docs/PERFORMANCE_PLAN.md)
+
+### Git Commits
+
+- `feat/v045-spec-49` (`3101bc4`..HEAD) merged into local `dev` via `--no-ff` (not pushed).
+
+### Next Steps
+
+- 在已登录 ChatGPT 与 Gemini 长对话加载 `dist/chrome` / `dist/firefox` 复看并按所有者授权决定是否推送 `dev`。

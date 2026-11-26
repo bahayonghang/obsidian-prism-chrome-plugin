@@ -69,4 +69,4 @@ Spec #49 (#50–#54, 2026-11-26) eliminates long-thread freezes, scroll jank, st
 
 The four palette families derive from upstream `style.css`; icon/theme material from the supplied browser prototypes is retained or adapted as part of the same GPL-distributed community derivative. No claim of endorsement or exclusive ownership over upstream assets is made.
 
-Complete corresponding source is available in [this repository](https://github.com/bahayonghang/obsidian-prism-chrome-plugin). Packaged runtime code is shipped as readable JavaScript/CSS without obfuscation or remote executable code.
+Complete corresponding source is available in [this repository](https://github.com/bahayonghang/obsidian-prism-chrome-plugin). First-party runtime code is shipped as readable JavaScript/CSS without obfuscation or remote executable code; the vendored MIT-licensed Temml v0.14.0 math engine ships in its pinned minified build (`vendor/temml/temml.min.js`) as documented in `THIRD_PARTY_NOTICES.md`.

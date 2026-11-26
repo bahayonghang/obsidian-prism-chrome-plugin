@@ -34,7 +34,7 @@
       ],
       /* v0.3.1 #21 / v0.4.0 #26 Content Width Presets: the reading (text) width is 48rem natively (the 808px
        * transcript = 48rem + 2 × 20px padding, probe 2026-11-22). This declaration owns the width
-       * limiters: hosts.css repeats them in its static width rules (CSS cannot read it) and
+       * limiters: styles/host-chatgpt.css repeats them in its static width rules (CSS cannot read it) and
        * tests/content-width.test.cjs fails if the two drift. The runtime reads only `native`.
        * Bridges --thread-content-max-width onto main and dock containers, sizes both transcript and
        * #thread-bottom column wrapper, and keeps direct-form fallback if #thread-bottom > form exists. */
@@ -103,7 +103,7 @@
       ],
       /* v0.3.1 #21: Gemini caps every markdown block at 708px (not the outer panel), plus the
        * User Turn, the response footer, the disclaimer and the 660px input area (probe 2026-11-22).
-       * Owned here and mirrored by the hosts.css width rules (see the ChatGPT note above). */
+       * Owned here and mirrored by the styles/host-gemini.css width rules (see the ChatGPT note above). */
       contentWidth: {
         native: 708,
         targets: ['chat-window', '.md-content > *', 'user-query', '.response-footer', 'hallucination-disclaimer'],
@@ -148,6 +148,16 @@
     if (cache) cache.set(node, style);
     return style;
   }
+  function getScanNodeCache(key, arg, factory) {
+    if (!activeScanCache) return factory();
+    let map = activeScanCache.byNode.get(key);
+    if (!map) { map = new Map(); activeScanCache.byNode.set(key, map); }
+    const argKey = arg === undefined || arg === null ? NULL_ARG_KEY : arg;
+    if (map.has(argKey)) return map.get(argKey);
+    const val = factory();
+    map.set(argKey, val);
+    return val;
+  }
   function filterOutermost(nodes) {
     if (!nodes || nodes.length <= 1) return nodes || [];
     const set = new Set(nodes);
@@ -188,6 +198,7 @@
       return false;
     }
     if (typeof node.checkVisibility === 'function') {
+      const ownView = node.ownerDocument?.defaultView;
       if (node.style?.contentVisibility === 'hidden') {
         if (visCache) visCache.set(node, false);
         return false;
@@ -200,12 +211,15 @@
         contentVisibilityAuto: false
       });
       if (vis) {
-        if (visCache) visCache.set(node, true);
-        return true;
+        // `checkVisibility({ contentVisibilityAuto: false })` skips descendants of `content-visibility: hidden`
+        // ancestors, but still returns `true` for the node carrying `content-visibility: hidden` itself.
+        const ownStyle = ownView ? getStyle(node, ownView) : null;
+        const hiddenSelf = ownStyle?.contentVisibility === 'hidden';
+        if (visCache) visCache.set(node, !hiddenSelf);
+        return !hiddenSelf;
       }
       // `checkVisibility()` returns false for boxless `display: contents` wrappers even when visible;
       // fall through to the computed-style ancestor walk only when the node itself is `display: contents`.
-      const ownView = node.ownerDocument?.defaultView;
       const ownStyle = ownView ? getStyle(node, ownView) : null;
       if (!ownStyle || ownStyle.display !== 'contents') {
         if (visCache) visCache.set(node, false);
@@ -247,14 +261,7 @@
     return visible;
   }
   function topLevelMatches(selectors, root = document) {
-    const nodes = [...root.querySelectorAll(selectors)].filter(node => !isOwned(node));
-    const all = new Set(nodes);
-    return nodes.filter(node => {
-      for (let ancestor = node.parentElement; ancestor; ancestor = ancestor.parentElement) {
-        if (all.has(ancestor)) return false;
-      }
-      return true;
-    });
+    return filterOutermost([...root.querySelectorAll(selectors)].filter(node => !isOwned(node)));
   }
   function collectLiveDomText(node, root, selector) {
     let out = '';
@@ -934,14 +941,7 @@
       const turnAttr = container.getAttribute('data-turn');
       const isUser = turnAttr === 'user' || Boolean(container.querySelector('.user-message-bubble-color')) || /^(you said|你说|您说)/i.test(srText);
       const isAssistant = turnAttr === 'assistant' || Boolean(container.querySelector('.agent-turn')) || /^(chatgpt said|chatgpt\s*说)/i.test(srText);
-      if (role === 'user' && isUser && !isAssistant) {
-        seen.add(container);
-        for (let anc = container.parentElement; anc && anc !== root; anc = anc.parentElement) {
-          if (anyAncestors.has(anc)) break;
-          anyAncestors.add(anc);
-        }
-        result.push(container);
-      } else if (role === 'assistant' && isAssistant && !isUser) {
+      if ((role === 'user' && isUser && !isAssistant) || (role === 'assistant' && isAssistant && !isUser)) {
         seen.add(container);
         for (let anc = container.parentElement; anc && anc !== root; anc = anc.parentElement) {
           if (anyAncestors.has(anc)) break;
@@ -1169,15 +1169,9 @@
   function findCodeSurfaceFor(spec, pre, surfaces) {
     if (!pre) return null;
     if (Array.isArray(surfaces) && surfaces.length) {
-      let surfaceSet = activeScanCache?.byNode?.get('codeSurfaceSet')?.get(surfaces);
-      if (!surfaceSet && surfaces.length > 4) {
-        surfaceSet = new Set(surfaces);
-        if (activeScanCache) {
-          let m = activeScanCache.byNode.get('codeSurfaceSet');
-          if (!m) { m = new Map(); activeScanCache.byNode.set('codeSurfaceSet', m); }
-          m.set(surfaces, surfaceSet);
-        }
-      }
+      const surfaceSet = surfaces.length > 4
+        ? getScanNodeCache('codeSurfaceSet', surfaces, () => new Set(surfaces))
+        : null;
       if (surfaceSet && pre.parentElement !== undefined) {
         for (let cur = pre; cur; cur = cur.parentElement) {
           if (surfaceSet.has(cur)) return cur;
@@ -1222,20 +1216,17 @@
   }
   function findCodeHeaderFor(spec, surface, pre, headers) {
     if (Array.isArray(headers) && headers.length && surface && surface !== pre) {
-      let byAncestor = activeScanCache?.byNode?.get('codeHeaderByAncestor')?.get(headers);
-      if (!byAncestor && headers.length > 4) {
-        byAncestor = new Map();
-        for (const header of headers) {
-          for (let cur = header?.parentElement, d = 0; cur && d < 6; cur = cur.parentElement, d++) {
-            if (!byAncestor.has(cur)) byAncestor.set(cur, header);
+      const byAncestor = headers.length > 4
+        ? getScanNodeCache('codeHeaderByAncestor', headers, () => {
+          const map = new Map();
+          for (const header of headers) {
+            for (let cur = header?.parentElement, d = 0; cur && d < 6; cur = cur.parentElement, d++) {
+              if (!map.has(cur)) map.set(cur, header);
+            }
           }
-        }
-        if (activeScanCache) {
-          let m = activeScanCache.byNode.get('codeHeaderByAncestor');
-          if (!m) { m = new Map(); activeScanCache.byNode.set('codeHeaderByAncestor', m); }
-          m.set(headers, byAncestor);
-        }
-      }
+          return map;
+        })
+        : null;
       if (byAncestor) {
         const fast = byAncestor.get(surface);
         if (fast) return fast;
@@ -1306,7 +1297,7 @@
   // grid. When no child carries a named area, a host with composerGridSlots identifies the slots by role
   // instead: leading holds the add button, primary the editor, trailing is the only control-bearing child
   // after primary. content.js marks those existing children reversibly (data-op-composer-<slot>) and
-  // hosts.css names their areas; nothing is moved or wrapped (ADR-0002). An unknown layout stays native.
+  // styles/host-*.css name their areas; nothing is moved or wrapped (ADR-0002). An unknown layout stays native.
   const COMPOSER_SLOT_MARKS = ['data-op-composer-leading', 'data-op-composer-primary', 'data-op-composer-trailing'];
   const isAreaName = value => Boolean(value) && !/^(?:auto|-?\d+|span(?:\s+\d+)?)$/.test(value);
   function composerGridSlots(spec, grid, editor, view) {

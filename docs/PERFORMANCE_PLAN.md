@@ -13,24 +13,27 @@
 
 | 指标（25× 长对话夹具） | ChatGPT `v0.4.4` | ChatGPT `v0.4.5` | Gemini `v0.4.4` | Gemini `v0.4.5` | v0.4.5 门禁阈值 |
 |---|---:|---:|---:|---:|---|
-| **冷启动初始化 `init`** | 8,985 ms（108 recalc） | **194.8 ms**（5 recalc，59 `gCS`） | 8,922 ms（109 recalc） | **233.3 ms**（5 recalc，369 `gCS`） | `<= 250 ms`（`recalcs <= 6`） |
-| **稳态全量 `scan()`（含估算）** | 290.3 ms / 163,836 `gCS` | **10.4 ms** / **59 `gCS`** | 117.1 ms / 65,192 `gCS` | **14.0 ms** / **69 `gCS`** | `<= 15 ms`（`gCS <= 1,500`） |
-| **稳态 `scan()`（不含估算）** | 300.6 ms / 160,036 `gCS` | **9.7 ms** / **59 `gCS`** | 115.5 ms / 64,392 `gCS` | **8.2 ms** / **69 `gCS`** | — |
+| **冷启动初始化 `init`** | 8,985 ms（108 recalc） | **184.6 ms**（4 recalc，520 `gCS`） | 8,922 ms（109 recalc） | **200.4 ms**（4 recalc，781 `gCS`） | `<= 250 ms`（`recalcs <= 6`） |
+| **稳态全量 `scan()`（含估算）** | 290.3 ms / 163,836 `gCS` | **11.8 ms** / **520 `gCS`** | 117.1 ms / 65,192 `gCS` | **13.2 ms** / **482 `gCS`** | `<= 15 ms`（`gCS <= 1,500`） |
+| **稳态 `scan()`（不含估算）** | 300.6 ms / 160,036 `gCS` | **10.0 ms** / **520 `gCS`** | 115.5 ms / 64,392 `gCS` | **14.1 ms** / **482 `gCS`** | — |
 | **稳态冗余属性写（`setAttr`/`rmAttr`）** | 557 / 225 | **0 / 0** | 457 / 125 | **0 / 0** | `0 / 0` |
-| **单帧滚动主线程 JS（`scroll` → rAF）** | 11.76 ms（墙钟 24.0 ms，7,661 `gCS`，107 `gBCR`） | **0.62 ms**（**0 `gCS`**，**3 `gBCR`**） | 9.81 ms（墙钟 21.4 ms，7,365 `gCS`，107 `gBCR`） | **0.67 ms**（**0 `gCS`**，**11 `gBCR`**） | `script <= 4 ms`（`gCS <= 50`） |
-| **流式爆发（30 token / 900 ms + 250 ms 尾稳）** | 3,040 ms（JS 1,578 ms + Recalc 362 ms，811,580 `gCS`，580 `cloneNode`） | **1,186.6 ms**（JS **9.24 ms** + Recalc **71.01 ms**，**0 `gCS`**，**0 `cloneNode`**） | 1,930 ms（JS 598 ms + Recalc 239 ms，323,560 `gCS`，130 `cloneNode`） | **1,173.2 ms**（JS **9.34 ms** + Recalc **6.64 ms**，**0 `gCS`**，**0 `cloneNode`**） | 墙钟 `<= 1,350 ms`（含 1,150 ms 定时器下限），主线程活跃 `<= 150 ms`，`cloneNode = 0`，`gCS <= 5,000` |
-| **安装包体积（Chrome / Firefox ZIP）** | 289,057 B / 289,177 B（29 文件） | **260,593 B / 260,712 B**（32 文件，净减 ~9.8%） | — | — | 确定性双次构建 SHA-256 一致 |
+| **单帧滚动主线程（`script+recalc+layout`）** | 11.76 ms JS（墙钟 24.0 ms，7,661 `gCS`，107 `gBCR`） | **0.77 ms**（JS 0.39 + Recalc 0.30 + Layout 0.08，**0 `gCS`**，**3 `gBCR`**） | 9.81 ms JS（墙钟 21.4 ms，7,365 `gCS`，107 `gBCR`） | **1.10 ms**（JS 0.66 + Recalc 0.32 + Layout 0.12，**0 `gCS`**，**11 `gBCR`**） | `<= 4 ms`（`gCS <= 50`） |
+| **流式爆发（30 token / 900 ms + 250 ms 尾稳）** | 3,040 ms（JS 1,578 ms + Recalc 362 ms，811,580 `gCS`，580 `cloneNode`） | 发包 **943.9 ms** / 含尾稳 **1,233.9 ms**（JS **8.55 ms** + Recalc **69.66 ms**，**0 `gCS`**，**0 `cloneNode`**） | 1,930 ms（JS 598 ms + Recalc 239 ms，323,560 `gCS`，130 `cloneNode`） | 发包 **923.7 ms** / 含尾稳 **1,178.1 ms**（JS **9.87 ms** + Recalc **6.66 ms**，**0 `gCS`**，**0 `cloneNode`**） | 发包 `<= 1,100 ms`，含尾稳 `<= 1,350 ms`，主线程活跃 `<= 150 ms`，`cloneNode = 0`，`gCS <= 5,000` |
+| **安装包体积（Chrome / Firefox ZIP）** | 289,057 B / 289,177 B（29 文件） | **263,325 B / 263,444 B**（32 文件，净减 ~8.9%） | — | — | 确定性双次构建 SHA-256 一致 |
 
-> **流式爆发时间口径说明**：`tests/perf-benchmark.mjs` 中 `streamBurst` 以 `30 × setTimeout(30)`（900 ms 发包）+ `setTimeout(250)`（250 ms 尾稳）驱动，操作系统定时器下限约 `1,150–1,190 ms`；因此 `BUDGETS_25X` 同时校验总墙钟 `<= 1,350 ms` 与实际主线程活跃开销（`scriptMs + recalcMs + layoutMs <= 150 ms`，实测 ChatGPT `80.3 ms`、Gemini `16.0 ms`）、`cloneNode === 0` 与 `gCS <= 5,000`（实测均为 `0`）。
+> **口径透明声明**：
+> 1. **冷启动 `init` 与长会话分块公式渲染**：当会话含 `> 12` 个合格公式块时，首帧同步渲染前 6 个 + 末尾 2 个（覆盖顶部与滚底视口），其余中段离屏公式按 16 块/批异步排空（`drainFormulaChunks`）；`tests/perf-benchmark.mjs --assert` 强制断言进入稳态 `scan()` 前全部 `100/100` 有效公式均已完整渲染并挂载（且 `scan()` / `scroll` / `stream` 均在 100 公式 / 14,025 MathML 节点全量在 DOM 状态下测得）。
+> 2. **单帧滚动主线程预算**：`tests/perf-benchmark.mjs --assert` 对滚动帧校验完整主线程耗时 `scriptMs + recalcMs + layoutMs <= 4 ms`（而非仅 JS 耗时）。
+> 3. **流式爆发时间口径**：`streamBurst` 由 `30 × setTimeout(30)`（900 ms 发包窗口，单独校验 `burstMs <= 1,100 ms`）+ `setTimeout(250)`（250 ms 尾稳同步，合并校验 `wallMs <= 1,350 ms`）驱动，同时校验活跃主线程 `scriptMs + recalcMs + layoutMs <= 150 ms`、`cloneNode === 0` 与 `gCS <= 5,000`。
 
 ### 1.2 1× 基线对话表现（`v0.4.5`）
 
 | 场景 | ChatGPT 1× (6 轮，215 节点) | Gemini 1× (4 轮，237 节点) |
 |---|---|---|
-| 冷启动初始化 `init` | 94.9 ms（2 recalc，59 `gCS`） | 95.3 ms（2 recalc，81 `gCS`） |
-| 稳态 `scan()`（含/不含估算） | 2.2 ms / 1.7 ms（59 `gCS`，0 写） | 2.1 ms / 1.9 ms（69 `gCS`，0 写） |
-| 单帧滚动主线程 JS | 0.45 ms（0 `gCS`，3 `gBCR`） | 0.59 ms（0 `gCS`，3 `gBCR`） |
-| 流式爆发（主线程活跃） | JS 8.07 ms + Recalc 16.73 ms（0 `gCS`，0 `cloneNode`） | JS 9.01 ms + Recalc 6.98 ms（0 `gCS`，0 `cloneNode`） |
+| 冷启动初始化 `init` | 95.1 ms（2 recalc，88 `gCS`） | 112.5 ms（2 recalc，109 `gCS`） |
+| 稳态 `scan()`（含/不含估算） | 2.1 ms / 1.6 ms（88 `gCS`，0 写） | 2.7 ms / 2.6 ms（98 `gCS`，0 写） |
+| 单帧滚动主线程（`script+recalc+layout`） | 0.72 ms（0 `gCS`，3 `gBCR`） | 0.94 ms（0 `gCS`，3 `gBCR`） |
+| 流式爆发（900 ms 发包 / 主线程活跃） | 925.4 ms（JS 8.59 ms + Recalc 20.29 ms，0 `gCS`，0 `cloneNode`） | 925.6 ms（JS 9.01 ms + Recalc 6.71 ms，0 `gCS`，0 `cloneNode`） |
 
 ---
 

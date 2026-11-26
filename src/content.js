@@ -69,12 +69,18 @@
   let formulaSkipCache = new WeakMap();
   let codeHeaderSvgCache = new WeakMap();
   let turnTokenCache = new WeakMap();
-  let dirtyTurns = new WeakSet();
+  let dirtyVialTurns = new WeakSet();
+  let dirtyRailTurns = new WeakSet();
   let railTurnTextCache = new WeakMap();
   let forceFullEstimate = true;
   let forceRailRecompute = true;
   let needOrphanPrune = true;
   const dirty = { surfaces: true, formulas: true, codes: true, rail: true, vial: true, thoughts: true, geometry: true };
+  function markTurnDirty(turn) {
+    if (!turn) return;
+    dirtyVialTurns.add(turn);
+    dirtyRailTurns.add(turn);
+  }
   function markAllDirty({ fullEstimate = false, fullRail = false, pruneOrphans = false } = {}) {
     dirty.surfaces = dirty.formulas = dirty.codes = dirty.rail = dirty.vial = dirty.thoughts = dirty.geometry = true;
     if (fullEstimate) forceFullEstimate = true;
@@ -83,7 +89,8 @@
   }
   function clearTurnCaches() {
     turnTokenCache = new WeakMap();
-    dirtyTurns = new WeakSet();
+    dirtyVialTurns = new WeakSet();
+    dirtyRailTurns = new WeakSet();
     railTurnTextCache = new WeakMap();
     prevRailTurns = [];
     lastRailLang = '';
@@ -398,7 +405,7 @@
     } catch (_) { return; }
     fadeEntries.push({ id: ++nextFadeId, node, start, end: text.length, clampedEnd: text.length, created: performance.now(), range });
     if (fadeEntries.length > 64) fadeEntries = fadeEntries.slice(-64);
-    if (!fadeFrame) paintHighlights(true);
+    if (!fadeFrame) fadeFrame = requestAnimationFrame(() => paintHighlights(true));
   }
   function markResponseActivity() {
     if (!enabled || document.hidden) return;
@@ -486,7 +493,7 @@
       const targetEl = record.target && record.target.nodeType === 1 ? record.target : record.target?.parentElement;
       if (record.type === 'characterData') {
         const isAssistant = enclosed ? enclosed.role === 'assistant' : adapter.isAssistantNode(record.target);
-        if (enclosed) dirtyTurns.add(enclosed.turn);
+        if (enclosed) markTurnDirty(enclosed.turn);
         dirty.vial = true;
         anyDirty = true;
         if (enclosed?.role === 'user') { dirty.rail = true; structuralDirty = true; }
@@ -514,7 +521,7 @@
         }
         if (record.attributeName === 'class' && !isRelevantClassTarget(record.target)) continue;
         if (enclosed) {
-          dirtyTurns.add(enclosed.turn);
+          markTurnDirty(enclosed.turn);
           dirty.vial = true;
           if (enclosed.role === 'user') dirty.rail = true;
         }
@@ -537,7 +544,7 @@
           }
         }
       }
-      if (enclosed) dirtyTurns.add(enclosed.turn);
+      if (enclosed) markTurnDirty(enclosed.turn);
       anyDirty = true;
       if (!hasStructural) {
         dirty.vial = true;
@@ -687,7 +694,7 @@
     entry.lastHint = hint;
     entry.lastHintKey = hintKey;
     if (!precomputed && !Formula.isLikelyLatex(source, hint)) {
-      formulaSkipCache.set(entry.pre, { code, surface: entry.surface, header: entry.header, source, hint, hintKey, status: 'non-latex' });
+      formulaSkipCache.set(entry.pre, { code, surface: entry.surface, header: entry.header, source, hint, hintKey });
       cleanupFormula(entry.pre, entry);
       if (syncFold) syncCodes();
       return;
@@ -706,7 +713,7 @@
         if (syncFold) syncCodes();
         return;
       }
-      formulaSkipCache.set(entry.pre, { code, surface: entry.surface, header: entry.header, source, hint, hintKey, status: 'failed' });
+      formulaSkipCache.set(entry.pre, { code, surface: entry.surface, header: entry.header, source, hint, hintKey });
       cleanupFormula(entry.pre, entry);
       if (syncFold) syncCodes();
       return;
@@ -858,11 +865,11 @@
       const hint = Formula.extractLanguageHint(surface, pre, code, header);
       const hintKey = (header || surface === pre) ? formulaHintKey(surface, pre, code, header) : null;
       if (skipped && skipped.source === source && skipped.hint === hint) {
-        formulaSkipCache.set(pre, { code, surface, header, source, hint, hintKey, status: skipped.status });
+        formulaSkipCache.set(pre, { code, surface, header, source, hint, hintKey });
         continue;
       }
       if (!Formula.isLikelyLatex(source, hint)) {
-        formulaSkipCache.set(pre, { code, surface, header, source, hint, hintKey, status: 'non-latex' });
+        formulaSkipCache.set(pre, { code, surface, header, source, hint, hintKey });
         continue;
       }
       formulaSkipCache.delete(pre);
@@ -974,11 +981,12 @@
     if (returnFocus) toggle.focus();
   }
   function readRailTurnText(turn) {
-    if (!forceRailRecompute && !dirtyTurns.has(turn) && railTurnTextCache.has(turn)) {
+    if (!forceRailRecompute && !dirtyRailTurns.has(turn) && railTurnTextCache.has(turn)) {
       return railTurnTextCache.get(turn);
     }
     const text = Adapters.cleanTurnText(turn);
     railTurnTextCache.set(turn, text);
+    dirtyRailTurns.delete(turn);
     return text;
   }
   function renderRailList(turns, turnTexts) {
@@ -1046,7 +1054,7 @@
     let turnsUnchanged = !forceRailRecompute && railSignature !== '' && lastRailLang === cfg.language && turns.length === prevRailTurns.length;
     if (turnsUnchanged) {
       for (let i = 0; i < turns.length; i++) {
-        if (turns[i] !== prevRailTurns[i] || dirtyTurns.has(turns[i])) { turnsUnchanged = false; break; }
+        if (turns[i] !== prevRailTurns[i] || dirtyRailTurns.has(turns[i])) { turnsUnchanged = false; break; }
       }
     }
     if (turnsUnchanged) return;
@@ -1236,12 +1244,12 @@
       const uTurns = snap ? snap.userTurns : adapter.userTurns();
       const aTurns = snap ? snap.assistantTurns : adapter.assistantTurns();
       const readTurnEstimate = node => {
-        if (!forceFullEstimate && !dirtyTurns.has(node) && turnTokenCache.has(node)) {
+        if (!forceFullEstimate && !dirtyVialTurns.has(node) && turnTokenCache.has(node)) {
           return turnTokenCache.get(node);
         }
         const computed = Adapters.estimateTurnTokens(node);
         turnTokenCache.set(node, computed);
-        dirtyTurns.delete(node);
+        dirtyVialTurns.delete(node);
         return computed;
       };
       for (const node of uTurns) {
@@ -1574,7 +1582,7 @@
     }
     if (nextPrimary !== primarySurface) {
       surfaceObserver?.disconnect();surfaceObserver=null;primarySurface=nextPrimary;
-      primaryResizeArmed = false; lastPrimaryResizeKey = '';
+      primaryResizeState.armed = false; primaryResizeState.key = '';
       if (primarySurface && global.ResizeObserver) {
         surfaceObserver=new ResizeObserver(primaryResized);
         surfaceObserver.observe(primarySurface);
@@ -1582,7 +1590,7 @@
     }
     if (nextObservedDock !== observedDock) {
       dockObserver?.disconnect(); dockObserver = null; observedDock = nextObservedDock;
-      dockResizeArmed = false; lastDockResizeKey = '';
+      dockResizeState.armed = false; dockResizeState.key = '';
       if (observedDock && global.ResizeObserver) {
         dockObserver = new ResizeObserver(dockResized);
         dockObserver.observe(observedDock);
@@ -1607,14 +1615,14 @@
       }
     }
   }
-  function updateAmbientGeometry() {
+  function flushScheduledGeometry() {
     geometryFrame=null;
     if (lostOwnership() || !enabled || stopped || document.hidden) return;
     syncAllGeometry({ includeReadingWidth: false });
   }
   function scheduleGeometry() {
     if (lostOwnership() || !enabled || stopped || document.hidden || (!ambient && !dock && !dockOverlaidHost && !alphaFadeDock) || geometryFrame) return;
-    geometryFrame=requestAnimationFrame(updateAmbientGeometry);
+    geometryFrame=requestAnimationFrame(flushScheduledGeometry);
   }
   /* Root custom properties owned by the runtime (review fix S2), following the --op-ambient-alpha pattern in
    * config-schema.js: the first write saves the original inline value and priority, clearing restores them,
@@ -1653,7 +1661,7 @@
     if (!rootVarOriginals.size && !rootHadStyle && root.getAttribute('style')?.trim()==='') root.removeAttribute('style');
   }
   /* v0.3.1 #21 Content Width Presets: one root reading width computed from the main area's width.
-   * hosts.css applies it only to the adapter's declared width limiters (no per-node marks).
+   * styles/host-*.css apply it only to each adapter's declared width limiters (no per-node marks).
    * `standard`, a disabled site and stop restore both variables, restoring the native width. */
   let readingWidth='';
   function syncReadingWidth(precomputedRect) {
@@ -1676,7 +1684,7 @@
   /* Review fix P2: dock clearance. A composer dock that overlays the conversation scroller (Gemini's
    * absolute input container) rather than following the thread in flow (ChatGPT's sticky footer) covers the
    * last reply's action row once the two-row Composer Surface makes it taller. The overlaid scroller carries a
-   * reversible mark; hosts.css adds an empty ::after of --op-dock-clearance after the thread. The clearance is
+   * reversible mark; styles/common.css adds an empty ::after of --op-dock-clearance after the thread. The clearance is
    * the measured overlap at the scroll end plus a small gap; the ::after changes neither the scroller box nor
    * the dock, so the measurement never feeds back on itself. */
   const DOCK_GAP=8;
@@ -1767,11 +1775,8 @@
     const popover = dock?.querySelector('.op-vial-popover');
     if (popover && !popover.hidden) syncDockPopoverPosition();
   }
-  function syncDockAvoidance(precomputedComposer) {
-    applyDockAvoidance(readDockAvoidance(precomputedComposer));
-  }
-  let primaryResizeArmed = false, lastPrimaryResizeKey = '';
-  let dockResizeArmed = false, lastDockResizeKey = '';
+  const primaryResizeState = { armed: false, key: '' };
+  const dockResizeState = { armed: false, key: '' };
   let lastGeometryPass = 0;
   function resizeEntryKey(entries) {
     const first = Array.isArray(entries) && entries.length ? entries[0] : null;
@@ -1806,38 +1811,24 @@
     applyScrollerFade(measured.fadeOverlap);
     applyDockAvoidance(measured.avoidance);
   }
-  function primaryResized(entries) {
+  function handleObservedResize(state, entries, includeReadingWidth) {
     if (lostOwnership() || !enabled || stopped) return;
     const key = resizeEntryKey(entries);
     if (key) {
-      if (!primaryResizeArmed) {
-        primaryResizeArmed = true;
-        lastPrimaryResizeKey = key;
+      if (!state.armed) {
+        state.armed = true;
+        state.key = key;
         if (lastGeometryPass === passes) return;
-      } else if (key === lastPrimaryResizeKey) {
+      } else if (key === state.key) {
         return;
       } else {
-        lastPrimaryResizeKey = key;
+        state.key = key;
       }
     }
-    syncAllGeometry({ includeReadingWidth: true });
+    syncAllGeometry({ includeReadingWidth });
   }
-  function dockResized(entries) {
-    if (lostOwnership() || !enabled || stopped) return;
-    const key = resizeEntryKey(entries);
-    if (key) {
-      if (!dockResizeArmed) {
-        dockResizeArmed = true;
-        lastDockResizeKey = key;
-        if (lastGeometryPass === passes) return;
-      } else if (key === lastDockResizeKey) {
-        return;
-      } else {
-        lastDockResizeKey = key;
-      }
-    }
-    syncAllGeometry({ includeReadingWidth: false });
-  }
+  const primaryResized = entries => handleObservedResize(primaryResizeState, entries, true);
+  const dockResized = entries => handleObservedResize(dockResizeState, entries, false);
   function syncAmbientDom() {
     if (lostOwnership()) return;
     const needed=(cfg.ambientIntensity>0 && (cfg.ambientStyle!=='none' || cfg.ambientTexture!=='off')) || cfg.semanticAura;
@@ -1846,8 +1837,18 @@
       ambient=own(make('div','op-ambient'));ambient.id='op-ambient-stage';ambient.setAttribute('aria-hidden','true');
       const wash=make('div','op-ambient-wash');
       for (const layer of ['one','two','three']) wash.append(make('i','op-aurora op-aurora-'+layer));
-      // Decorative glyph texture is painted via an inline CSS SVG tile (zero DOM text nodes).
-      ambient.append(wash,make('div','op-ambient-grid'),make('div','op-ambient-glyphs'),make('div','op-ambient-rim'));
+      ambient.append(wash,make('div','op-ambient-grid'),make('div','op-ambient-rim'));
+    }
+    // Lazily mount the inline-SVG glyph layer only when glyph texture is enabled (zero text nodes).
+    const needGlyphs = cfg.ambientIntensity > 0 && cfg.ambientTexture === 'glyphs';
+    const existingGlyphs = ambient.querySelector('.op-ambient-glyphs');
+    if (needGlyphs && !existingGlyphs) {
+      const glyphs = make('div', 'op-ambient-glyphs');
+      const rim = ambient.querySelector('.op-ambient-rim');
+      if (rim && typeof rim.before === 'function') rim.before(glyphs);
+      else ambient.append(glyphs);
+    } else if (!needGlyphs && existingGlyphs) {
+      existingGlyphs.remove();
     }
     const ambientActive = cfg.ambientIntensity > 0 && cfg.ambientStyle !== 'none';
     setAttr(ambient, 'data-op-ambient-active', String(ambientActive));
@@ -1936,15 +1937,18 @@
   function shouldIgnoreScrollTarget(target) {
     if (!target || target === document || target === document.documentElement || target === document.body || target === document.scrollingElement || target === global) return false;
     if (Adapters.isOwned(target)) return true;
-    if (target.closest?.('[data-op-sidebar-surface="true"], pre, code, .op-formula-math, dialog, [role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"]')) return true;
-    for (let cur = target; cur; cur = cur.parentElement) {
-      if (Adapters.isOwned(cur)) return true;
-      const tag = (cur.localName || cur.tagName || '').toLowerCase();
-      if (tag === 'pre' || tag === 'code' || tag === 'dialog') return true;
-      if (cur.getAttribute?.('data-op-sidebar-surface') === 'true' || cur.getAttribute?.('aria-modal') === 'true') return true;
-      const role = cur.getAttribute?.('role');
-      if (role === 'dialog' || role === 'menu' || role === 'listbox') return true;
-      if (cur.classList?.contains?.('op-formula-math')) return true;
+    if (typeof target.closest === 'function') {
+      if (target.closest('[data-op-sidebar-surface="true"], pre, code, .op-formula-math, dialog, [role="dialog"], [aria-modal="true"], [role="menu"], [role="listbox"]')) return true;
+    } else {
+      for (let cur = target; cur; cur = cur.parentElement) {
+        if (Adapters.isOwned(cur)) return true;
+        const tag = (cur.localName || cur.tagName || '').toLowerCase();
+        if (tag === 'pre' || tag === 'code' || tag === 'dialog') return true;
+        if (cur.getAttribute?.('data-op-sidebar-surface') === 'true' || cur.getAttribute?.('aria-modal') === 'true') return true;
+        const role = cur.getAttribute?.('role');
+        if (role === 'dialog' || role === 'menu' || role === 'listbox') return true;
+        if (cur.classList?.contains?.('op-formula-math')) return true;
+      }
     }
     if (primarySurface?.isConnected && target !== primarySurface && !primarySurface.contains?.(target) && !target.contains?.(primarySurface)) return true;
     return false;

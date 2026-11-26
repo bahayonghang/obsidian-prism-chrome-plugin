@@ -66,7 +66,8 @@ const BUDGETS_25X = Object.freeze({
   steadyRemoveAttr: 0,
   scrollMs: 4,
   scrollGcs: 50,
-  // 30 steps x 30ms + 250ms trailing settle has ~1150-1190ms OS timer floor; budget caps both wall time and active main-thread work.
+  // 30 steps x 30ms has ~900ms emission floor (streamBurstMs <= 1100ms) plus 250ms trailing settle (streamWallMs <= 1350ms).
+  streamBurstMs: 1100,
   streamWallMs: 1350,
   streamMainThreadMs: 150,
   streamCloneNode: 0,
@@ -243,6 +244,7 @@ async function profileHost(host, baseHtml, cloneCount) {
         return origST.call(this, fn, delay, ...rest);
       };
       await new Promise(r => origST(r, 800));
+      const formulasRendered = document.querySelectorAll('.op-formula-preview').length;
       window.ObsidianPrismRuntime.refresh();
       await new Promise(r => origST(r, 360));
       const withEstimate = measured;
@@ -251,7 +253,7 @@ async function profileHost(host, baseHtml, cloneCount) {
       await new Promise(r => origST(r, 360));
       const withoutEstimate = measured;
       window.setTimeout = origST;
-      return { withEstimate, withoutEstimate };
+      return { withEstimate, withoutEstimate, formulasRendered };
     });
 
     const mScroll0 = await getMetrics();
@@ -281,8 +283,9 @@ async function profileHost(host, baseHtml, cloneCount) {
         textNode.nodeValue += ` token_${i} `;
         await new Promise(r => setTimeout(r, 30));
       }
+      const burstMs = +(performance.now() - s).toFixed(2);
       await new Promise(r => setTimeout(r, 250));
-      return { wallMs: +(performance.now() - s).toFixed(2), counts: window.__getPerfCounts() };
+      return { burstMs, wallMs: +(performance.now() - s).toFixed(2), counts: window.__getPerfCounts() };
     }, host);
     const mStream1 = await getMetrics();
 
@@ -293,6 +296,7 @@ async function profileHost(host, baseHtml, cloneCount) {
       domStats,
       cssInjectMs,
       evalTimes,
+      formulasRendered: exactScan.formulasRendered,
       init: { ms: initMs, counts: initCounts, cdp: diff(mInit0, mInit1) },
       scanWithEstimate: exactScan.withEstimate,
       scanWithoutEstimate: exactScan.withoutEstimate,
@@ -314,27 +318,31 @@ if (jsonOnly) {
   console.log(JSON.stringify(results, null, 2));
 } else {
   for (const r of results) {
-    console.log(`\n=== ${r.host.toUpperCase()} ${r.cloneCount}x (${r.domStats.turns} turns, ${r.domStats.pres} pre, ${r.domStats.totalElements} els) ===`);
+    const scrollMainMs = +(r.scrollFrame.cdp.scriptMs + r.scrollFrame.cdp.recalcMs + r.scrollFrame.cdp.layoutMs).toFixed(2);
+    console.log(`\n=== ${r.host.toUpperCase()} ${r.cloneCount}x (${r.domStats.turns} turns, ${r.domStats.pres} pre, ${r.formulasRendered} formulas, ${r.domStats.totalElements} els) ===`);
     console.log(`  init:   ${r.init.ms}ms | recalcs=${r.init.cdp.recalcs} (${r.init.cdp.recalcMs}ms) | layouts=${r.init.cdp.layouts} (${r.init.cdp.layoutMs}ms) | gCS=${r.init.counts.gcs}`);
     console.log(`  scan+E: ${r.scanWithEstimate?.ms}ms | gCS=${r.scanWithEstimate?.counts.gcs} | qsa=${r.scanWithEstimate?.counts.qsa} | clone=${r.scanWithEstimate?.counts.cloneNode} | setAttr=${r.scanWithEstimate?.counts.setAttr} | rmAttr=${r.scanWithEstimate?.counts.removeAttr}`);
     console.log(`  scan-E: ${r.scanWithoutEstimate?.ms}ms | gCS=${r.scanWithoutEstimate?.counts.gcs} | setAttr=${r.scanWithoutEstimate?.counts.setAttr} | rmAttr=${r.scanWithoutEstimate?.counts.removeAttr}`);
-    console.log(`  scroll: ${r.scrollFrame.ms}ms (script=${r.scrollFrame.cdp.scriptMs}ms) | gCS=${r.scrollFrame.counts.gcs} | gBCR=${r.scrollFrame.counts.gbcr} | setAttr=${r.scrollFrame.counts.setAttr} | rmAttr=${r.scrollFrame.counts.removeAttr}`);
-    console.log(`  stream: ${r.streamBurst.wallMs}ms (script=${r.streamBurst.cdp.scriptMs}ms, recalc=${r.streamBurst.cdp.recalcMs}ms) | gCS=${r.streamBurst.counts.gcs} | clone=${r.streamBurst.counts.cloneNode}`);
+    console.log(`  scroll: ${r.scrollFrame.ms}ms (main=${scrollMainMs}ms: script=${r.scrollFrame.cdp.scriptMs}ms, recalc=${r.scrollFrame.cdp.recalcMs}ms, layout=${r.scrollFrame.cdp.layoutMs}ms) | gCS=${r.scrollFrame.counts.gcs} | gBCR=${r.scrollFrame.counts.gbcr} | setAttr=${r.scrollFrame.counts.setAttr} | rmAttr=${r.scrollFrame.counts.removeAttr}`);
+    console.log(`  stream: burst=${r.streamBurst.burstMs}ms / settle=${r.streamBurst.wallMs}ms (script=${r.streamBurst.cdp.scriptMs}ms, recalc=${r.streamBurst.cdp.recalcMs}ms) | gCS=${r.streamBurst.counts.gcs} | clone=${r.streamBurst.counts.cloneNode}`);
   }
 }
 
 if (shouldAssert) {
   for (const r of results.filter(x => x.cloneCount === 25)) {
     const tag = `${r.host} 25x`;
+    assert.equal(r.formulasRendered, 100, `${tag}: expected all 100 valid formulas rendered before steady scan (got ${r.formulasRendered})`);
     assert.ok(r.init.ms <= BUDGETS_25X.initMs, `${tag}: init ${r.init.ms}ms > ${BUDGETS_25X.initMs}ms`);
     assert.ok(r.init.cdp.recalcs <= BUDGETS_25X.initRecalcs, `${tag}: init recalcs ${r.init.cdp.recalcs} > ${BUDGETS_25X.initRecalcs}`);
     assert.ok(r.scanWithEstimate.ms <= BUDGETS_25X.scanMs, `${tag}: scan ${r.scanWithEstimate.ms}ms > ${BUDGETS_25X.scanMs}ms`);
     assert.ok(r.scanWithEstimate.counts.gcs <= BUDGETS_25X.scanGcs, `${tag}: scan gCS ${r.scanWithEstimate.counts.gcs} > ${BUDGETS_25X.scanGcs}`);
     assert.equal(r.scanWithoutEstimate.counts.setAttr, BUDGETS_25X.steadySetAttr, `${tag}: steady setAttr ${r.scanWithoutEstimate.counts.setAttr} !== 0`);
     assert.equal(r.scanWithoutEstimate.counts.removeAttr, BUDGETS_25X.steadyRemoveAttr, `${tag}: steady removeAttr ${r.scanWithoutEstimate.counts.removeAttr} !== 0`);
-    assert.ok(r.scrollFrame.cdp.scriptMs <= BUDGETS_25X.scrollMs, `${tag}: scroll script ${r.scrollFrame.cdp.scriptMs}ms > ${BUDGETS_25X.scrollMs}ms`);
+    const scrollMainMs = +(r.scrollFrame.cdp.scriptMs + r.scrollFrame.cdp.recalcMs + r.scrollFrame.cdp.layoutMs).toFixed(2);
+    assert.ok(scrollMainMs <= BUDGETS_25X.scrollMs, `${tag}: scroll main-thread ${scrollMainMs}ms > ${BUDGETS_25X.scrollMs}ms`);
     assert.ok(r.scrollFrame.counts.gcs <= BUDGETS_25X.scrollGcs, `${tag}: scroll gCS ${r.scrollFrame.counts.gcs} > ${BUDGETS_25X.scrollGcs}`);
-    assert.ok(r.streamBurst.wallMs <= BUDGETS_25X.streamWallMs, `${tag}: stream ${r.streamBurst.wallMs}ms > ${BUDGETS_25X.streamWallMs}ms`);
+    assert.ok(r.streamBurst.burstMs <= BUDGETS_25X.streamBurstMs, `${tag}: stream burst ${r.streamBurst.burstMs}ms > ${BUDGETS_25X.streamBurstMs}ms`);
+    assert.ok(r.streamBurst.wallMs <= BUDGETS_25X.streamWallMs, `${tag}: stream settle ${r.streamBurst.wallMs}ms > ${BUDGETS_25X.streamWallMs}ms`);
     const streamMainMs = +(r.streamBurst.cdp.scriptMs + r.streamBurst.cdp.recalcMs + r.streamBurst.cdp.layoutMs).toFixed(2);
     assert.ok(streamMainMs <= BUDGETS_25X.streamMainThreadMs, `${tag}: stream main-thread ${streamMainMs}ms > ${BUDGETS_25X.streamMainThreadMs}ms`);
     assert.equal(r.streamBurst.counts.cloneNode, BUDGETS_25X.streamCloneNode, `${tag}: stream cloneNode ${r.streamBurst.counts.cloneNode} !== 0`);

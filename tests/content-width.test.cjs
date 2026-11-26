@@ -1,6 +1,6 @@
 'use strict';
 /* v0.3.1 #21 Content Width Presets: per-site width-limiter declarations, the midpoint target math,
- * and a static guard that keeps the hosts.css width rules in sync with those declarations. */
+ * and a static guard that keeps the styles/host-*.css width rules in sync with those declarations. */
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -101,7 +101,7 @@ test('standard adds no override; full reserves a left edge and the Conversation 
   assert.equal(A.contentWidthTarget(768, 'full', 0, 860), null, 'no main area, no override');
 });
 
-/* Static guard (declaration <-> CSS sync), not a rendering check: hosts.css cannot read the adapter, so its
+/* Static guard (declaration <-> CSS sync), not a rendering check: styles/host-*.css cannot read the adapter, so their
  * width rules repeat the selectors declared in src/adapters.js (contentWidth.targets / composerTargets), which
  * own them. This guard fails when the two lists drift apart in either direction. What the reader sees (widths,
  * midpoint, bubble cap, native restore) is measured in tests/live-width.mjs. */
@@ -152,7 +152,7 @@ function cssWidthLimiters(host) {
   return out;
 }
 
-test('static guard: hosts.css width rules size exactly the limiters each adapter declares without 820px ceiling or host-agnostic rules', () => {
+test('static guard: styles/host-*.css width rules size exactly the limiters each adapter declares without 820px ceiling or host-agnostic rules', () => {
   const A = adapters();
   for (const host of ['chatgpt', 'gemini']) {
     const block = contentWidthBlockCss(host);

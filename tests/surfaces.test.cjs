@@ -2485,12 +2485,13 @@ test('v0.4.5 #52: MutationObserver gates characterDataOldValue on streamChoreogr
   ctx.rafQueue.length = 0;
   bodyObserver.cb([{ type: 'characterData', target: textNode, oldValue: 'hello ', addedNodes: [], removedNodes: [] }]);
   assert.equal(createdRanges, 1, 'addTextFade should allocate Range once per fade entry');
-  assert.ok(ctx.rafQueue.length >= 1, 'paintHighlights should schedule subsequent fade frames via requestAnimationFrame');
+  assert.equal(highlightsMap.size, 0, 'addTextFade must defer initial CSS.highlights paint to requestAnimationFrame instead of painting synchronously in mutation delivery');
+  assert.ok(ctx.rafQueue.length >= 1, 'paintHighlights should schedule fade frames via requestAnimationFrame');
 
-  // Advance 2 frames (70ms each) -> Range must be reused (0 new createRange calls)
-  ctx.advanceTime(70);
+  // Advance 2 frames (70ms each) -> first rAF paints highlights, subsequent frame reuses same Range (0 new createRange calls)
   const frame1 = ctx.rafQueue.shift();
   frame1();
+  assert.ok(highlightsMap.size >= 1, 'first rAF tick should publish fade highlight to CSS.highlights');
   ctx.advanceTime(70);
   const frame2 = ctx.rafQueue.shift();
   frame2();
@@ -2499,7 +2500,7 @@ test('v0.4.5 #52: MutationObserver gates characterDataOldValue on streamChoreogr
   ctx.runtime.stop();
 });
 
-test('v0.4.5 #53: Ambient Stage uses zero glyph text nodes and scopes data-op-aura to #op-ambient-stage; overlaid dock marks data-op-thread-overlaid reversibly', async () => {
+test('v0.4.5 #53: Ambient Stage lazily mounts zero-text glyph layer and scopes data-op-aura to #op-ambient-stage; overlaid dock marks data-op-thread-overlaid reversibly', async () => {
   let aTurnRef = null;
   const ctx = createRuntimeDom({ ambientTexture: 'glyphs', ambientStyle: 'aurora', ambientIntensity: 65, semanticAura: true }, {
     host: 'chatgpt',
@@ -2512,9 +2513,21 @@ test('v0.4.5 #53: Ambient Stage uses zero glyph text nodes and scopes data-op-au
   const stage = e.primary.querySelector('#op-ambient-stage');
   assert.ok(stage, '#op-ambient-stage should be mounted');
   const glyphs = stage.querySelector('.op-ambient-glyphs');
-  assert.ok(glyphs, '.op-ambient-glyphs should be mounted');
+  assert.ok(glyphs, '.op-ambient-glyphs should be mounted when ambientTexture === glyphs');
   assert.equal(glyphs.textContent || '', '', '.op-ambient-glyphs must not inject 5,587-char DOM text node');
   assert.equal(stage.getAttribute('data-op-ambient-active'), 'true');
+
+  // Switching ambientTexture away from glyphs must lazily unmount .op-ambient-glyphs
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, ambientTexture: 'grid', ambientStyle: 'aurora', ambientIntensity: 65, semanticAura: true }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.equal(stage.querySelector('.op-ambient-glyphs'), null, '.op-ambient-glyphs should unmount when ambientTexture !== glyphs');
+  await ctx.h.schema.callApi(ctx.h.api.storage.local, 'set', {
+    [ctx.h.schema.STORAGE_KEY]: { ...ctx.h.schema.DEFAULT_CONFIG, enabled: true, ambientTexture: 'glyphs', ambientStyle: 'aurora', ambientIntensity: 65, semanticAura: true }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  assert.ok(stage.querySelector('.op-ambient-glyphs'), '.op-ambient-glyphs should remount when ambientTexture switches back to glyphs');
 
   // Overlaid dock must mark thread column directly (eliminating html:has([data-op-composer-overlaid="true"]))
   assert.equal(e.scrim.getAttribute('data-op-composer-overlaid'), 'true');
@@ -2538,4 +2551,38 @@ test('v0.4.5 #53: Ambient Stage uses zero glyph text nodes and scopes data-op-au
 
   ctx.runtime.stop();
   assert.equal(e.threadCol.getAttribute('data-op-thread-overlaid'), null);
+});
+
+test('v0.4.5 review: syncRail clears dirtyRailTurns independently even when contextVial is disabled', async () => {
+  let cleanCalls = 0;
+  let uTurnRef = null;
+  const ctx = createRuntimeDom({ contextVial: false, railOutline: true }, {
+    host: 'chatgpt',
+    cleanTurnText: node => {
+      if (node === uTurnRef) cleanCalls++;
+      return node.textContent || 'prompt';
+    }
+  });
+  await new Promise(resolve => setTimeout(resolve, 20));
+  const e = Object.fromEntries(ctx.elements);
+  uTurnRef = e.userTurn;
+
+  // Mutate the user turn while contextVial is disabled -> rail should recompute once, then cache-hit on steady scans
+  const p = ctx.makeEl('p');
+  const txt = { nodeType: 3, nodeValue: 'edited prompt', isConnected: true, parentElement: p };
+  p.append(txt);
+  e.userTurn.append(p);
+  e.userTurn.textContent = 'edited prompt';
+  cleanCalls = 0;
+  ctx.observers[0].cb([{ type: 'characterData', target: txt, oldValue: 'prompt', addedNodes: [], removedNodes: [] }]);
+  await new Promise(resolve => setTimeout(resolve, 210));
+  assert.equal(cleanCalls, 1, 'mutated user turn should recompute rail text once');
+
+  // Trigger a second scan without mutating the user turn again (via unrelated structural attribute)
+  cleanCalls = 0;
+  ctx.observers[0].cb([{ type: 'attributes', attributeName: 'aria-current', target: e.sidebar, addedNodes: [], removedNodes: [] }]);
+  await new Promise(resolve => setTimeout(resolve, 210));
+  assert.equal(cleanCalls, 0, 'subsequent scan must cache-hit railTurnTextCache without leaking dirty state from disabled contextVial');
+
+  ctx.runtime.stop();
 });
