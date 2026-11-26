@@ -216,12 +216,16 @@ async function profileHost(host, baseHtml, cloneCount) {
     });
 
     const mInit0 = await getMetrics();
-    const tInit0 = await page.evaluate(() => { window.__resetPerfCounts(); return performance.now(); });
-    await page.evaluate(code => (0, eval)(code), contentScriptEntry.src);
-    await page.waitForFunction(() => window.ObsidianPrismRuntime?.diagnostics().passes >= 1);
-    await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
-    const initMs = await page.evaluate(t0 => +(performance.now() - t0).toFixed(2), tInit0);
-    const initCounts = await page.evaluate(() => window.__getPerfCounts());
+    const { ms: initMs, counts: initCounts } = await page.evaluate(async code => {
+      window.__resetPerfCounts();
+      const t0 = performance.now();
+      (0, eval)(code);
+      while (!window.ObsidianPrismRuntime || window.ObsidianPrismRuntime.diagnostics().passes < 1) {
+        await new Promise(r => setTimeout(r, 0));
+      }
+      await new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)));
+      return { ms: +(performance.now() - t0).toFixed(2), counts: window.__getPerfCounts() };
+    }, contentScriptEntry.src);
     const mInit1 = await getMetrics();
 
     const exactScan = await page.evaluate(async () => {

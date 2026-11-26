@@ -295,7 +295,7 @@ async function actualChromiumExtension() {
     throw error;
   } finally {
     if (context) await context.close();
-    await fs.rm(profile, { recursive: true, force: true });
+    await fs.rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => {});
   }
 }
 

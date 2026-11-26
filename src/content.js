@@ -164,6 +164,7 @@
     documentObserver?.disconnect(); documentObserver = null; observedBody = null; observeBodyFn = null; observerCapturesOldValue = false;
     events?.abort(); events = null;
     clearTimeout(pending); pending = null; pendingDelay = 0;
+    clearFormulaChunkQueue();
     for (const entry of formulas.values()) { clearTimeout(entry.debounceTimer); entry.debounceTimer = null; }
     if (scrollFrame) cancelAnimationFrame(scrollFrame); scrollFrame = null;
     if (geometryFrame) cancelAnimationFrame(geometryFrame); geometryFrame = null;
@@ -659,20 +660,34 @@
     mountFormulaToggle(entry);
     updateFormulaToggleLabel(entry);
   }
-  function commitFormulaEntry(entry, { syncFold = true } = {}) {
+  function formulaHintKey(surface, pre, code, header) {
+    const c1 = code.getAttribute?.('class') || code.className || '';
+    const c2 = pre.getAttribute?.('class') || pre.className || '';
+    const c3 = surface && surface !== pre ? (surface.getAttribute?.('class') || surface.className || '') : '';
+    const a1 = code.getAttribute?.('data-language') || code.getAttribute?.('data-lang') || '';
+    const a2 = pre.getAttribute?.('data-language') || pre.getAttribute?.('data-lang') || '';
+    const a3 = surface && surface !== pre ? (surface.getAttribute?.('data-language') || surface.getAttribute?.('data-lang') || '') : '';
+    const hText = header ? (header.textContent || '') : '';
+    return `${c1}\0${c2}\0${c3}\0${a1}\0${a2}\0${a3}\0${hText}`;
+  }
+  function commitFormulaEntry(entry, { syncFold = true, precomputed = null } = {}) {
     if (lostOwnership() || !enabled || stopped || !entry.pre.isConnected || cfg.formulaPreview === false || !Formula || !global.temml) {
       cleanupFormula(entry.pre, entry);
       if (syncFold) syncCodes();
       return;
     }
-    const code = entry.pre.querySelector('code') || entry.pre;
-    const source = Adapters.textOf(code);
-    const hint = Formula.extractLanguageHint(entry.surface, entry.pre, code, entry.header);
+    const code = precomputed ? precomputed.code : (entry.pre.querySelector('code') || entry.pre);
+    const source = precomputed ? precomputed.source : Adapters.textOf(code);
+    const hint = precomputed ? precomputed.hint : Formula.extractLanguageHint(entry.surface, entry.pre, code, entry.header);
+    const hintKey = precomputed
+      ? precomputed.hintKey
+      : ((entry.header || entry.surface === entry.pre) ? formulaHintKey(entry.surface, entry.pre, code, entry.header) : null);
     entry.code = code;
     entry.lastSource = source;
     entry.lastHint = hint;
-    if (!Formula.isLikelyLatex(source, hint)) {
-      formulaSkipCache.set(entry.pre, { source, hint, status: 'non-latex' });
+    entry.lastHintKey = hintKey;
+    if (!precomputed && !Formula.isLikelyLatex(source, hint)) {
+      formulaSkipCache.set(entry.pre, { code, surface: entry.surface, header: entry.header, source, hint, hintKey, status: 'non-latex' });
       cleanupFormula(entry.pre, entry);
       if (syncFold) syncCodes();
       return;
@@ -691,7 +706,7 @@
         if (syncFold) syncCodes();
         return;
       }
-      formulaSkipCache.set(entry.pre, { source, hint, status: 'failed' });
+      formulaSkipCache.set(entry.pre, { code, surface: entry.surface, header: entry.header, source, hint, hintKey, status: 'failed' });
       cleanupFormula(entry.pre, entry);
       if (syncFold) syncCodes();
       return;
@@ -719,9 +734,51 @@
     }
     return lines;
   }
+  let formulaChunkQueue = [];
+  let formulaChunkTimer = null;
+  function clearFormulaChunkQueue() {
+    if (formulaChunkTimer) { clearTimeout(formulaChunkTimer); formulaChunkTimer = null; }
+    for (const item of formulaChunkQueue) item.entry.pendingChunk = false;
+    formulaChunkQueue = [];
+  }
+  function scheduleFormulaChunkDrain(delay = 16) {
+    if (formulaChunkTimer || !formulaChunkQueue.length) return;
+    formulaChunkTimer = setTimeout(drainFormulaChunks, delay);
+  }
+  function syncFormulaDeferAttrs() {
+    const deferAbove = formulas.size > 12 ? formulas.size - 2 : 0;
+    let formulaIdx = 0;
+    for (const entry of formulas.values()) {
+      if (formulaIdx < deferAbove) setAttr(entry.previewEl, 'data-op-formula-deferred', 'true');
+      else removeAttr(entry.previewEl, 'data-op-formula-deferred');
+      formulaIdx++;
+    }
+  }
+  function drainFormulaChunks() {
+    formulaChunkTimer = null;
+    if (lostOwnership() || !enabled || stopped || cfg.formulaPreview === false) {
+      clearFormulaChunkQueue();
+      return;
+    }
+    const batch = formulaChunkQueue.splice(0, 16);
+    for (const item of batch) {
+      const { entry, precomputed } = item;
+      if (!entry.pendingChunk || formulas.get(entry.pre) !== entry || !entry.pre.isConnected) continue;
+      entry.pendingChunk = false;
+      setAttr(entry.previewEl, 'data-op-formula-deferred', 'true');
+      commitFormulaEntry(entry, { syncFold: false, precomputed });
+    }
+    if (formulaChunkQueue.length) {
+      scheduleFormulaChunkDrain(16);
+    } else {
+      syncFormulaDeferAttrs();
+      syncCodes();
+    }
+  }
   function syncFormulas(snap) {
     const temml = global.temml;
     const active = Boolean(cfg.formulaPreview !== false && Formula && temml);
+    if (!active) clearFormulaChunkQueue();
     const current = new Set(active ? (snap ? snap.codeBlocks : adapter.codeBlocks().filter(pre => !Adapters.isOwned(pre))) : []);
     for (const [pre, entry] of formulas) {
       if (!current.has(pre) || !pre.isConnected) cleanupFormula(pre, entry);
@@ -730,6 +787,7 @@
     const hostSurfaces = snap ? snap.codeSurfaces : (adapter.codeSurfaces?.() || []);
     const hostHeaders = snap ? snap.codeHeaders : (adapter.codeHeaders?.() || []);
     const isStreaming = snap ? snap.isStreaming : Boolean(adapter.isStreaming?.());
+    const newEntries = [];
     for (const pre of current) {
       const code = pre.querySelector('code') || pre;
       const source = readCodeText(pre, snap);
@@ -741,15 +799,21 @@
         const surface = stableContainer ? entry.surface : resolveFormulaSurface(pre, hostSurfaces);
         const hideTarget = stableContainer ? entry.hideTarget : resolveFormulaHideTarget(pre, surface);
         const header = stableContainer ? entry.header : resolveFormulaHeader(surface, pre, hostHeaders);
-        const hint = Formula.extractLanguageHint(surface, pre, code, header);
+        const canFastHint = Boolean(stableContainer && (header || surface === pre));
+        const hintKey = canFastHint ? formulaHintKey(surface, pre, code, header) : null;
+        const hint = (canFastHint && source === entry.lastSource && hintKey !== null && hintKey === entry.lastHintKey)
+          ? entry.lastHint
+          : Formula.extractLanguageHint(surface, pre, code, header);
         entry.code = code;
         entry.surface = surface;
         entry.header = header;
+        entry.lastHintKey = hintKey;
         if (entry.hideTarget !== hideTarget) {
           removeAttr(entry.hideTarget, 'data-op-formula-source-hidden');
           entry.hideTarget = hideTarget;
         }
         if (source !== entry.lastSource || hint !== entry.lastHint) {
+          entry.pendingChunk = false;
           entry.lastSource = source;
           entry.lastHint = hint;
           clearTimeout(entry.debounceTimer);
@@ -757,6 +821,8 @@
             entry.debounceTimer = null;
             commitFormulaEntry(entry);
           }, FORMULA_DEBOUNCE_MS);
+        } else if (entry.pendingChunk) {
+          continue;
         } else if (entry.renderedOk) {
           const alreadyMounted = stableContainer &&
             entry.lastLang === cfg.language &&
@@ -774,14 +840,29 @@
         }
         continue;
       }
+      const skipped = formulaSkipCache.get(pre);
+      if (skipped && skipped.code === code && skipped.source === source &&
+          skipped.surface?.isConnected && (!skipped.header || skipped.header.isConnected) &&
+          (skipped.surface === pre || skipped.surface.contains?.(pre))) {
+        if (skipped.hintKey !== null && (skipped.header || skipped.surface === pre) &&
+            formulaHintKey(skipped.surface, pre, code, skipped.header) === skipped.hintKey) {
+          continue;
+        }
+        if (Formula.extractLanguageHint(skipped.surface, pre, code, skipped.header) === skipped.hint) {
+          continue;
+        }
+      }
       const surface = resolveFormulaSurface(pre, hostSurfaces);
       const hideTarget = resolveFormulaHideTarget(pre, surface);
       const header = resolveFormulaHeader(surface, pre, hostHeaders);
       const hint = Formula.extractLanguageHint(surface, pre, code, header);
-      const skipped = formulaSkipCache.get(pre);
-      if (skipped && skipped.source === source && skipped.hint === hint) continue;
+      const hintKey = (header || surface === pre) ? formulaHintKey(surface, pre, code, header) : null;
+      if (skipped && skipped.source === source && skipped.hint === hint) {
+        formulaSkipCache.set(pre, { code, surface, header, source, hint, hintKey, status: skipped.status });
+        continue;
+      }
       if (!Formula.isLikelyLatex(source, hint)) {
-        formulaSkipCache.set(pre, { source, hint, status: 'non-latex' });
+        formulaSkipCache.set(pre, { code, surface, header, source, hint, hintKey, status: 'non-latex' });
         continue;
       }
       formulaSkipCache.delete(pre);
@@ -789,7 +870,7 @@
       const toggleBtn = own(make('button', 'op-formula-toggle'));
       entry = {
         pre, code, surface, hideTarget, header, previewEl, toggleBtn, barEl: null,
-        mode: 'preview', lastSource: source, lastHint: hint, renderedOk: false, debounceTimer: null
+        mode: 'preview', lastSource: source, lastHint: hint, lastHintKey: hintKey, renderedOk: false, pendingChunk: false, debounceTimer: null
       };
       toggleBtn.addEventListener('click', () => {
         if (!enabled || lostOwnership()) return;
@@ -804,9 +885,29 @@
           commitFormulaEntry(entry);
         }, FORMULA_DEBOUNCE_MS);
       } else {
-        commitFormulaEntry(entry, { syncFold: false });
+        newEntries.push({ entry, precomputed: { code, source, hint, hintKey } });
       }
     }
+    if (newEntries.length > 12) {
+      const headEnd = 6;
+      const tailStart = newEntries.length - 2;
+      for (let i = 0; i < newEntries.length; i++) {
+        const item = newEntries[i];
+        if (i < headEnd || i >= tailStart) {
+          if (i < tailStart) setAttr(item.entry.previewEl, 'data-op-formula-deferred', 'true');
+          commitFormulaEntry(item.entry, { syncFold: false, precomputed: item.precomputed });
+        } else {
+          item.entry.pendingChunk = true;
+          formulaChunkQueue.push(item);
+        }
+      }
+      scheduleFormulaChunkDrain(80);
+    } else {
+      for (const item of newEntries) {
+        commitFormulaEntry(item.entry, { syncFold: false, precomputed: item.precomputed });
+      }
+    }
+    syncFormulaDeferAttrs();
   }
 
   function syncCodes(snap) {
@@ -1473,6 +1574,7 @@
     }
     if (nextPrimary !== primarySurface) {
       surfaceObserver?.disconnect();surfaceObserver=null;primarySurface=nextPrimary;
+      primaryResizeArmed = false; lastPrimaryResizeKey = '';
       if (primarySurface && global.ResizeObserver) {
         surfaceObserver=new ResizeObserver(primaryResized);
         surfaceObserver.observe(primarySurface);
@@ -1480,6 +1582,7 @@
     }
     if (nextObservedDock !== observedDock) {
       dockObserver?.disconnect(); dockObserver = null; observedDock = nextObservedDock;
+      dockResizeArmed = false; lastDockResizeKey = '';
       if (observedDock && global.ResizeObserver) {
         dockObserver = new ResizeObserver(dockResized);
         dockObserver.observe(observedDock);
@@ -1559,7 +1662,7 @@
       : 0;
     const target=mainWidth ? Adapters.contentWidthTarget(adapter.contentWidth?.native,cfg.contentWidth,mainWidth,global.innerWidth||0) : null;
     const next=target ? `${target.width}px ${target.shift}px` : '';
-    if (next===readingWidth || !document.documentElement) return;
+    if (next===readingWidth || !document.documentElement) return false;
     readingWidth=next;
     if (target) {
       setRootVar('--op-reading-width',target.width+'px');
@@ -1568,6 +1671,7 @@
       clearRootVar('--op-reading-width');
       clearRootVar('--op-reading-shift');
     }
+    return true;
   }
   /* Review fix P2: dock clearance. A composer dock that overlays the conversation scroller (Gemini's
    * absolute input container) rather than following the thread in flow (ChatGPT's sticky footer) covers the
@@ -1666,31 +1770,72 @@
   function syncDockAvoidance(precomputedComposer) {
     applyDockAvoidance(readDockAvoidance(precomputedComposer));
   }
+  let primaryResizeArmed = false, lastPrimaryResizeKey = '';
+  let dockResizeArmed = false, lastDockResizeKey = '';
+  let lastGeometryPass = 0;
+  function resizeEntryKey(entries) {
+    const first = Array.isArray(entries) && entries.length ? entries[0] : null;
+    const box = first?.borderBoxSize?.[0];
+    if (box && Number.isFinite(box.inlineSize) && Number.isFinite(box.blockSize)) {
+      return `${Math.round(box.inlineSize)}x${Math.round(box.blockSize)}`;
+    }
+    const rect = first?.contentRect;
+    if (rect && Number.isFinite(rect.width) && Number.isFinite(rect.height)) {
+      return `${Math.round(rect.width)}x${Math.round(rect.height)}`;
+    }
+    return '';
+  }
   function syncAllGeometry({ includeReadingWidth = true, composer } = {}) {
     if (lostOwnership() || !enabled || stopped) return;
-    // Batched read phase: measure every geometry box before mutating any root CSS variables.
+    lastGeometryPass = passes;
+    // Batched read phase: sync reading width before measuring composer/dock boxes only when
+    // --op-reading-width/-shift actually changes (no-op writes 0 attributes/vars in steady state).
     const measured = runWithScanCache(() => {
       const primaryRect = primarySurface?.isConnected && (includeReadingWidth || ambient)
         ? primarySurface.getBoundingClientRect()
         : null;
+      if (includeReadingWidth) syncReadingWidth(primaryRect);
       const clearance = readDockClearance();
       const fadeOverlap = readScrollerFade();
       const avoidance = readDockAvoidance(composer);
       return { primaryRect, clearance, fadeOverlap, avoidance };
     });
-    // Batched write phase: apply all root CSS variables and ambient bounds together.
-    if (includeReadingWidth) syncReadingWidth(measured.primaryRect);
+    // Batched write phase: apply ambient bounds and dock variables together.
     syncAmbientBounds(measured.primaryRect);
     applyDockClearance(measured.clearance);
     applyScrollerFade(measured.fadeOverlap);
     applyDockAvoidance(measured.avoidance);
   }
-  function primaryResized() {
+  function primaryResized(entries) {
     if (lostOwnership() || !enabled || stopped) return;
+    const key = resizeEntryKey(entries);
+    if (key) {
+      if (!primaryResizeArmed) {
+        primaryResizeArmed = true;
+        lastPrimaryResizeKey = key;
+        if (lastGeometryPass === passes) return;
+      } else if (key === lastPrimaryResizeKey) {
+        return;
+      } else {
+        lastPrimaryResizeKey = key;
+      }
+    }
     syncAllGeometry({ includeReadingWidth: true });
   }
-  function dockResized() {
+  function dockResized(entries) {
     if (lostOwnership() || !enabled || stopped) return;
+    const key = resizeEntryKey(entries);
+    if (key) {
+      if (!dockResizeArmed) {
+        dockResizeArmed = true;
+        lastDockResizeKey = key;
+        if (lastGeometryPass === passes) return;
+      } else if (key === lastDockResizeKey) {
+        return;
+      } else {
+        lastDockResizeKey = key;
+      }
+    }
     syncAllGeometry({ includeReadingWidth: false });
   }
   function syncAmbientDom() {
@@ -1714,6 +1859,7 @@
     clearTurnCaches();
     markAllDirty({ fullEstimate: true, fullRail: true, pruneOrphans: true });
     for(const [element,entry] of thoughts) cleanupThought(element,entry);
+    clearFormulaChunkQueue();
     for(const [pre,entry] of formulas) cleanupFormula(pre,entry);
     formulaSkipCache = new WeakMap();
     codeHeaderSvgCache = new WeakMap();
@@ -1817,6 +1963,7 @@
     document.documentElement.removeAttribute('data-op-home');
     document.documentElement.removeAttribute('data-op-visibility');
     clearActivity();
+    clearFormulaChunkQueue();
     for(const [pre,entry] of formulas) cleanupFormula(pre,entry);
     formulaSkipCache = new WeakMap();
     codeHeaderSvgCache = new WeakMap();

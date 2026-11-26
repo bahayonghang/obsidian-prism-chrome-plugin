@@ -1016,9 +1016,11 @@ html[data-op-enabled="true"] .op-formula-preview[data-op-owned] {
   font-size: 16px;
   line-height: 1.6;
   border-radius: 0 0 calc(var(--op-radius-md) - 1px) calc(var(--op-radius-md) - 1px);
+  contain: layout style paint;
+}
+html[data-op-enabled="true"] .op-formula-preview[data-op-owned][data-op-formula-deferred="true"] {
   content-visibility: auto;
   contain-intrinsic-block-size: auto 72px;
-  contain: layout style paint;
 }
 html[data-op-enabled="true"]:not([data-op-effective-palette="host"]) .op-formula-preview[data-op-owned] {
   background: var(--op-code-well);

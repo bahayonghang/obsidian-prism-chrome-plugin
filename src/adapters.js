@@ -199,8 +199,18 @@
         visibilityProperty: true,
         contentVisibilityAuto: false
       });
-      if (visCache) visCache.set(node, vis);
-      return vis;
+      if (vis) {
+        if (visCache) visCache.set(node, true);
+        return true;
+      }
+      // `checkVisibility()` returns false for boxless `display: contents` wrappers even when visible;
+      // fall through to the computed-style ancestor walk only when the node itself is `display: contents`.
+      const ownView = node.ownerDocument?.defaultView;
+      const ownStyle = ownView ? getStyle(node, ownView) : null;
+      if (!ownStyle || ownStyle.display !== 'contents') {
+        if (visCache) visCache.set(node, false);
+        return false;
+      }
     }
     const view = node.ownerDocument?.defaultView;
     if (!view?.getComputedStyle) {
@@ -251,7 +261,8 @@
     for (let child = node.firstChild; child; child = child.nextSibling) {
       if (child.nodeType === 3 || child.nodeType === 4) {
         out += child.nodeValue || '';
-      } else if (child.nodeType === 1 && (child === root || !child.matches?.(selector))) {
+      } else if (child.nodeType === 1) {
+        if (child !== root && (child.hasAttribute?.('data-op-owned') || child.matches?.(selector))) continue;
         out += collectLiveDomText(child, root, selector);
       }
     }
@@ -265,7 +276,7 @@
     if (!element) return '';
     const hiddenSelector = '[data-op-owned],script,style,[hidden],[aria-hidden="true"]';
     if (element.matches?.(hiddenSelector)) return '';
-    if (!element.querySelector?.(hiddenSelector)) return element.textContent || '';
+    if (element.childElementCount === 0 || !element.querySelector?.(hiddenSelector)) return element.textContent || '';
     if (isLiveDomNode(element)) return collectLiveDomText(element, element, hiddenSelector);
     const collect = node => {
       if (!node) return '';
@@ -300,7 +311,7 @@
     const selector = options && options.excludeCode ? `${TURN_NOISE_SELECTOR},pre` : TURN_NOISE_SELECTOR;
     if (element.matches && element.matches(selector)) return '';
     if (isLiveDomNode(element)) {
-      if (!element.querySelector || !element.querySelector(selector)) {
+      if (element.childElementCount === 0 || !element.querySelector || !element.querySelector(selector)) {
         return (element.textContent || '').trim();
       }
       return collectLiveDomText(element, element, selector).trim();
@@ -360,7 +371,10 @@
     const prose = estimateTokens(cleanTurnText(turn, { excludeCode: true }));
     let code = 0;
     if (typeof turn.querySelectorAll === 'function') {
-      const pres = [...turn.querySelectorAll('pre')].filter(pre =>
+      const rawPres = typeof turn.getElementsByTagName === 'function'
+        ? [...turn.getElementsByTagName('pre')]
+        : [...turn.querySelectorAll('pre')];
+      const pres = rawPres.filter(pre =>
         !isOwned(pre) &&
         !pre.closest?.('[hidden],[aria-hidden="true"]') &&
         !pre.parentElement?.closest?.('pre')
@@ -877,26 +891,38 @@
   }
   function findTurns(spec, role, root) {
     const selector = role === 'user' ? spec.users : spec.assistants;
-    const explicit = topLevelMatches(selector, root).filter(isVisible);
-    if (!spec.turnContainers) return explicit;
+    if (!spec.turnContainers) return topLevelMatches(selector, root).filter(isVisible);
+    const cacheable = Boolean(activeScanCache && activeScanCache.root === root);
+    let explicitByRole = cacheable ? activeScanCache.values.get('explicitTurns') : null;
+    if (!explicitByRole) {
+      const explicitUsers = topLevelMatches(spec.users, root).filter(isVisible);
+      const explicitAssistants = topLevelMatches(spec.assistants, root).filter(isVisible);
+      const anyAncestors = new Set();
+      for (const list of [explicitUsers, explicitAssistants]) {
+        for (const node of list) {
+          anyAncestors.add(node);
+          for (let anc = node.parentElement; anc && anc !== root; anc = anc.parentElement) {
+            if (anyAncestors.has(anc)) break;
+            anyAncestors.add(anc);
+          }
+        }
+      }
+      explicitByRole = { user: explicitUsers, assistant: explicitAssistants, anyAncestors };
+      if (cacheable) activeScanCache.values.set('explicitTurns', explicitByRole);
+    }
+    const explicit = explicitByRole[role];
     const result = [...explicit];
     const seen = new Set(explicit);
-    const explicitAncestors = new Set();
-    for (const node of explicit) {
-      for (let anc = node.parentElement; anc && anc !== root; anc = anc.parentElement) {
-        if (explicitAncestors.has(anc)) break;
-        explicitAncestors.add(anc);
-      }
-    }
+    const anyAncestors = explicitByRole.anyAncestors;
     let containers;
-    if (activeScanCache && activeScanCache.root === root && activeScanCache.values.has('turnContainers')) {
+    if (cacheable && activeScanCache.values.has('turnContainers')) {
       containers = activeScanCache.values.get('turnContainers');
     } else {
       containers = topLevelMatches(spec.turnContainers, root);
-      if (activeScanCache && activeScanCache.root === root) activeScanCache.values.set('turnContainers', containers);
+      if (cacheable) activeScanCache.values.set('turnContainers', containers);
     }
     for (const container of containers) {
-      if (seen.has(container) || explicitAncestors.has(container)) continue;
+      if (seen.has(container) || anyAncestors.has(container)) continue;
       let insideSeen = false;
       for (let anc = container.parentElement; anc && anc !== root; anc = anc.parentElement) {
         if (seen.has(anc)) { insideSeen = true; break; }
@@ -911,15 +937,15 @@
       if (role === 'user' && isUser && !isAssistant) {
         seen.add(container);
         for (let anc = container.parentElement; anc && anc !== root; anc = anc.parentElement) {
-          if (explicitAncestors.has(anc)) break;
-          explicitAncestors.add(anc);
+          if (anyAncestors.has(anc)) break;
+          anyAncestors.add(anc);
         }
         result.push(container);
       } else if (role === 'assistant' && isAssistant && !isUser) {
         seen.add(container);
         for (let anc = container.parentElement; anc && anc !== root; anc = anc.parentElement) {
-          if (explicitAncestors.has(anc)) break;
-          explicitAncestors.add(anc);
+          if (anyAncestors.has(anc)) break;
+          anyAncestors.add(anc);
         }
         result.push(container);
       }
@@ -1022,8 +1048,11 @@
       const owner = (parent && !isOwned(parent) && spec.codeWells && parent.matches?.(spec.codeWells))
         ? parent.parentElement
         : parent;
+      const singlePre = owner && (typeof owner.getElementsByTagName === 'function'
+        ? owner.getElementsByTagName('pre').length === 1
+        : owner.querySelectorAll('pre').length === 1);
       if (owner && !isOwned(owner) && !owner.matches(MESSAGE_AREAS) && !owner.matches('.markdown') &&
-          spec.codeHeaders && owner.querySelector(spec.codeHeaders) && owner.querySelectorAll('pre').length === 1) {
+          spec.codeHeaders && singlePre && owner.querySelector(spec.codeHeaders)) {
         add(owner);
       } else {
         add(pre);
@@ -1032,13 +1061,22 @@
     const batchRoot = messages.length ? commonContainerFor(messages, primary, root) : null;
     if (batchRoot) {
       const msgSet = new Set(messages);
-      if (spec.codeSurfaces) {
-        for (const node of batchRoot.querySelectorAll(spec.codeSurfaces)) {
+      const pres = queryBatchPres(batchRoot, root);
+      if (spec.codeSurfaces && spec.codeSurfaces.includes('code-block') && typeof batchRoot.getElementsByTagName === 'function') {
+        for (const node of batchRoot.getElementsByTagName('code-block')) {
           if (hasAncestorIn(node, msgSet)) processSurface(node);
         }
       }
-      for (const pre of queryBatchPres(batchRoot, root)) {
-        if (hasAncestorIn(pre, msgSet)) processPre(pre, batchRoot);
+      for (const pre of pres) {
+        if (!hasAncestorIn(pre, msgSet)) continue;
+        if (spec.codeSurfaces && typeof pre.closest === 'function') {
+          const card = pre.closest(spec.codeSurfaces);
+          if (card && card !== batchRoot && hasAncestorIn(card, msgSet)) {
+            processSurface(card);
+            continue;
+          }
+        }
+        processPre(pre, batchRoot);
       }
       return filterOutermost(surfaces);
     }
@@ -1051,12 +1089,39 @@
     }
     return filterOutermost(surfaces);
   }
-  function findCodeHeaders(spec, messages, primary, root) {
+  function findCodeHeaders(spec, messages, primary, root, knownSurfaces = null) {
     if (!spec.codeHeaders || !messages.length) return [];
     const out = [];
     const seen = new Set();
+    const collectInSurface = (node, depth) => {
+      if (!node || depth > 3) return;
+      for (let child = node.firstElementChild; child; child = child.nextElementSibling) {
+        const tag = (child.localName || child.tagName || '').toLowerCase();
+        if (tag === 'pre' || child.hasAttribute?.('data-op-owned')) continue;
+        if (child.matches?.(spec.codeHeaders)) {
+          if (!seen.has(child) && isVisible(child)) {
+            seen.add(child);
+            out.push(child);
+          }
+          continue;
+        }
+        collectInSurface(child, depth + 1);
+      }
+    };
     const batchRoot = commonContainerFor(messages, primary, root);
     if (batchRoot) {
+      if (Array.isArray(knownSurfaces) && knownSurfaces.length) {
+        for (const surface of knownSurfaces) {
+          if (surface && typeof surface.firstElementChild !== 'undefined') {
+            collectInSurface(surface, 0);
+          } else if (surface?.querySelectorAll) {
+            for (const hdr of surface.querySelectorAll(spec.codeHeaders)) {
+              if (!seen.has(hdr) && !isOwned(hdr) && isVisible(hdr)) { seen.add(hdr); out.push(hdr); }
+            }
+          }
+        }
+        return out;
+      }
       const msgSet = new Set(messages);
       for (const hdr of batchRoot.querySelectorAll(spec.codeHeaders)) {
         if (!seen.has(hdr) && !isOwned(hdr) && hasAncestorIn(hdr, msgSet) && isVisible(hdr)) {
@@ -1103,9 +1168,24 @@
   }
   function findCodeSurfaceFor(spec, pre, surfaces) {
     if (!pre) return null;
-    if (Array.isArray(surfaces)) {
-      const matched = surfaces.find(surface => surface === pre || surface.contains?.(pre));
-      if (matched) return matched;
+    if (Array.isArray(surfaces) && surfaces.length) {
+      let surfaceSet = activeScanCache?.byNode?.get('codeSurfaceSet')?.get(surfaces);
+      if (!surfaceSet && surfaces.length > 4) {
+        surfaceSet = new Set(surfaces);
+        if (activeScanCache) {
+          let m = activeScanCache.byNode.get('codeSurfaceSet');
+          if (!m) { m = new Map(); activeScanCache.byNode.set('codeSurfaceSet', m); }
+          m.set(surfaces, surfaceSet);
+        }
+      }
+      if (surfaceSet && pre.parentElement !== undefined) {
+        for (let cur = pre; cur; cur = cur.parentElement) {
+          if (surfaceSet.has(cur)) return cur;
+        }
+      } else {
+        const matched = surfaces.find(surface => surface === pre || surface.contains?.(pre));
+        if (matched) return matched;
+      }
     }
     const closestSurface = spec.codeSurfaces && typeof pre.closest === 'function' ? pre.closest(spec.codeSurfaces) : null;
     if (closestSurface && !isOwned(closestSurface) && !closestSurface.matches?.(MESSAGE_AREAS) && !closestSurface.matches?.('.markdown')) {
@@ -1141,9 +1221,28 @@
     return isWell ? parent : pre;
   }
   function findCodeHeaderFor(spec, surface, pre, headers) {
-    if (Array.isArray(headers)) {
-      const matched = headers.find(header => surface && surface !== pre && surface.contains?.(header));
-      if (matched) return matched;
+    if (Array.isArray(headers) && headers.length && surface && surface !== pre) {
+      let byAncestor = activeScanCache?.byNode?.get('codeHeaderByAncestor')?.get(headers);
+      if (!byAncestor && headers.length > 4) {
+        byAncestor = new Map();
+        for (const header of headers) {
+          for (let cur = header?.parentElement, d = 0; cur && d < 6; cur = cur.parentElement, d++) {
+            if (!byAncestor.has(cur)) byAncestor.set(cur, header);
+          }
+        }
+        if (activeScanCache) {
+          let m = activeScanCache.byNode.get('codeHeaderByAncestor');
+          if (!m) { m = new Map(); activeScanCache.byNode.set('codeHeaderByAncestor', m); }
+          m.set(headers, byAncestor);
+        }
+      }
+      if (byAncestor) {
+        const fast = byAncestor.get(surface);
+        if (fast) return fast;
+      } else {
+        const matched = headers.find(header => surface.contains?.(header));
+        if (matched) return matched;
+      }
     }
     if (!spec.codeHeaders) return null;
     const scope = surface && surface !== pre ? surface : pre?.parentElement;
@@ -1477,7 +1576,7 @@
     );
     const classifyTrailingSibling = (sib, boundary, { insideDock = false } = {}) => {
       if (isExcludedTrailingNode(sib, composer, dock)) return;
-      const sibStyle = view?.getComputedStyle?.(sib);
+      const sibStyle = getStyle(sib, view);
       if (isScrollNode(sib, sibStyle)) return;
       const selfMarked = sib.getAttribute?.('data-op-composer-disclaimer') === 'true';
       if (!selfMarked && sibStyle && sibStyle.display === 'none') return;
@@ -1520,9 +1619,9 @@
       if (dock.parentElement && !dock.parentElement.matches?.('body,html')) {
         for (const sib of precedingSiblings(dock)) {
           if (!sib || sib === dock || sib.contains?.(dock) || sib.contains?.(composer) || isOwned(sib)) continue;
-          if (sib.matches?.(OVERLAY_EXCLUDED) || sib.closest?.(OVERLAY_EXCLUDED) || sib.querySelector?.(OVERLAY_EXCLUDED)) continue;
-          const sibStyle = view?.getComputedStyle?.(sib);
+          const sibStyle = getStyle(sib, view);
           if (isScrollNode(sib, sibStyle)) continue;
+          if (sib.matches?.(OVERLAY_EXCLUDED) || sib.closest?.(OVERLAY_EXCLUDED) || sib.querySelector?.(OVERLAY_EXCLUDED)) continue;
           scanExplicitInside(sib, dock.parentElement);
         }
       }
@@ -1605,9 +1704,23 @@
   function findColumnSurfaces(selector, primary, anchor, filter = null) {
     if (!selector || !primary) return [];
     const out = [];
-    for (const node of primary.querySelectorAll(selector)) {
-      if (!isOwned(node) && isVisible(node) && primary.contains(node) && (!anchor || node.contains(anchor) || anchor.contains(node)) && (!filter || filter(node))) {
-        if (!out.includes(node)) out.push(node);
+    const consider = node => {
+      if (!node || isOwned(node) || !isVisible(node)) return;
+      if (filter && !filter(node)) return;
+      if (!out.includes(node)) out.push(node);
+    };
+    if (anchor && primary.contains?.(anchor)) {
+      const ancestors = [];
+      for (let node = anchor; node && node !== primary; node = node.parentElement) {
+        if (node.matches?.(selector)) ancestors.push(node);
+      }
+      for (let i = ancestors.length - 1; i >= 0; i--) consider(ancestors[i]);
+      if (typeof anchor.querySelectorAll === 'function') {
+        for (const node of anchor.querySelectorAll(selector)) consider(node);
+      }
+    } else {
+      for (const node of primary.querySelectorAll(selector)) {
+        if (!anchor || node.contains(anchor) || anchor.contains(node)) consider(node);
       }
     }
     if (!out.length && anchor) {
@@ -1893,7 +2006,7 @@
     };
     const sidebarSurfaces = () => cached('sidebarSurfaces', () => findSidebars(spec, root, primarySurface(), composerSurface()));
     const codeSurfaces = () => cached('codeSurfaces', () => findCodeSurfaces(spec, messages(), root, primarySurface()));
-    const codeHeaders = () => cached('codeHeaders', () => findCodeHeaders(spec, messages(), primarySurface(), root));
+    const codeHeaders = () => cached('codeHeaders', () => findCodeHeaders(spec, messages(), primarySurface(), root, codeSurfaces()));
     const codeBlocks = () => cached('codeBlocks', () => findCodeBlocks(messages(), primarySurface(), root));
     return Object.freeze({
       host,

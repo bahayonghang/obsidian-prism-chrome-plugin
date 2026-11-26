@@ -231,3 +231,48 @@ test('v0.4.5 #53: popup skips redundant i18n DOM walks and off-tab permission ch
   await new Promise(resolve => setTimeout(resolve, 20));
   assert.ok(permissionChecks >= 1, 'switching to translation tab must check endpoint permission');
 });
+
+test('v0.4.5 #53: isVisible handles boxless display:contents wrappers accurately when checkVisibility returns false', () => {
+  const h = harness();
+  h.load('src/adapters.js');
+  const Adapters = h.context.ObsidianPrismAdapters;
+  const styles = new Map();
+  const doc = {
+    defaultView: {
+      getComputedStyle: el => styles.get(el) || { display: 'block', visibility: 'visible', opacity: '1' }
+    }
+  };
+  const makeNode = (display, checkVis) => {
+    const node = {
+      nodeType: 1,
+      isConnected: true,
+      parentElement: null,
+      ownerDocument: doc,
+      style: {},
+      hasAttribute: () => false,
+      getAttribute: () => null,
+      checkVisibility: () => checkVis
+    };
+    styles.set(node, { display, visibility: 'visible', opacity: '1' });
+    return node;
+  };
+  const ancestor = makeNode('block', true);
+  const contentsWrap = makeNode('contents', false);
+  contentsWrap.parentElement = ancestor;
+  assert.equal(Adapters.isVisible(contentsWrap), true, 'visible display:contents wrapper must return true even when checkVisibility returns false');
+
+  styles.set(ancestor, { display: 'none', visibility: 'visible', opacity: '1' });
+  assert.equal(Adapters.isVisible(contentsWrap), false, 'display:contents wrapper under display:none ancestor must return false');
+
+  const hiddenBox = makeNode('none', false);
+  hiddenBox.parentElement = makeNode('block', true);
+  assert.equal(Adapters.isVisible(hiddenBox), false, 'display:none node must stay false');
+});
+
+test('v0.4.5 #53: Formula Preview scopes content-visibility:auto via data-op-formula-deferred only on long threads (>12 formulas, excluding last 2)', () => {
+  const common = fs.readFileSync(path.join(ROOT, 'styles/common.css'), 'utf8');
+  assert.match(common, /\.op-formula-preview\[data-op-owned\]\[data-op-formula-deferred="true"\]\s*\{[\s\S]*?content-visibility\s*:\s*auto\s*;/,
+    'content-visibility: auto must be scoped strictly to [data-op-formula-deferred="true"]');
+  assert.doesNotMatch(common, /\.op-formula-preview\[data-op-owned\]\s*\{[^}]*content-visibility\s*:\s*auto/,
+    'unconditional .op-formula-preview must not set content-visibility: auto');
+});

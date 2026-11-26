@@ -29,6 +29,20 @@ function resource(path) {
   assert(statSync(resolve(root, clean)).isFile(), `missing resource: ${clean}`);
 }
 
+const utf8Decoder = new TextDecoder('utf-8', { fatal: true });
+function assertChromeUtf8(filePath) {
+  const bytes = readFileSync(resolve(root, filePath));
+  const text = utf8Decoder.decode(bytes);
+  for (let i = 0; i < text.length; i++) {
+    const cp = text.codePointAt(i);
+    if (cp > 0xffff) i++;
+    assert(
+      cp !== 0 && !(cp >= 0xfdd0 && cp <= 0xfdef) && (cp & 0xfffe) !== 0xfffe,
+      `${filePath}: contains raw Unicode noncharacter/NUL U+${cp.toString(16).toUpperCase()} rejected by Chromium's MV3 UTF-8 content-script loader`
+    );
+  }
+}
+
 for (const [name, manifest] of [['Chrome', chrome], ['Firefox', firefox]]) {
   assert.equal(manifest.manifest_version, 3, `${name}: MV3 required`);
   assert.equal(manifest.version, pkg.version, `${name}: package version mismatch`);
@@ -44,7 +58,7 @@ for (const [name, manifest] of [['Chrome', chrome], ['Firefox', firefox]]) {
     assert.equal(script.run_at, expectedScripts[i].run_at);
     assert.deepEqual(script.js, expectedScripts[i].js);
     assert.deepEqual(script.css, expectedScripts[i].css);
-    [...(script.js || []), ...(script.css || [])].forEach(resource);
+    [...(script.js || []), ...(script.css || [])].forEach(file => { resource(file); assertChromeUtf8(file); });
   });
   const csp = manifest.content_security_policy?.extension_pages || '';
   assert(csp.includes("script-src 'self'") && csp.includes("object-src 'none'"));
