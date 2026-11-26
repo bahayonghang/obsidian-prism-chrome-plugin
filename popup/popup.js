@@ -17,10 +17,14 @@
   let rangeTimer = null;
   let activeTab = 'appearance';
   let previewSite = 'chatgpt';
+  let previewSchemeOverride = null;
   let keyConfigured = false;
   let permissionRevision = 0;
+  let lastCheckedPermissionEndpoint = null;
   let keyStatusEndpoint = null;
   let keyStatusRevision = 0;
+  let bootLoaded = false;
+  let lastTranslatedLang = '';
   let statusKey = '';
   let statusIsError = false;
   const $ = id => document.getElementById(id);
@@ -49,9 +53,9 @@
     '<div class="palette-grid">'+paletteCard('obsidian','palette')+paletteCard('warm','palette')+paletteCard('crystal','lightPreset')+paletteCard('alabaster','lightPreset')+'</div><div class="native-options">'+native('palette')+native('lightPreset')+'</div>'+accents+
     '<button type="button" class="atmosphere-link" id="btn-atmosphere">'+text('atmosphereShortcut')+'<span aria-hidden="true">↗</span></button>',compactSelect('themeMode',[['auto','modeAuto'],['dark','modeDark'],['light','modeLight']]))+
     card('layoutTitle',select('sidebarStyle','sidebarStyle',[['glass','sidebarGlass'],['solid','sidebarSolid'],['native','sidebarNative']],null,true)+toggle('sidebarCompact')+toggle('composerRestyle')+toggle('composerGlow','composerGlowHint'))+
-    card('detailsSection','<div class="two-fields">'+select('cornerStyle','cornerStyle',[['sharp','cornerSharp'],['balanced','cornerBalanced'],['soft','cornerSoft']])+select('language','languageLabel',[['zh-CN',null],['en-US',null]])+'</div>');
+    card('detailsSection',select('uiThemeMode','uiThemeMode',[['auto','modeAuto'],['light','modeLight'],['dark','modeDark']],null,true)+'<div class="two-fields">'+select('cornerStyle','cornerStyle',[['sharp','cornerSharp'],['balanced','cornerBalanced'],['soft','cornerSoft']])+select('language','languageLabel',[['zh-CN',null],['en-US',null]])+'</div>');
   $('cfg-language').options[0].textContent='简体中文'; $('cfg-language').options[1].textContent='English';
-  $('panel-reading').innerHTML = intro('readingTitle','readingHint')+card('tabWorkbench',select('contentWidth','contentWidth',[['standard','widthStandard'],['wide','widthWide'],['full','widthFull']],'contentWidthHint',true)+toggle('railOutline','railHint')+toggle('turnJumpShortcuts','shortcutHint')+toggle('stickyCodeHeader')+toggle('longCodeFold','longCodeFoldHint'))+
+  $('panel-reading').innerHTML = intro('readingTitle','readingHint')+card('tabWorkbench',select('contentWidth','contentWidth',[['standard','widthStandard'],['wide','widthWide'],['full','widthFull']],'contentWidthHint',true)+toggle('railOutline','railHint')+toggle('turnJumpShortcuts','shortcutHint')+toggle('stickyCodeHeader')+toggle('longCodeFold','longCodeFoldHint')+toggle('formulaPreview','formulaPreviewHint'))+
     card('contextVial',toggle('contextVial','contextHint')+select('contextWindowTokens','contextWindow',[['auto','contextWindowAuto'],[32000,null],[128000,null],[200000,null],[400000,null],[512000,null],[1000000,null],[2000000,null]],null,true))+
     card('codeFont',select('codeFont','codeFont',[['default','fontDefault'],['jetbrains',null],['fira',null],['cascadia',null]],'fontHint')+toggle('codeLigatures'));
   const fonts = {'jetbrains':'JetBrains Mono','fira':'Fira Code','cascadia':'Cascadia Code'};
@@ -71,20 +75,33 @@
   $('panel-about').innerHTML = card('creditsTitle','<div class="credits"><p data-i18n="creditsBody"></p><p data-i18n="independentNote"></p><div class="links"><a href="https://github.com/RMvdesi/obsidian-prism" target="_blank" rel="noreferrer" data-i18n="upstream"></a><a href="https://github.com/bahayonghang/obsidian-prism-chrome-plugin" target="_blank" rel="noreferrer" data-i18n="source"></a><a href="../LICENSE" target="_blank" data-i18n="license"></a><a href="../NOTICE" target="_blank" data-i18n="notices"></a><a href="../THIRD_PARTY_NOTICES.md" target="_blank" data-i18n="thirdParties"></a><a href="../PRIVACY.md" target="_blank" data-i18n="privacy"></a></div></div><div class="notice"><p data-i18n="privacyNote"></p></div>')+
     card('backupTitle','<p class="preview-note" data-i18n="backupHint"></p><div class="button-row"><button type="button" id="btn-export" data-i18n="btnExport"></button><button type="button" id="btn-import" data-i18n="btnImport"></button><button type="button" class="danger" id="btn-reset" data-i18n="btnReset"></button></div><input class="file-input" type="file" id="file-import" accept="application/json,.json">');
   function status(key,error) { statusKey=key;statusIsError=Boolean(error);$('status-msg').textContent=tr(key);$('status-msg').dataset.error=String(statusIsError); }
-  function translateLabels() {
-    document.documentElement.lang=current.language;
+  function translateLabels(force = false) {
+    const langChanged = force || lastTranslatedLang !== current.language;
+    if (langChanged) {
+      lastTranslatedLang = current.language;
+      document.documentElement.lang=current.language;
+      for (const node of document.querySelectorAll('[data-i18n]')) node.textContent=tr(node.dataset.i18n);
+      for (const node of document.querySelectorAll('[data-title]')) {node.title=tr(node.dataset.title);node.setAttribute('aria-label',tr(node.dataset.title));}
+      document.querySelector('.tabs').setAttribute('aria-label',tr('controlsLabel'));
+      document.querySelector('.preset-row').setAttribute('aria-label',tr('scenePresets'));
+      document.querySelector('.preview-sites').setAttribute('aria-label',tr('previewSite'));
+      for(const node of document.querySelectorAll('[data-label]')) node.setAttribute('aria-label',tr(node.dataset.label));
+    }
     $('status-msg').textContent=statusKey?tr(statusKey):'';
     $('status-msg').dataset.error=String(statusIsError);
-    for (const node of document.querySelectorAll('[data-i18n]')) node.textContent=tr(node.dataset.i18n);
-    for (const node of document.querySelectorAll('[data-title]')) {node.title=tr(node.dataset.title);node.setAttribute('aria-label',tr(node.dataset.title));}
     $('key-status').textContent=tr(keyConfigured?'keySaved':'keyEmpty');
-    document.querySelector('.tabs').setAttribute('aria-label',tr('controlsLabel'));
-    document.querySelector('.preset-row').setAttribute('aria-label',tr('scenePresets'));
-    document.querySelector('.preview-sites').setAttribute('aria-label',tr('previewSite'));
-    for(const node of document.querySelectorAll('[data-label]')) node.setAttribute('aria-label',tr(node.dataset.label));
+    const modeKey=current.uiThemeMode==='light'?'modeLight':current.uiThemeMode==='dark'?'modeDark':'modeAuto';
+    const uiThemeLabel=tr('uiThemeToggle')+': '+tr(modeKey);
+    const uiThemeBtn=$('btn-ui-theme');
+    uiThemeBtn.title=uiThemeLabel;
+    uiThemeBtn.setAttribute('aria-label',uiThemeLabel);
+  }
+  function effectivePreviewView(overrides={}) {
+    const base=previewSchemeOverride?{...current,themeMode:previewSchemeOverride}:current;
+    return {...base,...overrides};
   }
   function preview(overrides={}) {
-    const view={...current,...overrides};
+    const view=effectivePreviewView(overrides);
     const scheme=Schema.resolveScheme(view), name=Schema.resolvePalette(view);
     const p=palettes[name] || palettes[scheme==='dark'?'obsidian':'crystal'];
     const element=$('chat-preview'),style=element.style;
@@ -100,6 +117,7 @@
     element.dataset.ambient=view.ambientStyle;element.dataset.texture=view.ambientTexture;
     element.dataset.sidebar=view.sidebarStyle;element.dataset.glow=String(view.composerGlow);
     element.dataset.composer=String(view.composerRestyle);element.dataset.compact=String(view.sidebarCompact);
+    element.dataset.previewScheme=scheme;element.dataset.previewPalette=name;
     $('preview-host-name').textContent=previewSite==='chatgpt'?'ChatGPT':'Gemini';
     const statusKey=view.ambientStyle==='none'&&view.ambientTexture==='off'?'effectNone':reduced?'effectsReduced':view.motionLevel==='off'?'effectsPaused':'effectsActive';
     $('effect-status').textContent=tr(statusKey);
@@ -109,20 +127,23 @@
   }
   function render() {
     current={...confirmed}; for(const [key,entry] of pending) current[key]=entry.value;
-    Schema.applyConfigToRoot({...current,enabled:true});
+    Schema.applyUiThemeToRoot(current);
+    $('btn-ui-theme').dataset.uiTheme=current.uiThemeMode;
     for(const key of Object.keys(Schema.DEFAULT_CONFIG)) {
       const node=$('cfg-'+key); if(!node) continue;
       if(node.type==='checkbox') node.checked=current[key];
       else if(document.activeElement!==node || node.tagName==='SELECT') node.value=String(current[key]);
     }
-    for(const radio of document.querySelectorAll('[data-palette-key]')) {radio.checked=current[radio.dataset.paletteKey]===radio.value;radio.closest('.palette').dataset.active=String(Schema.resolvePalette(current)===radio.value);}
+    const activePreviewPalette=Schema.resolvePalette(effectivePreviewView());
+    for(const radio of document.querySelectorAll('[data-palette-key]')) {radio.checked=current[radio.dataset.paletteKey]===radio.value;radio.closest('.palette').dataset.active=String(activePreviewPalette===radio.value);}
     for(const button of document.querySelectorAll('[data-choice]')) button.setAttribute('aria-pressed',String(current[button.dataset.choice]===button.dataset.value));
     for(const button of document.querySelectorAll('[data-preset]')) button.setAttribute('aria-pressed',String(Object.entries(Schema.SCENE_PRESETS[button.dataset.preset]).every(([key,value])=>current[key]===value)));
     for(const box of document.querySelectorAll('[data-native]')) box.checked=current[box.dataset.native]==='host';
     for(const swatch of document.querySelectorAll('[data-accent]')) swatch.setAttribute('aria-pressed',String(swatch.dataset.accent===current.accentTone));
     $('val-ambientIntensity').textContent=current.ambientIntensity+'%';
-    translateLabels();preview();checkPermission();
-    if(keyStatusEndpoint!==current.thoughtEndpoint) checkKeyStatus();
+    translateLabels();preview();
+    if(activeTab==='translation' && lastCheckedPermissionEndpoint!==current.thoughtEndpoint) checkPermission();
+    if(bootLoaded && keyStatusEndpoint!==current.thoughtEndpoint) checkKeyStatus();
   }
   function save(patch) {
     const stamp=++revision;
@@ -161,6 +182,7 @@
     const input=$('cfg-'+key);if(!input) continue;
     input.addEventListener('change',()=>{
       if(key==='ambientIntensity') {clearTimeout(rangeTimer);queueSave({ambientIntensity:Number(input.value)});return;}
+      if(key==='themeMode') previewSchemeOverride=null;
       const value=input.type==='checkbox'?input.checked:key==='contextWindowTokens'?(input.value==='auto'?'auto':Number(input.value)):input.value;
       if(key==='thoughtEndpoint' && input.value.trim() && !Schema.validEndpoint(input.value)) {status('endpointRequired',true);return;}
       queueSave({[key]:value});
@@ -171,15 +193,43 @@
     $('val-ambientIntensity').textContent=value+'%';preview({ambientIntensity:value});
     clearTimeout(rangeTimer);rangeTimer=setTimeout(()=>queueSave({ambientIntensity:value}),120);
   });
+  $('btn-ui-theme').addEventListener('click',()=>{
+    const order=Schema.ENUMS.uiThemeMode;
+    const next=order[(order.indexOf(current.uiThemeMode)+1)%order.length];
+    queueSave({uiThemeMode:next});
+  });
   $('btn-atmosphere').addEventListener('click',()=>switchTab('motion',true));
   for(const button of document.querySelectorAll('[data-choice]')) button.addEventListener('click',()=>queueSave({[button.dataset.choice]:button.dataset.value}));
   for(const button of document.querySelectorAll('[data-preview-site]')) button.addEventListener('click',()=>{previewSite=button.dataset.previewSite;preview();});
-  for(const radio of document.querySelectorAll('[data-palette-key]')) radio.addEventListener('change',()=>queueSave({[radio.dataset.paletteKey]:radio.value,themeMode:radio.dataset.paletteKey==='palette'?'dark':'light'}));
-  for(const box of document.querySelectorAll('[data-native]')) box.addEventListener('change',()=>queueSave({[box.dataset.native]:box.checked?'host':box.dataset.native==='palette'?'obsidian':'crystal'}));
+  let clickedPaletteRadio=null;
+  let clickedPaletteTimer=0;
+  function handlePaletteCard(radio) {
+    const key=radio.dataset.paletteKey;
+    previewSchemeOverride=key==='palette'?'dark':'light';
+    if(current[key]!==radio.value) queueSave({[key]:radio.value});
+    else render();
+  }
+  for(const radio of document.querySelectorAll('[data-palette-key]')) {
+    radio.addEventListener('click',()=>{
+      clearTimeout(clickedPaletteTimer);
+      clickedPaletteRadio=radio;
+      clickedPaletteTimer=setTimeout(()=>{if(clickedPaletteRadio===radio) clickedPaletteRadio=null;},0);
+      handlePaletteCard(radio);
+    });
+    radio.addEventListener('change',()=>{
+      if(clickedPaletteRadio===radio) {clearTimeout(clickedPaletteTimer);clickedPaletteRadio=null;return;}
+      handlePaletteCard(radio);
+    });
+  }
+  for(const box of document.querySelectorAll('[data-native]')) box.addEventListener('change',()=>{
+    previewSchemeOverride=box.dataset.native==='palette'?'dark':'light';
+    queueSave({[box.dataset.native]:box.checked?'host':box.dataset.native==='palette'?'obsidian':'crystal'});
+  });
   for(const button of document.querySelectorAll('[data-accent]')) button.addEventListener('click',()=>queueSave({accentTone:button.dataset.accent}));
   for(const button of document.querySelectorAll('[data-preset]')) button.addEventListener('click',()=>queueSave(Schema.SCENE_PRESETS[button.dataset.preset]));
   async function checkPermission() {
     const stamp=++permissionRevision;
+    lastCheckedPermissionEndpoint=current.thoughtEndpoint;
     let granted=false;
     try {if(current.thoughtEndpoint) granted=await Schema.callApi(api.permissions,'contains',Schema.permissionRequest(current.thoughtEndpoint));} catch (_) {}
     if(stamp!==permissionRevision) return;
@@ -232,23 +282,26 @@
       if(!known.length||known.some(key=>!Object.prototype.hasOwnProperty.call(clean,key))) throw new Error('INVALID');
       // Importing a file must never silently enable external text transmission.
       clean.thoughtTranslate=false;
+      previewSchemeOverride=null;
       await save(clean);status('importSuccess');
     }catch(_){status('importInvalid',true);}
   });
   $('btn-reset').addEventListener('click',async()=>{
     if(!window.confirm(tr('resetConfirm')))return;
-    try {await saves;const result=await Schema.sendMessage({type:'OP_CONFIG_RESET'});confirmed=result.config;pending.clear();render();status('statusSaved');}catch(_){status('statusError',true);}
+    try {await saves;const result=await Schema.sendMessage({type:'OP_CONFIG_RESET'});confirmed=result.config;pending.clear();previewSchemeOverride=null;render();status('statusSaved');}catch(_){status('statusError',true);}
   });
-  Schema.subscribe(cfg=>{confirmed=cfg;render();});
+  Schema.subscribe(cfg=>{if(cfg.themeMode!==confirmed.themeMode) previewSchemeOverride=null;confirmed=cfg;render();});
   try {$('version-label').textContent=api.runtime.getManifest().version;}catch(_){}
   render();
   Schema.loadConfig().then(async config=>{
-    confirmed=config;render();$('settings-fields').disabled=false;status('statusSaved');
-    try {keyConfigured=(await Schema.sendMessage({type:'OP_SECRETS_STATUS'})).configured;translateLabels();}catch(_){}
+    bootLoaded=true;confirmed=config;render();$('settings-fields').disabled=false;status('statusSaved');
   }).catch(()=>status('loadError',true));
   document.addEventListener('visibilitychange',()=>preview());
   if(globalThis.matchMedia) {
-    matchMedia('(prefers-color-scheme: dark)').addEventListener('change',render);
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{
+      if(current.themeMode==='auto') previewSchemeOverride=null;
+      render();
+    });
     matchMedia('(prefers-reduced-motion: reduce)').addEventListener('change',render);
   }
 })();

@@ -1,0 +1,185 @@
+<!doctype html>
+<!--
+  Anonymous Gemini conversation fixture derived from the 2026-11-22 read-only structure probe
+  (.trellis/research/live-host-dom.md). Structure, markers, widths and computed styles follow the probe; all
+  text, ids and labels are synthetic. Values marked "inferred" in tests/README.md were not measured.
+-->
+<html lang="en" style="color-scheme:dark"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Prism offline Gemini live-structure fixture</title><style>
+:root{--bard-chat-window-content-width-default:744px;--bard-chat-window-content-width:708px;--gem-sys-color--surface:#131314;--gem-sys-color--on-surface:#e3e3e3;--gem-sys-color--surface-container:#1e1f20}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:#131314;color:#e3e3e3;font:16px/1.75 "Google Sans Text","Google Sans","Helvetica Neue",sans-serif}
+button{font:inherit;color:inherit;cursor:pointer;background:transparent;border:0}
+svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.7;flex:none}
+a{color:inherit;text-decoration:none}
+chat-app,bard-sidenav,side-navigation-v2,chat-window,infinite-scroller,user-query,user-query-content,model-response,response-container,message-content,message-actions,input-container,input-area-v2,rich-textarea,bard-mode-switcher,hallucination-disclaimer,uploader-file-preview{display:block}
+chat-app{display:flex;height:100vh;overflow:hidden}
+bard-sidenav{flex:0 0 312px;width:312px;height:100vh;background:#1e1f20;padding:12px}
+side-navigation-v2{display:flex;flex-direction:column;gap:4px;font-size:14px;line-height:20px}
+side-navigation-v2 a{position:relative;display:block;padding:8px 12px;border-radius:999px;color:var(--gem-sys-color--on-surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+side-navigation-v2 a .conversation-title{font-weight:400}
+side-navigation-v2 a[aria-current]{background:#1f3760}
+side-navigation-v2 a[aria-current]::before{content:"";position:absolute;inset:0;border-radius:inherit;background:rgba(168,199,250,.12);pointer-events:none}
+.nav-heading{font-size:14px;color:#9aa0a6;padding:16px 12px 6px}
+/* Probe: the conversation panel (~1395px at a 1707px viewport) is far wider than the reading column. */
+chat-window{position:relative;flex:1 1 0;min-width:0;height:100vh;display:flex;flex-direction:column}
+.top-bar{height:64px;flex:none;display:flex;align-items:center;padding:0 20px;font-size:20px}
+.chat-history-scroll-container{flex:1 1 0;min-height:0;overflow-y:auto;overflow-x:hidden;padding-bottom:150px}
+.conversation-container{padding:0 24px 24px}
+/* Probe: user-query is limited to 708px. */
+user-query{width:100%;max-width:708px;margin:24px auto 16px}
+.user-query-container{display:flex;justify-content:flex-end}
+.user-query-bubble-with-background{max-width:min(78%,600px);background:#333537;border-radius:24px 4px 24px 24px;padding:12px 16px}
+.query-text-line{margin:0}
+model-response{width:100%}
+/* Probe: under .enable-extended-and-xl-grid every direct child of .md-content gets max-width: 708px. */
+.enable-extended-and-xl-grid .md-content > *,.enable-extended-and-xl-grid .md-content > code-block > .code-block{max-width:708px;margin-inline:auto}
+.md-content{font-family:"Google Sans Text","Google Sans","Helvetica Neue",sans-serif;font-size:16px;line-height:1.75}
+.md-content > *{margin-top:0;margin-bottom:16px}
+/* Probe: native h2 24px / 380, h3 20px / 470 (inverted hierarchy). h1 and h4 values are inferred. */
+.md-content h1,.md-content h2,.md-content h3,.md-content h4{font-family:"Google Sans Flex","Google Sans","Helvetica Neue",sans-serif;color:#e3e3e3}
+.md-content h1{font-size:28px;line-height:36px;font-weight:400}
+.md-content h2{font-size:24px;line-height:32px;font-weight:380}
+.md-content h3{font-size:20px;line-height:28px;font-weight:470}
+.md-content h4{font-size:16px;line-height:24px;font-weight:500}
+.md-content ul,.md-content ol{padding-left:24px}
+.md-content blockquote{border-left:4px solid #444746;padding-left:16px}
+.md-content table{border-collapse:collapse;font-size:14px}
+.md-content th,.md-content td{border:1px solid #444746;padding:6px 12px;text-align:left}
+.code-block{background:#1e1f20;border-radius:16px;overflow:hidden}
+.code-block-decoration{display:flex;justify-content:space-between;align-items:center;padding:8px 16px;font-size:13px;background:#282a2c}
+.code-block-decoration .google-symbols,.code-block-decoration mat-icon{font-size:18px;line-height:1;display:inline-flex;align-items:center;justify-content:center}
+.code-block pre{margin:0;padding:16px;overflow:auto;font:14px/1.6 "Google Sans Mono",ui-monospace,monospace}
+.math-block{background:#2b2d30;color:#f3f4f6;padding:8px 12px;border-radius:8px}
+.math-inline{background:#2b2d30;color:#f3f4f6;padding:0 4px;border-radius:4px}
+.katex-display{display:block;margin:8px 0}
+.katex{display:inline-block;white-space:nowrap;color:#f3f4f6;background:#2b2d30}
+/* Inferred: the response footer follows the reading column. */
+.response-footer{max-width:708px;margin:0 auto 8px}
+message-actions{display:flex;gap:4px;color:#c4c7c5}
+message-actions button{width:36px;height:36px;display:grid;place-items:center;border-radius:50%}
+/* Probe (2026-11-22 / 2026-11-24): full-width edge-to-edge input-container wraps the centered 660px
+   .input-area-container and fades to opaque near-black across both wings and below the composer. */
+input-container.input-gradient.input-gradient-overlay.edge-to-edge{position:absolute;left:0;right:0;bottom:0;width:100%;min-height:133px;padding:28px 24px 0;z-index:1;background-image:linear-gradient(180deg,rgba(19,19,20,0) 0,#131314 28px)}
+input-container.input-gradient-overlay.edge-to-edge::before{content:"";position:absolute;inset:0;pointer-events:none;z-index:-1;background-image:linear-gradient(180deg,rgba(19,19,20,0) 0,rgba(19,19,20,.92) 28px,#131314 100%)}
+input-container.input-gradient-overlay.edge-to-edge::after{content:"";position:absolute;left:0;right:0;bottom:0;height:28px;pointer-events:none;z-index:-1;background-color:#131314}
+/* Probe: the input area container is 660px; input-area-v2 paints its own surface (~rgb 30,31,32). */
+.input-area-container{width:100%;max-width:660px;margin-inline:auto}
+input-area-v2{background:rgb(30,31,32);border-radius:32px;padding:8px 12px}
+/* Probe: .text-input-field is a grid with these areas. Column sizes are inferred. */
+.text-input-field{display:grid;grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:"file-preview file-preview file-preview" "leading-actions text-input trailing-actions";align-items:center;column-gap:4px}
+.file-preview-container{grid-area:file-preview;display:flex;gap:8px;padding:4px 4px 8px}
+.file-preview-chip{display:inline-flex;align-items:center;gap:8px;padding:6px 12px;border-radius:12px;background:#333537;font-size:13px;line-height:18px}
+.leading-actions-wrapper{grid-area:leading-actions;display:flex}
+.text-input-field_textarea-wrapper{grid-area:text-input;min-width:0}
+.trailing-actions-wrapper{grid-area:trailing-actions;display:flex;align-items:center;gap:4px}
+.leading-actions-wrapper button,.trailing-actions-wrapper button{height:40px;min-width:40px;display:inline-flex;align-items:center;justify-content:center;gap:4px;border-radius:999px;padding:0 10px}
+.ql-editor{min-height:24px;max-height:200px;overflow-y:auto;outline:none;padding:8px 4px;white-space:pre-wrap;overflow-wrap:anywhere}
+.ql-editor p{margin:0}
+.ql-editor.ql-blank::before{content:attr(data-placeholder);color:#8e918f;position:absolute;pointer-events:none}
+hallucination-disclaimer{text-align:center;font-size:12px;line-height:16px;color:#c4c7c5;padding:10px 0 12px}
+.host-corner-help{position:fixed;right:16px;bottom:16px;z-index:20;width:32px;height:32px;border-radius:999px;background:#282a2c;color:#c4c7c5;border:1px solid rgba(255,255,255,.12);display:inline-flex;align-items:center;justify-content:center}
+.cdk-visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+</style></head><body class="dark-theme"><chat-app id="app-root">
+<bard-sidenav><side-navigation-v2><a href="#new">New chat</a><div class="nav-heading">Recent</div><a href="/app/8f21d40973e5a6b1" aria-current="page"><span class="conversation-title">Synthetic layout review</span></a><a href="/app/3c7a90e1d2b45f68"><span class="conversation-title">Placeholder planning chat</span></a><a href="/app/6e14b8c2a09d7f35"><span class="conversation-title">Offline sample notes</span></a></side-navigation-v2></bard-sidenav>
+<chat-window><div class="top-bar">Gemini</div>
+<div class="chat-history-scroll-container" data-prism-test-scroller><infinite-scroller class="chat-history">
+<div class="conversation-container enable-extended-and-xl-grid" id="c_8f21d40973e5a6b1">
+<user-query><user-query-content><div class="user-query-container"><span class="cdk-visually-hidden">You said</span><div class="user-query-bubble-with-background"><div class="query-text"><p class="query-text-line">Please outline a calm layout for a long technical answer with headings, lists, a quote, a small table and one code sample, including clear section boundaries, readable line lengths across wide displays, balanced vertical rhythm between consecutive blocks, and well-proportioned mathematical formulas and code wells that stay effortless to scan from start to finish.</p></div></div></div></user-query-content></user-query>
+<model-response><response-container><div class="response-container"><div class="presented-response-container"><message-content class="model-response-text" id="message-content-id-r_8f21d40973e5a6b1"><div class="markdown markdown-main-panel md-content" dir="ltr">
+<h1>Layout overview for synthetic notes</h1>
+<p>This paragraph is deliberately long so that it wraps across the full reading column. It describes nothing real: it only gives the browser enough words to lay out several lines, which lets the tests compare the rendered line width with the width of the column that contains it, at more than one main-area width.</p>
+<h2>Section heading at level two</h2>
+<p>A second paragraph keeps the rhythm between headings and body text visible, so later checks can compare their computed font family, size and weight in the same turn.</p>
+<h3>Subsection heading at level three</h3>
+<ul><li>First bullet with a few placeholder words</li><li>Second bullet that is a little longer than the first one</li><li>Third bullet</li></ul>
+<h4>Minor heading at level four</h4>
+<ol><li>Ordered step one</li><li>Ordered step two</li></ol>
+<blockquote><p>A quoted aside that stands apart from the surrounding paragraphs.</p></blockquote>
+<table><thead><tr><th>Setting</th><th>Value</th></tr></thead><tbody><tr><td>Placement</td><td>Centered</td></tr><tr><td>Rhythm</td><td>Relaxed</td></tr></tbody></table>
+<code-block><div class="code-block"><div class="code-block-decoration header-formatted"><span>snippet</span><div style="display:flex;align-items:center;gap:6px"><button type="button" aria-label="Download code"><mat-icon class="mat-icon google-symbols" fonticon="download" style="color:#e3e3e3">download</mat-icon></button><button type="button" aria-label="Copy code"><svg viewBox="0 0 24 24" aria-hidden="true" style="fill:#e3e3e3;stroke:none"><path d="M5 5h14v14H5z"/></svg></button></div></div><div class="formatted-code-block-internal-container"><pre><code class="code-container formatted">const sampleWidth = 708;
+const sampleInput = 660;
+console.log(sampleWidth - sampleInput);</code></pre></div></div></code-block>
+<p>Inline math check <span class="math-inline"><span class="katex">E = mc^2</span></span> inside prose.</p>
+<div class="math-block"><span class="katex-display"><span class="katex" style="white-space:nowrap">f(x) = a_0 + a_1 x + a_2 x^2 + a_3 x^3 + a_4 x^4 + a_5 x^5 + a_6 x^6 + a_7 x^7 + a_8 x^8 + a_9 x^9 + a_{10} x^{10} + a_{11} x^{11} + a_{12} x^{12} + a_{13} x^{13} + a_{14} x^{14} + a_{15} x^{15}</span></span></div>
+<code-block><div class="code-block"><div class="code-block-decoration header-formatted"><span>Code snippet</span><div style="display:flex;align-items:center;gap:6px"><button type="button" aria-label="Copy code"><svg viewBox="0 0 24 24" aria-hidden="true" style="fill:#e3e3e3;stroke:none"><path d="M5 5h14v14H5z"/></svg></button></div></div><div class="formatted-code-block-internal-container"><pre><code class="code-container formatted">% 1. 目标函数 (Objective)
+\mathcal{L}(\theta) = \frac{1}{N} \sum_{i=1}^N (y_i - \hat{y}_i)^2
+
+% 2. 梯度更新推导
+\begin{aligned}
+g_t &amp;= \nabla_\theta \mathcal{L}(\theta_t) \\
+
+\theta_{t+1} &amp;= \theta_t - \eta g_t
+\end{aligned}</code></pre></div></div></code-block>
+<code-block><div class="code-block"><div class="code-block-decoration header-formatted"><span>LaTeX</span><div style="display:flex;align-items:center;gap:6px"><button type="button" aria-label="Copy code"><svg viewBox="0 0 24 24" aria-hidden="true" style="fill:#e3e3e3;stroke:none"><path d="M5 5h14v14H5z"/></svg></button></div></div><div class="formatted-code-block-internal-container"><pre><code class="code-container formatted language-latex">% 欧拉恒等式
+e^{i\pi} + 1 = 0</code></pre></div></div></code-block>
+<code-block><div class="code-block"><div class="code-block-decoration header-formatted"><span>LaTeX</span><div style="display:flex;align-items:center;gap:6px"><button type="button" aria-label="Copy code"><svg viewBox="0 0 24 24" aria-hidden="true" style="fill:#e3e3e3;stroke:none"><path d="M5 5h14v14H5z"/></svg></button></div></div><div class="formatted-code-block-internal-container"><pre><code class="code-container formatted language-latex">% 有效公式段
+\int_0^1 x^2 \, dx = \frac{1}{3}
+
+% 语法错误段
+\frac{1}{</code></pre></div></div></code-block>
+<code-block><div class="code-block"><div class="code-block-decoration header-formatted"><span>LaTeX</span><div style="display:flex;align-items:center;gap:6px"><button type="button" aria-label="Copy code"><svg viewBox="0 0 24 24" aria-hidden="true" style="fill:#e3e3e3;stroke:none"><path d="M5 5h14v14H5z"/></svg></button></div></div><div class="formatted-code-block-internal-container"><pre><code class="code-container formatted language-latex">\frac{1}{
+
+\unknownTemmlMacro{bad}</code></pre></div></div></code-block>
+<code-block><div class="code-block"><div class="code-block-decoration header-formatted"><span>LaTeX</span><div style="display:flex;align-items:center;gap:6px"><button type="button" aria-label="Copy code"><svg viewBox="0 0 24 24" aria-hidden="true" style="fill:#e3e3e3;stroke:none"><path d="M5 5h14v14H5z"/></svg></button></div></div><div class="formatted-code-block-internal-container"><pre><code class="code-container formatted language-latex">% 1. 长推导展开
+S_1 = \frac{1}{1^2}
+a_{2} = \frac{1}{2^2}
+a_{3} = \frac{1}{3^2}
+a_{4} = \frac{1}{4^2}
+a_{5} = \frac{1}{5^2}
+a_{6} = \frac{1}{6^2}
+a_{7} = \frac{1}{7^2}
+a_{8} = \frac{1}{8^2}
+a_{9} = \frac{1}{9^2}
+a_{10} = \frac{1}{10^2}
+a_{11} = \frac{1}{11^2}
+a_{12} = \frac{1}{12^2}
+a_{13} = \frac{1}{13^2}
+a_{14} = \frac{1}{14^2}
+a_{15} = \frac{1}{15^2}
+a_{16} = \frac{1}{16^2}
+a_{17} = \frac{1}{17^2}
+a_{18} = \frac{1}{18^2}
+a_{19} = \frac{1}{19^2}
+a_{20} = \frac{1}{20^2}
+a_{21} = \frac{1}{21^2}
+a_{22} = \frac{1}{22^2}
+a_{23} = \frac{1}{23^2}
+a_{24} = \frac{1}{24^2}
+a_{25} = \frac{1}{25^2}
+a_{26} = \frac{1}{26^2}
+a_{27} = \frac{1}{27^2}
+a_{28} = \frac{1}{28^2}
+a_{29} = \frac{1}{29^2}
+a_{30} = \frac{1}{30^2}
+a_{31} = \frac{1}{31^2}
+a_{32} = \frac{1}{32^2}
+a_{33} = \frac{1}{33^2}
+a_{34} = \frac{1}{34^2}
+a_{35} = \frac{1}{35^2}
+a_{36} = \frac{1}{36^2}
+a_{37} = \frac{1}{37^2}
+a_{38} = \frac{1}{38^2}
+a_{39} = \frac{1}{39^2}
+a_{40} = \frac{1}{40^2}
+a_{41} = \frac{1}{41^2}
+a_{42} = \frac{1}{42^2}
+a_{43} = \frac{1}{43^2}
+a_{44} = \frac{1}{44^2}
+a_{45} = \frac{1}{45^2}
+a_{46} = \frac{1}{46^2}
+a_{47} = \frac{1}{47^2}
+a_{48} = \frac{1}{48^2}
+a_{49} = \frac{1}{49^2}</code></pre></div></div></code-block>
+<p>A closing paragraph ends the answer before the action row.</p>
+</div></message-content></div><div class="response-footer"><message-actions><button type="button" aria-label="Good response"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 11v9M7 11l4-8a2 2 0 0 1 3 2l-1 5h6l-2 9H7"/></svg></button><button type="button" aria-label="Copy"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/></svg></button><button type="button" aria-label="Show more options"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="5" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="19" r="1"/></svg></button></message-actions></div></div></response-container></model-response>
+<user-query><user-query-content><div class="user-query-container"><span class="cdk-visually-hidden">You said</span><div class="user-query-bubble-with-background"><div class="query-text"><p class="query-text-line">And a short follow-up question?</p></div></div></div></user-query-content></user-query>
+<model-response><response-container><div class="response-container"><div class="presented-response-container"><message-content class="model-response-text" id="message-content-id-r_3c7a90e1d2b45f68"><div class="markdown markdown-main-panel md-content" dir="ltr"><p data-stream-fixture>A brief synthetic reply that closes the offline conversation.</p></div></message-content></div><div class="response-footer"><message-actions><button type="button" aria-label="Copy"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="9" width="11" height="11" rx="2"/></svg></button></message-actions></div></div></response-container></model-response>
+</div></infinite-scroller></div>
+<input-container class="input-gradient input-gradient-overlay edge-to-edge"><div class="input-area-container"><input-area-v2><div class="text-input-field">
+<div class="file-preview-container"><uploader-file-preview class="file-preview-chip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 3h7l5 5v13H7z"/></svg><span>synthetic-outline.pdf</span><button type="button" aria-label="Remove file">×</button></uploader-file-preview></div>
+<div class="leading-actions-wrapper"><button type="button" aria-label="Open upload file menu"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button></div>
+<div class="text-input-field_textarea-wrapper"><rich-textarea><div class="ql-editor ql-blank textarea" contenteditable="true" role="textbox" aria-multiline="true" aria-label="Enter a prompt for Gemini" data-placeholder="Ask Gemini"><p><br></p></div></rich-textarea></div>
+<div class="trailing-actions-wrapper"><bard-mode-switcher><button type="button" aria-label="Open mode picker, currently Neon High" aria-haspopup="menu"><span>Neon High</span><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></bard-mode-switcher><button type="button" aria-label="Microphone"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/></svg></button></div>
+</div></input-area-v2></div><hallucination-disclaimer>Offline layout fixture. Replies here are synthetic placeholders.</hallucination-disclaimer></input-container>
+</chat-window></chat-app><button type="button" class="host-corner-help" aria-label="Help and shortcuts">?</button></body></html>

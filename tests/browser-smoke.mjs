@@ -12,6 +12,21 @@ import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createRequire } from 'node:module';
 import { checkRealActionPopup, checkPopupIntrinsicSize } from './popup-regressions.mjs';
+import { checkLiveFixtureBaselines } from './live-fixtures.mjs';
+import { checkTwoRowComposer } from './composer-two-row.mjs';
+import { checkLiveTurnsAndCapacity } from './live-turns.mjs';
+import { checkHeadingTypography } from './heading-typography.mjs';
+import { checkLiveWidthPresets } from './live-width.mjs';
+// v0.3.1 #22 blur Composer Scrim
+import { checkLiveComposerScrim } from './live-scrim.mjs';
+// v0.4.0 #27 Bottom Dock singleton handover & dynamic collision avoidance
+import { checkBottomDock } from './bottom-dock.mjs';
+// v0.4.1 #33 Gemini Code Surface nesting/contrast & dual-host Native Math Surface readability/overflow
+import { checkCodeAndNativeMathSurfaces } from './code-math-surface.mjs';
+// v0.4.1 #34 Dual-host offline Temml MathML Formula Preview, toggle, copy preservation, fold coordination & zero-residue restore
+import { checkFormulaPreview } from './formula-preview.mjs';
+import { checkSidebarActiveHighlight } from './sidebar-highlight.mjs';
+import { paragraphWidth, waitUntil } from './measure.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const ARTIFACTS = path.join(ROOT, 'test-artifacts');
@@ -24,7 +39,8 @@ catch {
   const modules = process.env.CODEX_PRIMARY_RUNTIME_NODE_MODULES;
   if (!modules) throw new Error('Install developer dependency playwright before running browser tests.');
   const require = createRequire(import.meta.url);
-  playwright = await import(pathToFileURL(require.resolve('playwright', { paths: [modules] })).href);
+  const mod = await import(pathToFileURL(require.resolve('playwright', { paths: [modules] })).href);
+  playwright = mod[engine] ? mod : mod.default;
 }
 const type = playwright[engine];
 const executable = process.env.PRISM_BROWSER_EXECUTABLE || (existsSync(type.executablePath()) ? undefined : engine === 'chromium' && existsSync('/usr/bin/chromium') ? '/usr/bin/chromium' : undefined);
@@ -33,9 +49,19 @@ const source = async relative => fs.readFile(path.join(ROOT, relative), 'utf8');
 const fixtures = { chatgpt: await source('tests/fixtures/chatgpt.html'), gemini: await source('tests/fixtures/gemini.html') };
 const homeFixtures = { chatgpt: await source('tests/fixtures/chatgpt-home.html'), gemini: await source('tests/fixtures/gemini-home.html') };
 const fixtureURLs = { chatgpt: 'https://chatgpt.com/prism-offline-fixture', gemini: 'https://gemini.google.com/prism-offline-fixture' };
-const scriptFiles = ['src/config-schema.js', 'src/early-boot.js', 'src/adapters.js', 'src/content.js'];
+// Probe-derived fixtures (see tests/live-fixtures.mjs and .trellis/research/live-host-dom.md).
+const liveFixtures = { chatgpt: await source('tests/fixtures/chatgpt-live.html'), gemini: await source('tests/fixtures/gemini-live.html') };
+const probeSource = await source('tools/structure-probe.js');
+const scriptFiles = ['src/config-schema.js', 'src/early-boot.js', 'vendor/temml/temml.min.js', 'src/formula.js', 'src/adapters.js', 'src/content.js'];
 const scripts = await Promise.all(scriptFiles.map(source));
-const styles = await Promise.all(['styles/prism-tokens.css', 'styles/hosts.css'].map(source));
+const [tokensCss, commonCss, chatgptCss, geminiCss, temmlCss] = await Promise.all([
+  'styles/prism-tokens.css', 'styles/common.css', 'styles/host-chatgpt.css', 'styles/host-gemini.css', 'vendor/temml/temml-local.css'
+].map(source));
+const stylesByHost = {
+  chatgpt: [tokensCss, commonCss, chatgptCss, temmlCss],
+  gemini: [tokensCss, commonCss, geminiCss, temmlCss]
+};
+const styles = [tokensCss, commonCss, chatgptCss, geminiCss, temmlCss];
 
 async function interceptFixtures(context) {
   await context.route(/^https?:\/\//, async route => {
@@ -43,6 +69,7 @@ async function interceptFixtures(context) {
     const host = url.hostname === 'chatgpt.com' ? 'chatgpt' : url.hostname === 'gemini.google.com' ? 'gemini' : null;
     if (host && url.pathname === '/prism-offline-fixture') return route.fulfill({ status: 200, contentType: 'text/html', body: fixtures[host] });
     if (host && url.pathname === '/prism-offline-home') return route.fulfill({ status: 200, contentType: 'text/html', body: homeFixtures[host] });
+    if (host && url.pathname === '/prism-live-fixture') return route.fulfill({ status: 200, contentType: 'text/html', body: liveFixtures[host] });
     // Every non-fixture HTTP request is blocked, including translation endpoints.
     return route.abort('blockedbyclient');
   });
@@ -122,34 +149,63 @@ async function actualChromiumExtension() {
     const worker = context.serviceWorkers()[0] || await context.waitForEvent('serviceworker', { timeout: 20000 });
     const workerURL = new URL(worker.url());
     const extensionOrigin = workerURL.protocol + '//' + workerURL.host;
-    options = await context.newPage();
+    const options = await context.newPage();
     const errors = [];
     options.on('pageerror', error => errors.push(error.message));
     await options.goto(extensionOrigin + '/' + manifest.options_ui.page);
     await options.waitForFunction(() => Boolean(document.querySelector('#settings-fields') && !document.querySelector('#settings-fields').disabled));
     assert.equal(await options.locator('#cfg-enabled').isChecked(), true);
+    await options.emulateMedia({ colorScheme: 'light' });
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light' && getComputedStyle(document.documentElement).colorScheme === 'light');
+    assert.equal(await options.evaluate(() => document.documentElement.getAttribute('data-op-effective-palette')), 'crystal');
+    await options.emulateMedia({ colorScheme: 'dark' });
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'dark' && getComputedStyle(document.documentElement).colorScheme === 'dark');
+    assert.equal(await options.evaluate(() => document.documentElement.getAttribute('data-op-effective-palette')), 'obsidian');
+    await options.emulateMedia({ colorScheme: null });
     await options.evaluate(async () => {
-      await ObsidianPrismSchema.saveConfig({ themeMode: 'dark', palette: 'warm', language: 'en-US' });
+      await ObsidianPrismSchema.saveConfig({ uiThemeMode: 'dark', themeMode: 'dark', palette: 'warm', language: 'en-US' });
     });
-    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'dark');
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'dark' && getComputedStyle(document.documentElement).colorScheme === 'dark');
     await prepareNativeOptionsWindow(options);
     await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-dark.png'), fullPage: true });
     await options.locator('#tab-motion').click();
     await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-motion-dark.png'), fullPage: true });
-    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ themeMode: 'light', lightPreset: 'alabaster' }));
-    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
+    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ uiThemeMode: 'light', themeMode: 'light', lightPreset: 'alabaster' }));
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light' && getComputedStyle(document.documentElement).colorScheme === 'light');
     await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-motion-light.png'), fullPage: true });
     await options.locator('#tab-appearance').click();
     await captureNativeScreenshot(options, { path: path.join(ARTIFACTS, 'chromium-options-light.png'), fullPage: true });
-    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ themeMode: 'dark' }));
+    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ uiThemeMode: 'dark', themeMode: 'dark', lightPreset: 'crystal' }));
     chat = await context.newPage();
     await chat.goto(fixtureURLs.chatgpt);
     await chat.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'warm');
     await chat.waitForSelector('.op-code-fold-bar');
     assert.equal(await chat.locator('.op-code-fold-bar').count(), 1);
+    // Changing uiThemeMode must lock Options theme without touching open ChatGPT Host Surface or #chat-preview.
+    await options.locator('#cfg-uiThemeMode').selectOption('light');
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light' && getComputedStyle(document.documentElement).colorScheme === 'light');
+    await waitUntil(async () => (await options.evaluate(() => ObsidianPrismSchema.loadConfig())).uiThemeMode === 'light', 'options uiThemeMode=light');
+    await chat.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+    assert.equal(await options.evaluate(() => document.documentElement.getAttribute('data-op-effective-palette')), 'crystal');
+    assert.equal(await options.locator('#btn-ui-theme').getAttribute('data-ui-theme'), 'light');
+    assert.equal(await options.locator('#chat-preview').getAttribute('data-preview-scheme'), 'dark');
+    assert.equal(await options.locator('#chat-preview').getAttribute('data-preview-palette'), 'warm');
+    assert.equal(await chat.evaluate(() => document.documentElement.getAttribute('data-op-scheme')), 'dark');
+    assert.equal(await chat.evaluate(() => document.documentElement.getAttribute('data-op-effective-palette')), 'warm');
+    // Under Native Palette ('host'), settings UI falls back to crystal/obsidian with matching color-scheme.
+    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ palette: 'host', lightPreset: 'host', uiThemeMode: 'light' }));
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'crystal');
+    assert.equal(await options.evaluate(() => getComputedStyle(document.documentElement).colorScheme), 'light');
+    await chat.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'host');
+    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ uiThemeMode: 'dark' }));
+    await options.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
+    assert.equal(await options.evaluate(() => getComputedStyle(document.documentElement).colorScheme), 'dark');
+    await options.evaluate(() => ObsidianPrismSchema.saveConfig({ palette: 'warm', lightPreset: 'crystal', uiThemeMode: 'auto' }));
+    await chat.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'warm');
     await options.evaluate(() => ObsidianPrismSchema.saveConfig({ enabled: false }));
     await chat.waitForFunction(() => !document.documentElement.hasAttribute('data-op-enabled'));
     assert.equal(await chat.locator('[data-op-owned]').count(), 0);
+    assert.equal(await options.evaluate(() => document.documentElement.getAttribute('data-op-enabled')), 'true', 'settings UI stays themed even when Prism is disabled');
     await options.evaluate(() => ObsidianPrismSchema.saveConfig({ enabled: true, palette: 'obsidian' }));
     await chat.waitForFunction(() => document.documentElement.getAttribute('data-op-effective-palette') === 'obsidian');
     await chat.waitForSelector('.op-code-fold-bar');
@@ -165,6 +221,14 @@ async function actualChromiumExtension() {
     await popup.goto(extensionOrigin + '/' + manifest.action.default_popup);
     await popup.waitForFunction(() => Boolean(document.querySelector('#settings-fields') && !document.querySelector('#settings-fields').disabled));
     assert.equal(await popup.locator('#cfg-mascot').count(), 0);
+    assert.equal(await popup.locator('#btn-ui-theme').isVisible(), true);
+    assert.equal(await popup.locator('#cfg-uiThemeMode').isVisible(), true);
+    assert.equal(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'popup appearance tab has no horizontal overflow in en-US');
+    await popup.locator('#cfg-language').selectOption('zh-CN');
+    await popup.waitForFunction(() => document.documentElement.lang === 'zh-CN');
+    assert.equal(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'popup appearance tab has no horizontal overflow in zh-CN');
+    await popup.locator('#cfg-language').selectOption('en-US');
+    await popup.waitForFunction(() => document.documentElement.lang === 'en-US');
     await popup.screenshot({ path: path.join(ARTIFACTS, 'chromium-popup-appearance.png') });
     await popup.locator('#tab-motion').click();
     for (const id of ['cfg-ambientStyle', 'cfg-ambientTexture', 'cfg-motionSpeed', 'cfg-ambientIntensity', 'cfg-composerGlow']) assert.equal(await popup.locator('#' + id).count(), 1, `motion control ${id} must be available`);
@@ -172,37 +236,66 @@ async function actualChromiumExtension() {
     assert.equal(await popup.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 2), true, 'popup scroll stays inside its workspace');
     await popup.screenshot({ path: path.join(ARTIFACTS, 'chromium-popup-motion.png') });
     await popup.locator('[data-choice="ambientStyle"][data-value="spotlight"]').click();
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientStyle === 'spotlight');
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).ambientStyle === 'spotlight', 'ambientStyle=spotlight');
     await popup.locator('#cfg-ambientTexture').selectOption('grid');
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientTexture === 'grid');
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).ambientTexture === 'grid', 'ambientTexture=grid');
     await popup.locator('#tab-reading').click();
+    await popup.waitForFunction(() => document.body.dataset.activeTab === 'reading');
+    assert.equal(await popup.locator('#panel-reading').isVisible(), true);
+    assert.equal(await popup.locator('#cfg-formulaPreview').count(), 1, 'Reading tab must include #cfg-formulaPreview');
+    assert.equal(await popup.locator('#cfg-formulaPreview').isChecked(), true);
+    const formulaLabel = await popup.locator('label[for="cfg-formulaPreview"]').textContent();
+    assert.ok(formulaLabel && formulaLabel.includes('Formula preview'), `expected Formula preview label, got "${formulaLabel}"`);
+    assert.equal(await popup.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'popup reading tab has no horizontal overflow');
+    await popup.locator('#cfg-formulaPreview').click();
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).formulaPreview === false, 'formulaPreview=false');
+    await options.waitForFunction(() => document.getElementById('cfg-formulaPreview')?.checked === false);
+    await popup.locator('#cfg-formulaPreview').click();
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).formulaPreview === true, 'formulaPreview=true');
+    await options.waitForFunction(() => document.getElementById('cfg-formulaPreview')?.checked === true);
     assert.equal(await popup.locator('#cfg-contentWidth').inputValue(), 'standard');
     await popup.locator('#cfg-contentWidth').selectOption('wide');
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contentWidth === 'wide');
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).contentWidth === 'wide', 'contentWidth=wide');
     await popup.locator('#cfg-contentWidth').selectOption('standard');
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contentWidth === 'standard');
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).contentWidth === 'standard', 'contentWidth=standard');
     assert.equal(await popup.locator('#cfg-contextWindowTokens').inputValue(), 'auto');
     await popup.locator('#cfg-contextWindowTokens').selectOption('400000');
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contextWindowTokens === 400000);
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).contextWindowTokens === 400000, 'contextWindowTokens=400000');
     await popup.locator('#cfg-contextWindowTokens').selectOption('auto');
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).contextWindowTokens === 'auto');
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).contextWindowTokens === 'auto', 'contextWindowTokens=auto');
     await options.setViewportSize({ width: 420, height: 600 });
     assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options remain responsive at 420 pixels');
     await options.screenshot({ path: path.join(ARTIFACTS, 'chromium-options-420.png') });
+    await options.locator('#tab-appearance').click();
+    await options.waitForFunction(() => document.body.dataset.activeTab === 'appearance');
+    assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options appearance tab remains responsive at 420 pixels in en-US');
+    await options.locator('#cfg-language').selectOption('zh-CN');
+    await options.waitForFunction(() => document.documentElement.lang === 'zh-CN');
+    assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options appearance tab remains responsive at 420 pixels in zh-CN');
+    await options.locator('#cfg-language').selectOption('en-US');
+    await options.waitForFunction(() => document.documentElement.lang === 'en-US');
+    await options.locator('#tab-reading').click();
+    await options.waitForFunction(() => document.body.dataset.activeTab === 'reading');
+    assert.equal(await options.locator('#cfg-formulaPreview').isVisible(), true);
+    assert.equal(await options.locator('#cfg-formulaPreview').isChecked(), true);
+    assert.equal(await options.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'full options reading tab remains responsive at 420 pixels');
     await popup.locator('#file-import').setInputFiles({ name: 'legacy-prism-settings.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'obsidian-prism-web', settings: { mascot: 'cat', palette: 'warm', ambientIntensity: 35, thoughtTranslate: true } })) });
-    await popup.waitForFunction(async () => (await ObsidianPrismSchema.loadConfig()).ambientIntensity === 35);
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).ambientIntensity === 35, 'legacy import ambientIntensity=35');
     const imported = await popup.evaluate(() => ObsidianPrismSchema.loadConfig());
     assert.equal(Object.hasOwn(imported, 'mascot'), false, 'legacy backups cannot reintroduce pets');
     assert.equal(imported.thoughtTranslate, false, 'import does not silently enable external translation');
+    await popup.locator('#file-import').setInputFiles({ name: 'ui-theme-settings.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify({ format: 'obsidian-prism-web', settings: { uiThemeMode: 'light', palette: 'obsidian' } })) });
+    await waitUntil(async () => (await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).uiThemeMode === 'light', 'imported uiThemeMode=light');
+    assert.equal((await popup.evaluate(() => ObsidianPrismSchema.loadConfig())).uiThemeMode, 'light');
     assert.deepEqual(errors, []);
-    console.log('PASS Chromium unpacked extension: service worker, options, serialized settings, live content updates and keyboard tabs');
+    console.log('PASS Chromium unpacked extension: service worker, options, uiThemeMode decoupling, serialized settings, live content updates and keyboard tabs');
   } catch (error) {
     const current = popup || chat || options;
     if (current && !current.isClosed()) await current.screenshot({ path: path.join(ARTIFACTS, 'chromium-extension-failure.png'), fullPage: true }).catch(() => {});
     throw error;
   } finally {
     if (context) await context.close();
-    await fs.rm(profile, { recursive: true, force: true });
+    await fs.rm(profile, { recursive: true, force: true, maxRetries: 10, retryDelay: 200 }).catch(() => {});
   }
 }
 
@@ -214,11 +307,11 @@ async function surfaceSnapshot(page) {
       const style = getComputedStyle(node);
       const borderWidth = style.borderWidth;
       const hasBorder = borderWidth.split(' ').some(value => parseFloat(value) > 0);
-      return { background: style.backgroundColor, backgroundImage: style.backgroundImage, border: hasBorder ? style.borderColor : null, borderWidth, radius: style.borderRadius, shadow: style.boxShadow };
+      return { background: style.backgroundColor, backgroundImage: style.backgroundImage, maskImage: style.maskImage || 'none', border: hasBorder ? style.borderColor : null, borderWidth, radius: style.borderRadius, shadow: style.boxShadow };
     };
     const pseudo = (node, type) => {
       const style = getComputedStyle(node, type);
-      return { background: style.backgroundColor, backgroundImage: style.backgroundImage, content: style.content, display: style.display };
+      return { background: style.backgroundColor, backgroundImage: style.backgroundImage, maskImage: style.maskImage || 'none', content: style.content, display: style.display };
     };
     return { sidebar: read('[data-fixture-sidebar]'), composer: read('[data-fixture-composer]'), footerAttachment: read('[data-fixture-footer-attachment]'),
       backdrops: [...document.querySelectorAll('[data-fixture-backdrop]')].map(node => ({ ...read(node), before: pseudo(node, '::before'), after: pseudo(node, '::after') })) };
@@ -229,9 +322,9 @@ async function chatgptLayoutSnapshot(page) {
   return page.evaluate(() => {
     const spacer = document.querySelector('[data-testid="conversation-turn-spacer"], .thread-bottom-spacer');
     const thread = document.querySelector('.thread');
-    const scrim = document.querySelector('#thread-bottom');
-    const composerCol = scrim?.querySelector('.composer-container');
-    const hint = scrim?.querySelector('.composer-hint');
+    const dock = document.querySelector('#thread-bottom');
+    const composerCol = dock?.querySelector('.composer-container');
+    const hint = dock?.querySelector('.composer-hint');
     const composer = document.querySelector('[data-fixture-composer]');
     return {
       spacerHeight: spacer ? Math.round(spacer.getBoundingClientRect().height * 10) / 10 : null,
@@ -249,46 +342,41 @@ async function chatgptLayoutSnapshot(page) {
 async function assertComposerBackdrops(page, nativeSurfaces) {
   await page.waitForFunction(() =>
     [...document.querySelectorAll('[data-fixture-backdrop]')].every(node => node.getAttribute('data-op-composer-backdrop') === 'true') &&
-    Boolean(document.querySelector('[data-op-composer-scrim="true"]'))
+    Boolean(document.querySelector('[data-op-composer-dock="true"]'))
   );
   const current = await surfaceSnapshot(page);
   const backdropMeta = await page.evaluate(() => [...document.querySelectorAll('[data-fixture-backdrop]')].map(node => ({
+    isDock: node.getAttribute('data-op-composer-dock') === 'true',
     isScrim: node.getAttribute('data-op-composer-scrim') === 'true',
     isNativeFade: node.classList.contains('native-composer-fade')
   })));
   assert.ok(current.backdrops.length >= 4, 'conversation fixture must include multiple opaque dock layers and a decorative fade');
-  assert.equal(backdropMeta.filter(meta => meta.isScrim).length, 1, 'exactly one outermost dock layer acts as the feathered composer scrim');
+  assert.equal(backdropMeta.filter(meta => meta.isDock).length, 1, 'exactly one outermost dock layer acts as the composer dock');
+  assert.equal(backdropMeta.filter(meta => meta.isScrim).length, 0, 'in-flow flex-sibling fixture dock does not draw an overlaid scrim');
   const transparent = value => value === 'transparent' || /^rgba\(\s*0,\s*0,\s*0,\s*0\s*\)$/.test(value);
   for (const [index, layer] of current.backdrops.entries()) {
     const meta = backdropMeta[index];
     assert.ok(transparent(layer.background), `dock layer ${index} background-color must stay transparent`);
     assert.notEqual(layer.background, 'rgb(255, 255, 255)', `dock layer ${index} must not paint a solid white slab`);
-    if (meta.isScrim) {
-      assert.ok(layer.backgroundImage.includes('linear-gradient'), `scrim host layer ${index} must paint a feathered linear-gradient toward --op-canvas`);
-      assert.ok(transparent(layer.before.background) && layer.before.backgroundImage.includes('linear-gradient'), `scrim host layer ${index} ::before must paint a feathered top linear-gradient`);
-      assert.ok(transparent(layer.after.background) && layer.after.backgroundImage === 'none', `scrim host layer ${index} ::after must remain transparent`);
-      for (const type of ['before', 'after']) {
-        assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
-        assert.equal(layer[type].display, nativeSurfaces.backdrops[index][type].display, 'decorative pseudo display is preserved');
-      }
-    } else {
-      assert.equal(layer.backgroundImage, 'none', `inner dock layer ${index}${meta.isNativeFade ? ' (.native-composer-fade)' : ''} must reveal the themed canvas without a solid slab`);
-      for (const type of ['before', 'after']) {
-        assert.ok(transparent(layer[type].background) && layer[type].backgroundImage === 'none', `inner dock layer ${index} ${type} must not retain an opaque fade`);
-        assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
-        assert.equal(layer[type].display, nativeSurfaces.backdrops[index][type].display, 'decorative pseudo display is preserved');
-      }
+    assert.equal(layer.backgroundImage, 'none', `dock layer ${index}${meta.isNativeFade ? ' (.native-composer-fade)' : ''} must reveal the themed canvas without a solid slab`);
+    assert.equal(layer.maskImage, 'none', `dock layer ${index} mask-image must stay cleared`);
+    for (const type of ['before', 'after']) {
+      assert.ok(transparent(layer[type].background) && layer[type].backgroundImage === 'none', `dock layer ${index} ${type} must not retain an opaque fade`);
+      assert.equal(layer[type].maskImage, 'none', `dock layer ${index} ${type} mask-image must stay cleared`);
+      assert.equal(layer[type].content, nativeSurfaces.backdrops[index][type].content, 'decorative pseudo content is preserved');
+      assert.equal(layer[type].display, nativeSurfaces.backdrops[index][type].display, 'decorative pseudo display is preserved');
     }
   }
   assert.deepEqual(current.footerAttachment, nativeSurfaces.footerAttachment, 'native footer attachments retain their own painted controls');
   assert.equal(await page.locator('[data-fixture-footer-attachment][data-op-composer-backdrop]').count(), 0);
   assert.equal(await page.locator('[data-fixture-composer][data-op-composer-backdrop]').count(), 0, 'the input card is not part of the page backdrop');
 
-  const isActiveChatGPT = await page.evaluate(() =>
+  const isActiveChatGPTRestyle = await page.evaluate(() =>
     document.documentElement.getAttribute('data-op-host') === 'chatgpt' &&
-    document.documentElement.getAttribute('data-op-home') === 'false'
+    document.documentElement.getAttribute('data-op-home') === 'false' &&
+    document.documentElement.getAttribute('data-op-composer') === 'true'
   );
-  if (isActiveChatGPT) {
+  if (isActiveChatGPTRestyle) {
     const layout = await chatgptLayoutSnapshot(page);
     assert.ok(layout.spacerHeight !== null && layout.spacerHeight > 0 && layout.spacerHeight <= 32, `ChatGPT active spacer must converge cleanly (<= 32px), got ${layout.spacerHeight}`);
     assert.equal(layout.threadPaddingBottom, 24, 'ChatGPT active thread column bottom padding should tighten to 24px');
@@ -307,24 +395,24 @@ async function assertComposerBackdrops(page, nativeSurfaces) {
     });
     const turnActionsCheck = await page.evaluate(() => {
       const scroller = document.querySelector('[data-prism-test-scroller]');
-      const scrim = document.querySelector('[data-op-composer-scrim="true"]');
+      const dock = document.querySelector('[data-op-composer-dock="true"]');
       const actions = document.querySelector('.thread article:last-of-type .turn-actions, .thread article:last-of-type [data-testid="turn-actions"]');
       const btn = actions?.querySelector('button');
-      if (!scroller || !scrim || !actions || !btn) return null;
+      if (!scroller || !dock || !actions || !btn) return null;
       const scrollerRect = scroller.getBoundingClientRect();
-      const scrimRect = scrim.getBoundingClientRect();
+      const dockRect = dock.getBoundingClientRect();
       const actionsRect = actions.getBoundingClientRect();
       const btnRect = btn.getBoundingClientRect();
       const hit = document.elementFromPoint(btnRect.left + btnRect.width / 2, btnRect.top + btnRect.height / 2);
       return {
         visibleInScroller: actionsRect.top >= scrollerRect.top - 1 && actionsRect.bottom <= scrollerRect.bottom + 1,
-        aboveScrim: actionsRect.bottom <= scrimRect.top,
+        aboveDock: actionsRect.bottom <= dockRect.top,
         clickable: Boolean(hit && actions.contains(hit))
       };
     });
     assert.ok(turnActionsCheck, 'last assistant turn must expose .turn-actions');
     assert.equal(turnActionsCheck.visibleInScroller, true, 'last .turn-actions must remain completely inside the visible scroll viewport');
-    assert.equal(turnActionsCheck.aboveScrim, true, 'last .turn-actions must not overlap the composer scrim');
+    assert.equal(turnActionsCheck.aboveDock, true, 'last .turn-actions must not overlap the composer dock');
     assert.equal(turnActionsCheck.clickable, true, 'last .turn-actions button must remain hit-testable and clickable');
     await page.locator('.thread article:last-of-type .turn-actions button').first().click({ trial: true });
     await page.evaluate(prev => { document.querySelector('[data-prism-test-scroller]').scrollTop = prev; }, previousScrollTop);
@@ -520,12 +608,14 @@ async function composerControlsSnapshot(page) {
     const addBtn = document.querySelector('button[data-testid="composer-plus-btn"], button[data-test-id="upload-file-button"]');
     const modelBtn = document.querySelector('button[data-testid="model-switcher-dropdown-button"], button[data-test-id="bard-mode-menu-button"]');
     const modelTier = modelBtn?.querySelector('.model-tier, .mode-tier');
+    const primaryBtn = composer?.querySelector('button[data-testid="send-button"], button[data-test-id="send-button"], .send-button');
     const chip = document.querySelector('button[data-testid="composer-mode-pill"], button.toolbox-drawer-item-button');
     const beforeStyle = modelBtn ? getComputedStyle(modelBtn, '::before') : null;
     const addRect = addBtn?.getBoundingClientRect();
+    const primaryRect = primaryBtn?.getBoundingClientRect();
     return {
       composer: composer ? {
-        style: readStyle(composer, ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderRadius', 'boxShadow', 'borderColor']),
+        style: readStyle(composer, ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft', 'borderRadius', 'borderTopWidth', 'outlineStyle', 'boxShadow', 'borderColor']),
         parentTag: composer.parentElement?.tagName || null
       } : null,
       editor: editor ? {
@@ -542,17 +632,24 @@ async function composerControlsSnapshot(page) {
       modelBtn: modelBtn ? {
         attr: modelBtn.getAttribute('data-op-model-capsule'),
         parentTag: modelBtn.parentElement?.tagName || null,
-        style: readStyle(modelBtn, ['borderRadius', 'borderTopWidth', 'borderTopColor', 'backgroundColor', 'color', 'paddingTop', 'paddingLeft', 'gap', 'display', 'alignItems']),
+        style: readStyle(modelBtn, ['borderRadius', 'borderTopWidth', 'borderTopColor', 'backgroundColor', 'color', 'paddingTop', 'paddingLeft', 'minHeight', 'height', 'gap', 'display', 'alignItems']),
         before: beforeStyle ? {
           content: beforeStyle.content,
           width: beforeStyle.width,
           height: beforeStyle.height,
           borderRadius: beforeStyle.borderRadius,
+          clipPath: beforeStyle.clipPath,
           backgroundColor: beforeStyle.backgroundColor
         } : null,
         tier: readStyle(modelTier, ['color', 'fontWeight']),
         text: modelBtn.textContent,
         childCount: modelBtn.children.length
+      } : null,
+      primaryAction: primaryBtn ? {
+        attr: primaryBtn.getAttribute('data-op-composer-primary-action'),
+        parentTag: primaryBtn.parentElement?.tagName || null,
+        style: readStyle(primaryBtn, ['width', 'height', 'minWidth', 'borderRadius', 'backgroundColor', 'color', 'display', 'alignItems', 'justifyContent']),
+        rect: { width: Math.round(primaryRect.width), height: Math.round(primaryRect.height) }
       } : null,
       chip: chip ? {
         attr: chip.getAttribute('data-op-composer-chip'),
@@ -572,6 +669,10 @@ function composerSurfaceAndGeometry(snapshot) {
     delete copy.modelBtn.style.borderTopColor;
   }
   if (copy.modelBtn?.tier) delete copy.modelBtn.tier.color;
+  if (copy.primaryAction?.style) {
+    delete copy.primaryAction.style.backgroundColor;
+    delete copy.primaryAction.style.color;
+  }
   if (copy.chip?.style) {
     delete copy.chip.style.color;
     delete copy.chip.style.borderTopColor;
@@ -584,6 +685,7 @@ async function settleComposerControls(page) {
     settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow'),
     settledSurfaceStyle(page, 'button[data-testid="composer-plus-btn"], button[data-test-id="upload-file-button"]', 'backgroundColor'),
     settledSurfaceStyle(page, 'button[data-testid="model-switcher-dropdown-button"], button[data-test-id="bard-mode-menu-button"]', 'backgroundColor'),
+    settledSurfaceStyle(page, 'button[data-testid="send-button"], button[data-test-id="send-button"], .send-button', 'backgroundColor'),
     settledSurfaceStyle(page, 'button[data-testid="composer-mode-pill"], button.toolbox-drawer-item-button', 'backgroundColor')
   ]);
 }
@@ -593,29 +695,32 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
     document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'true' &&
     document.querySelector('[data-op-composer-add="true"]') &&
     document.querySelector('[data-op-model-capsule="true"]') &&
+    document.querySelector('[data-op-composer-primary-action="true"]') &&
     document.querySelector('[data-op-composer-chip="true"]')
   );
   await settleComposerControls(page);
   const snap = await composerControlsSnapshot(page);
-  assert.ok(snap.composer && snap.editor && snap.tools && snap.addBtn && snap.modelBtn && snap.chip, `${host} ${palette}: all composer & capsule nodes must exist`);
+  assert.ok(snap.composer && snap.editor && snap.tools && snap.addBtn && snap.modelBtn && snap.primaryAction && snap.chip, `${host} ${palette}: all composer & capsule nodes must exist`);
 
-  assert.equal(snap.composer.style.paddingTop, '14px');
-  assert.equal(snap.composer.style.paddingRight, '16px');
-  assert.equal(snap.composer.style.paddingBottom, '12px');
-  assert.equal(snap.composer.style.paddingLeft, '16px');
-  assert.equal(snap.composer.style.borderRadius, '22px');
+  assert.equal(snap.composer.style.paddingTop, '10px');
+  assert.equal(snap.composer.style.paddingRight, '12px');
+  assert.equal(snap.composer.style.paddingBottom, '8px');
+  assert.equal(snap.composer.style.paddingLeft, '12px');
+  assert.equal(snap.composer.style.borderRadius, '12px');
+  assert.equal(snap.composer.style.borderTopWidth, '1px');
+  assert.equal(snap.composer.style.outlineStyle, 'none');
   assert.match(snap.composer.style.boxShadow, /inset/);
   assert.equal(snap.composer.parentTag, nativeControls.composer.parentTag);
 
-  assert.ok(parseFloat(snap.editor.style.minHeight) >= 44, `${host} ${palette}: editor min-height >= 44px`);
-  assert.ok(parseFloat(snap.editor.style.paddingBottom) >= 6, `${host} ${palette}: editor padding-bottom >= 6px`);
+  assert.ok(parseFloat(snap.editor.style.minHeight) >= 36 && parseFloat(snap.editor.style.minHeight) <= 44, `${host} ${palette}: editor min-height in [36, 44]`);
+  assert.equal(snap.editor.style.paddingBottom, '2px', `${host} ${palette}: editor padding-bottom is 2px`);
   assert.notEqual(snap.editor.style.caretColor, nativeControls.editor.style.caretColor);
-  assert.equal(snap.tools.style.marginTop, '10px');
+  assert.equal(snap.tools.style.marginTop, '6px');
 
   assert.equal(snap.addBtn.attr, 'true');
   assert.equal(snap.addBtn.parentTag, nativeControls.addBtn.parentTag);
-  assert.equal(snap.addBtn.rect.width, 32, `${host} ${palette}: circular + width is 32px`);
-  assert.equal(snap.addBtn.rect.height, 32, `${host} ${palette}: circular + height is 32px`);
+  assert.equal(snap.addBtn.rect.width, 28, `${host} ${palette}: circular + width is 28px`);
+  assert.equal(snap.addBtn.rect.height, 28, `${host} ${palette}: circular + height is 28px`);
   assert.ok(parseFloat(snap.addBtn.style.borderRadius) >= 999, `${host} ${palette}: circular + border-radius >= 999px`);
   assert.ok(parseFloat(snap.addBtn.style.borderTopWidth) >= 1);
   assert.ok(['inline-flex', 'flex'].includes(snap.addBtn.style.display), `${host} ${palette}: circular + uses flex layout, got ${snap.addBtn.style.display}`);
@@ -629,26 +734,40 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
   assert.ok(parseFloat(snap.modelBtn.style.borderTopWidth) >= 1);
   assert.ok(['inline-flex', 'flex'].includes(snap.modelBtn.style.display), `${host} ${palette}: model capsule uses flex layout, got ${snap.modelBtn.style.display}`);
   assert.equal(snap.modelBtn.style.alignItems, 'center');
-  assert.equal(snap.modelBtn.style.paddingTop, '5px');
-  assert.equal(snap.modelBtn.style.paddingLeft, '11px');
+  assert.equal(snap.modelBtn.style.paddingLeft, '8px');
+  assert.equal(snap.modelBtn.style.minHeight, '28px');
+  assert.equal(snap.modelBtn.style.height, '28px');
   assert.equal(snap.modelBtn.style.gap, '6px');
+  assert.equal(snap.modelBtn.style.backgroundColor, snap.addBtn.style.backgroundColor, `${host} ${palette}: model capsule shares neutral pill fill with +`);
   assert.notEqual(snap.modelBtn.style.backgroundColor, nativeControls.modelBtn.style.backgroundColor);
   assert.equal(snap.modelBtn.before.content, '""');
-  assert.equal(snap.modelBtn.before.width, '6px');
-  assert.equal(snap.modelBtn.before.height, '6px');
-  assert.equal(snap.modelBtn.before.borderRadius, '50%');
-  assert.equal(snap.modelBtn.before.backgroundColor, snap.modelBtn.tier.color, `${host} ${palette}: ::before dot and tier tag share --op-accent`);
+  assert.equal(snap.modelBtn.before.width, '11px');
+  assert.equal(snap.modelBtn.before.height, '11px');
+  assert.notEqual(snap.modelBtn.before.borderRadius, '50%');
+  assert.match(snap.modelBtn.before.clipPath, /^polygon\(/);
+  assert.equal(snap.modelBtn.before.backgroundColor, snap.modelBtn.tier.color, `${host} ${palette}: ::before star and tier tag share --op-accent`);
   assert.notEqual(snap.modelBtn.tier.color, snap.modelBtn.style.color);
   assert.ok(Number(snap.modelBtn.tier.fontWeight) >= 600);
-  assert.equal(snap.modelBtn.childCount, nativeControls.modelBtn.childCount, `${host} ${palette}: ::before dot adds zero DOM elements`);
+  assert.equal(snap.modelBtn.childCount, nativeControls.modelBtn.childCount, `${host} ${palette}: ::before star adds zero DOM elements`);
   assert.equal(snap.modelBtn.text, nativeControls.modelBtn.text, `${host} ${palette}: native model text preserved`);
+
+  assert.equal(snap.primaryAction.attr, 'true');
+  assert.equal(snap.primaryAction.parentTag, nativeControls.primaryAction.parentTag);
+  assert.equal(snap.primaryAction.rect.width, 30, `${host} ${palette}: primary action width is 30px`);
+  assert.equal(snap.primaryAction.rect.height, 30, `${host} ${palette}: primary action height is 30px`);
+  assert.ok(parseFloat(snap.primaryAction.style.borderRadius) >= 999);
+  assert.ok(['inline-flex', 'flex'].includes(snap.primaryAction.style.display));
+  assert.equal(snap.primaryAction.style.alignItems, 'center');
+  assert.equal(snap.primaryAction.style.justifyContent, 'center');
+  assert.notEqual(snap.primaryAction.style.backgroundColor, nativeControls.primaryAction.style.backgroundColor);
+  assertContrastRatio(snap.primaryAction.style.color, snap.primaryAction.style.backgroundColor, `${host} ${palette} primary action`);
 
   assert.equal(snap.chip.attr, 'true');
   assert.equal(snap.chip.parentTag, nativeControls.chip.parentTag);
   assert.ok(parseFloat(snap.chip.style.borderRadius) >= 999);
   assert.ok(parseFloat(snap.chip.style.borderTopWidth) >= 1);
-  assert.equal(snap.chip.style.paddingTop, '5px');
-  assert.equal(snap.chip.style.paddingLeft, '11px');
+  assert.equal(snap.chip.style.paddingTop, '3px');
+  assert.equal(snap.chip.style.paddingLeft, '10px');
   assert.notEqual(snap.chip.style.backgroundColor, nativeControls.chip.style.backgroundColor);
 
   assert.equal(await page.locator('.op-repo-capsule, .op-branch-capsule, [data-op-repo-capsule], [data-op-branch-capsule]').count(), 0);
@@ -708,6 +827,7 @@ function fixtureBridge(input) {
       openOptionsPage: bridge(() => undefined),
       sendMessage: bridge(message => {
         if (message.type === 'OP_CONFIG_PATCH') return { ok: true, config: patch(message.patch) };
+        if (message.type === 'OP_CONFIG_RESET') return { ok: true, config: patch(window.ObsidianPrismSchema.DEFAULT_CONFIG) };
         if (message.type === 'OP_CONTENT_WIDTH_SET') {
           if (!window.ObsidianPrismSchema.ENUMS.contentWidth.includes(message.contentWidth)) return { ok: false, error: 'INVALID_CONTENT_WIDTH' };
           return { ok: true, config: patch({ contentWidth: message.contentWidth }) };
@@ -740,7 +860,7 @@ async function savedDisabledStartup(browser) {
       window.__enabledTransitions = [];
       new MutationObserver(() => __enabledTransitions.push(document.documentElement.getAttribute('data-op-enabled'))).observe(document.documentElement, { attributes: true, attributeFilter: ['data-op-enabled'] });
     });
-    for (const content of styles) await page.addStyleTag({ content });
+    for (const content of stylesByHost.chatgpt) await page.addStyleTag({ content });
     for (const content of scripts) await page.addScriptTag({ content });
     await page.evaluate(() => window.dispatchEvent(new Event('pageshow')));
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -766,7 +886,7 @@ async function exerciseHomeEffects(browser, host) {
   try {
     await page.goto(fixtureURLs[host].replace('/prism-offline-fixture', '/prism-offline-home'));
     const nativeSurfaces = await surfaceSnapshot(page);
-    for (const content of styles) await page.addStyleTag({ content });
+    for (const content of stylesByHost[host]) await page.addStyleTag({ content });
     for (const content of scripts) await page.addScriptTag({ content });
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-home') === 'true');
     await page.waitForSelector('#op-ambient-stage', { state: 'attached' });
@@ -797,13 +917,27 @@ async function exerciseHomeEffects(browser, host) {
 
     const editor = page.locator('[data-fixture-composer] [contenteditable="true"]');
     await editor.click();
-    const focusedGlow = await settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow');
+    const readRim = () => page.evaluate(() => {
+      const el = document.querySelector('[data-fixture-composer]');
+      const bf = getComputedStyle(el, '::before');
+      return {
+        focused: el.matches(':focus-within'),
+        content: bf.content,
+        opacity: bf.opacity,
+        bgImage: bf.backgroundImage,
+        maskComposite: bf.maskComposite || bf.webkitMaskComposite || ''
+      };
+    });
+    const focusedGlow = await readRim();
     assert.equal(focusedGlow.focused, true);
+    assert.equal(focusedGlow.content, '""', 'composerGlow=true renders 1px prismatic ::before rim on focus');
+    assert.match(focusedGlow.maskComposite, /exclude|xor/i, 'prismatic ::before rim uses exclude/xor mask-composite');
     await page.screenshot({ path: path.join(ARTIFACTS, `${engine}-${host}-home-focused.png`) });
     await page.evaluate(() => __prismFixture.patch({ composerGlow: false }));
-    const focusedPlain = await settledSurfaceStyle(page, '[data-fixture-composer]', 'boxShadow');
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-composer-glow') === 'false');
+    const focusedPlain = await readRim();
     assert.equal(focusedPlain.focused, true, 'changing glow preserves native editor focus');
-    assert.notEqual(focusedGlow.value, focusedPlain.value, 'composer glow switch changes the settled focused shell shadow');
+    assert.equal(focusedPlain.content, 'none', 'composerGlow=false removes the prismatic ::before rim');
     await page.evaluate(() => __prismFixture.patch({ composerGlow: true }));
     await exerciseNativeComposer(page);
 
@@ -901,7 +1035,7 @@ async function exerciseFixture(browser, host) {
       window.__nativeEditor = __nativeComposer.querySelector('[contenteditable="true"]');
       __nativeComposer.setAttribute('data-op-composer-surface', 'fixture-original');
     });
-    for (const content of styles) await page.addStyleTag({ content });
+    for (const content of stylesByHost[host]) await page.addStyleTag({ content });
     for (const content of scripts) await page.addScriptTag({ content });
     await page.waitForFunction(() => window.ObsidianPrismRuntime?.diagnostics().enabled);
     await page.waitForSelector('.op-code-fold-bar');
@@ -970,10 +1104,21 @@ async function exerciseFixture(browser, host) {
     }
     await exerciseSidebarSelection(page, originalSidebarSelection);
     await page.evaluate(() => __prismFixture.patch({ composerRestyle: false }));
+    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-composer') === 'false' && !document.querySelector('[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-primary-action="true"],[data-op-composer-chip="true"],[data-op-composer-attachment="true"],[data-op-composer-toolbar="true"],[data-op-model-capsule-item="true"]') && document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'fixture-original');
     await assertComposerBackdrops(page, originalSurfaces);
-    await page.waitForFunction(() => !document.querySelector('[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-chip="true"]') && document.querySelector('[data-fixture-composer]')?.getAttribute('data-op-composer-surface') === 'fixture-original');
     await settleComposerControls(page);
     assert.deepEqual(composerSurfaceAndGeometry(await composerControlsSnapshot(page)), composerSurfaceAndGeometry(originalComposerControls), `${host}: composerRestyle=false restores native composer, add button, model capsule, and chips`);
+    if (host === 'chatgpt') {
+      const dockRestoredKeys = snap => ({
+        composerBottomGap: snap.composerBottomGap,
+        composerColPaddingTop: snap.composerColPaddingTop,
+        composerColPaddingBottom: snap.composerColPaddingBottom,
+        hintMarginTop: snap.hintMarginTop,
+        hintMarginBottom: snap.hintMarginBottom,
+        hintBottomGap: snap.hintBottomGap
+      });
+      assert.deepEqual(dockRestoredKeys(await chatgptLayoutSnapshot(page)), dockRestoredKeys(originalChatGPTLayout), 'chatgpt: composerRestyle=false restores native dock, composer column, and hint geometry');
+    }
     await page.evaluate(() => __prismFixture.patch({ composerRestyle: true }));
     await exerciseNativeComposer(page);
 
@@ -1004,87 +1149,20 @@ async function exerciseFixture(browser, host) {
     await page.locator('[data-native-copy]').click();
     assert.equal(await page.evaluate(() => __copyCount), 1, 'native copy control and listeners are preserved');
 
-    // Content Width Presets (standard < wide < full), decoupled dock, rail clearance, bubble cap & <900px fallback
-    const measureColumns = () => page.evaluate(() => {
-      const thread = document.querySelector('.thread');
-      const composer = document.querySelector('.composer-container');
-      const inputArea = document.querySelector('input-area-v2');
-      const rail = document.getElementById('op-rail-root');
-      const dock = document.getElementById('op-bottom-dock');
-      const rect = node => node ? node.getBoundingClientRect() : null;
-      const tr = rect(thread), cr = rect(composer), ir = rect(inputArea), rr = rect(rail), dr = rect(dock);
-      return {
-        attr: document.documentElement.getAttribute('data-op-content-width'),
-        presetAttr: document.querySelector('.op-width-toggle')?.getAttribute('data-width-preset'),
-        threadWidth: tr.width, threadRight: tr.right,
-        composerWidth: cr.width, composerRight: cr.right,
-        inputAreaWidth: ir ? ir.width : cr.width,
-        railLeft: rr ? rr.left : Infinity,
-        dockLeft: dr ? dr.left : Infinity,
-        overflowX: document.documentElement.scrollWidth > window.innerWidth
-      };
-    });
-    const stdCols = await measureColumns();
-    assert.equal(stdCols.attr, 'standard');
-    assert.equal(stdCols.presetAttr, 'standard');
+    // Bottom Dock width toggle contract (v0.3.0). Rendered widths are measured on the live fixtures
+    // (tests/live-width.mjs, v0.3.1 #21), not on this fixture's invented wrappers.
+    const presetState = () => page.evaluate(() => ({ attr: document.documentElement.getAttribute('data-op-content-width'), presetAttr: document.querySelector('.op-width-toggle')?.getAttribute('data-width-preset') }));
+    assert.deepEqual(await presetState(), { attr: 'standard', presetAttr: 'standard' });
     assert.equal(await page.locator('.op-width-toggle').count(), 1);
     await page.evaluate(() => document.querySelector('.op-width-toggle').click());
     assert.equal(await page.evaluate(() => __prismFixture.config().contentWidth), 'standard', 'synthetic width click is ignored');
-
-    // Trusted click cycles standard -> wide
+    // Trusted clicks cycle standard -> wide -> full
     await page.locator('.op-width-toggle').click();
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'wide');
-    const wideCols = await measureColumns();
-    assert.equal(wideCols.presetAttr, 'wide');
-    assert.ok(wideCols.threadWidth > stdCols.threadWidth, `${host}: wide thread (${wideCols.threadWidth}) > standard (${stdCols.threadWidth})`);
-    assert.ok(wideCols.composerWidth > stdCols.composerWidth, `${host}: wide composer (${wideCols.composerWidth}) > standard (${stdCols.composerWidth})`);
-    assert.ok(Math.abs(wideCols.inputAreaWidth - wideCols.composerWidth) <= 2, `${host}: nested input-area-v2 matches composer width in wide`);
-
-    // Trusted click cycles wide -> full
+    assert.equal((await presetState()).presetAttr, 'wide');
     await page.locator('.op-width-toggle').click();
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'full');
-    const fullCols = await measureColumns();
-    assert.equal(fullCols.presetAttr, 'full');
-    assert.ok(fullCols.threadWidth > wideCols.threadWidth, `${host}: full thread (${fullCols.threadWidth}) > wide (${wideCols.threadWidth})`);
-    assert.ok(fullCols.composerWidth > wideCols.composerWidth, `${host}: full composer (${fullCols.composerWidth}) > wide (${wideCols.composerWidth})`);
-    assert.ok(Math.abs(fullCols.inputAreaWidth - fullCols.composerWidth) <= 2, `${host}: nested input-area-v2 matches composer width in full`);
-    assert.ok(fullCols.threadRight <= fullCols.railLeft + 0.5, `${host}: full thread (${fullCols.threadRight}) does not overlap Conversation Rail (${fullCols.railLeft})`);
-    assert.ok(fullCols.composerRight <= fullCols.railLeft + 0.5, `${host}: full composer (${fullCols.composerRight}) does not overlap Conversation Rail (${fullCols.railLeft})`);
-
-    // User Turn bubble max-width cap in wide & full
-    await page.evaluate(selector => {
-      const bubble = document.querySelector(selector);
-      bubble.dataset.origText = bubble.textContent;
-      bubble.textContent = 'Long prompt '.repeat(45);
-    }, bubbleSelector);
-    const fullBubbleWidth = await page.locator(bubbleSelector).evaluate(node => node.getBoundingClientRect().width);
-    assert.ok(fullBubbleWidth <= Math.min(fullCols.threadWidth * 0.78, 820) + 2, `${host}: full user bubble (${fullBubbleWidth}) stays within min(78%, 820px)`);
-    await page.evaluate(() => __prismFixture.patch({ contentWidth: 'wide' }));
-    await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'wide');
-    const wideBubbleWidth = await page.locator(bubbleSelector).evaluate(node => node.getBoundingClientRect().width);
-    assert.ok(wideBubbleWidth <= Math.min(wideCols.threadWidth * 0.78, 820) + 2, `${host}: wide user bubble (${wideBubbleWidth}) stays within min(78%, 820px)`);
-    await page.evaluate(selector => {
-      const bubble = document.querySelector(selector);
-      bubble.textContent = bubble.dataset.origText;
-      delete bubble.dataset.origText;
-    }, bubbleSelector);
-
-    // Narrow viewport (< 900px) smooth fallback with no horizontal overflow
-    await page.setViewportSize({ width: 860, height: 900 });
-    for (const preset of ['wide', 'full']) {
-      await page.evaluate(p => __prismFixture.patch({ contentWidth: p }), preset);
-      await page.waitForFunction(p => document.documentElement.getAttribute('data-op-content-width') === p, preset);
-      const narrow = await page.evaluate(() => {
-        const scroller = document.querySelector('[data-prism-test-scroller]');
-        return {
-          docOverflow: document.documentElement.scrollWidth > window.innerWidth,
-          scrollerOverflow: scroller ? scroller.scrollWidth > scroller.clientWidth + 1 : false
-        };
-      });
-      assert.equal(narrow.docOverflow, false, `${host} ${preset}: no document horizontal overflow below 900px`);
-      assert.equal(narrow.scrollerOverflow, false, `${host} ${preset}: no scroller horizontal overflow below 900px`);
-    }
-    await page.setViewportSize({ width: 1280, height: 900 });
+    assert.equal((await presetState()).presetAttr, 'full');
 
     // Decoupled Bottom Dock: contextVial false keeps .op-width-toggle while hiding vial & popover
     await page.evaluate(() => __prismFixture.patch({ contextVial: false, contentWidth: 'full' }));
@@ -1095,8 +1173,7 @@ async function exerciseFixture(browser, host) {
     // Trusted click cycles full -> standard
     await page.locator('.op-width-toggle').click();
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-content-width') === 'standard');
-    const restoredStdCols = await measureColumns();
-    assert.ok(Math.abs(restoredStdCols.threadWidth - stdCols.threadWidth) <= 1, `${host}: switching back to standard restores native thread width`);
+    assert.equal((await presetState()).presetAttr, 'standard');
     await page.evaluate(() => __prismFixture.patch({ contextVial: true }));
     await page.waitForSelector('.op-vial-pill');
 
@@ -1217,7 +1294,9 @@ async function exerciseFixture(browser, host) {
     await page.evaluate(() => __prismFixture.patch({ enabled: false }));
     await page.waitForFunction(() => !document.documentElement.hasAttribute('data-op-enabled'));
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-content-width')), false);
-    assert.ok(Math.abs((await measureColumns()).threadWidth - stdCols.threadWidth) <= 1, `${host}: disable restores native thread width`);
+    assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-instance')), false);
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-x')), '');
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-y')), '');
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => getComputedStyle(document.body).backgroundColor), originalBackground);
@@ -1231,7 +1310,7 @@ async function exerciseFixture(browser, host) {
     assert.equal(await page.locator('[data-fixture-composer]').getAttribute('data-op-composer-surface'), 'fixture-original');
     await settleComposerControls(page);
     assert.deepEqual(await composerControlsSnapshot(page), originalComposerControls, `${host}: disable restores native composer, add button, model capsule, and chips`);
-    assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-sidebar-active="true"],[data-op-composer-backdrop="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-sidebar-active="true"],[data-op-sidebar-active-tile="true"],[data-op-composer-backdrop="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-code-icon-fill="true"],[data-op-code-icon-stroke="true"],[data-op-formula-source-hidden="true"],[data-op-composer-dock="true"],[data-op-composer-overlaid="true"],[data-op-thread-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"]').count(), 0);
     assert.equal(await page.locator('pre code').textContent(), originalText);
     assert.equal(await page.evaluate(() => ObsidianPrismRuntime.diagnostics().observing), false);
     await page.evaluate(() => __prismFixture.patch({ enabled: true, contentWidth: 'standard' }));
@@ -1279,11 +1358,17 @@ async function exerciseFixture(browser, host) {
     assert.equal(stopped.observing, false);
     assert.equal(stopped.pending, false);
     assert.equal(stopped.codeBlocks, 0);
+    assert.equal(stopped.formulaBlocks, 0);
     assert.equal(stopped.thoughtBlocks, 0);
     assert.equal(await page.locator('[data-op-owned]').count(), 0);
-    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-composer-scrim="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
+    assert.equal(await page.locator('[data-op-composer-surface="true"],[data-op-sidebar-surface="true"],[data-op-main-surface="true"],[data-op-composer-backdrop="true"],[data-op-sidebar-active="true"],[data-op-sidebar-active-tile="true"],[data-op-code-surface="true"],[data-op-code-header="true"],[data-op-code-icon-fill="true"],[data-op-code-icon-stroke="true"],[data-op-formula-source-hidden="true"],[data-op-composer-dock="true"],[data-op-thread-footer="true"],[data-op-composer-overlaid="true"],[data-op-thread-overlaid="true"],[data-op-composer-scrim="true"],[data-op-thread-scroller="true"],[data-op-scroller-fade="true"],[data-op-composer-empty-sibling="true"],[data-op-composer-disclaimer="true"],[data-op-composer-grid="true"],[data-op-composer-header-empty="true"],[data-op-composer-toolbar="true"],[data-op-composer-add="true"],[data-op-model-capsule="true"],[data-op-model-capsule-item="true"],[data-op-composer-primary-action="true"],[data-op-composer-attachment="true"],[data-op-composer-chip="true"],[data-op-thread-spacer="true"],[data-op-thread-column="true"],[data-op-composer-column="true"]').count(), 0);
     assert.equal(await page.locator('pre.op-code-folded').count(), 0);
     assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-enabled')), false);
+    assert.equal(await page.evaluate(() => document.documentElement.hasAttribute('data-op-instance')), false);
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-scroller-fade-start')), '');
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-scroller-fade-end')), '');
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-x')), '');
+    assert.equal(await page.evaluate(() => document.documentElement.style.getPropertyValue('--op-dock-offset-y')), '');
     await page.evaluate(() => { __prismFixture.patch({ enabled: true }); window.dispatchEvent(new Event('pageshow')); document.body.append(document.createElement('div')); });
     await page.waitForTimeout(250);
     assert.equal(await page.evaluate(() => ObsidianPrismRuntime.diagnostics().passes), stopped.passes, 'stop removes observers and event hooks permanently');
@@ -1296,16 +1381,53 @@ async function exerciseFixture(browser, host) {
   } finally { await context.close(); }
 }
 
-if (engine === 'chromium' && process.env.PRISM_SKIP_EXTENSION !== '1') await actualChromiumExtension();
+// PRISM_SUITE=live-fixtures runs only the probe-derived fixture checks (a fast local loop; never a full pass).
+// PRISM_SUITE=live-baselines runs only the bare native baselines and read-only probe privacy checks.
+const suiteMode = process.env.PRISM_SUITE || 'all';
+if (!['all', 'live-fixtures', 'live-baselines'].includes(suiteMode)) {
+  throw new Error(`Unsupported PRISM_SUITE=${suiteMode}; expected live-fixtures, live-baselines, or unset`);
+}
+const liveOnly = suiteMode === 'live-fixtures';
+const baselinesOnly = suiteMode === 'live-baselines';
+if (baselinesOnly) console.log('NOTE PRISM_SUITE=live-baselines: only the native live-fixture baselines and probe privacy checks run.');
+else if (liveOnly) console.log('NOTE PRISM_SUITE=live-fixtures: only the probe-derived fixture checks run.');
+else if (engine === 'chromium' && process.env.PRISM_SKIP_EXTENSION !== '1') await actualChromiumExtension();
 else console.log(`NOTE ${engine}: this run covers injected offline DOM fixtures only, not native extension installation.`);
 const browser = await type.launch(launchOptions);
 try {
-  await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
-  await savedDisabledStartup(browser);
-  for (const host of ['chatgpt', 'gemini']) {
-    await exerciseHomeEffects(browser, host);
-    await exerciseFixture(browser, host);
+  // One shared bundle for every probe-derived live-fixture check (see onLiveFixture in live-fixtures.mjs).
+  const liveSuite = { browser, engine, interceptFixtures, fixtureBridge, styles, stylesByHost, scripts, probeSource, artifacts: ARTIFACTS };
+  await checkLiveFixtureBaselines(liveSuite);
+  if (!baselinesOnly) {
+    await checkTwoRowComposer(liveSuite);
+    // v0.3.1 #18 live turns and tier-aware Reference Capacity
+    await checkLiveTurnsAndCapacity(liveSuite);
+    await checkHeadingTypography(liveSuite);
+    // v0.3.1 #21 Content Width Presets measured on the rendered paragraph and composer card
+    await checkLiveWidthPresets(liveSuite);
+    // v0.3.1 #22 blur Composer Scrim
+    await checkLiveComposerScrim(liveSuite);
+    // v0.4.0 #27 Bottom Dock singleton handover & dynamic collision avoidance
+    await checkBottomDock(liveSuite);
+    // v0.4.1 #33 Gemini Code Surface nesting/contrast & dual-host Native Math Surface readability/overflow
+    await checkCodeAndNativeMathSurfaces(liveSuite);
+    // v0.4.1 #34 Dual-host offline Temml MathML Formula Preview
+    await checkFormulaPreview(liveSuite);
+    // v0.4.3 #42 Sidebar active highlight shaped as icon tile or single whole-row layer
+    await checkSidebarActiveHighlight(liveSuite);
+  }
+  if (!liveOnly && !baselinesOnly) {
+    await checkPopupIntrinsicSize({ browser, root: ROOT, engine, fixtureBridge, artifacts: ARTIFACTS });
+    await savedDisabledStartup(browser);
+    for (const host of ['chatgpt', 'gemini']) {
+      await exerciseHomeEffects(browser, host);
+      await exerciseFixture(browser, host);
+    }
   }
 }
 finally { await browser.close(); }
-console.log('Browser suite completed. These are synthetic DOM fixtures, not validation against signed-in production websites.');
+console.log(baselinesOnly
+  ? 'Live-baselines subset completed. This is not a full browser suite pass.'
+  : liveOnly
+    ? 'Live-fixture subset completed. This is not a full browser suite pass.'
+    : 'Browser suite completed. These are synthetic DOM fixtures, not validation against signed-in production websites.');

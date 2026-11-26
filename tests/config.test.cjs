@@ -1,7 +1,9 @@
 'use strict';
+const fs = require('node:fs');
+const path = require('node:path');
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { harness, plain, rootElement } = require('./helpers.cjs');
+const { ROOT, harness, plain, rootElement } = require('./helpers.cjs');
 
 test('configuration admits only known own fields with strict value types', () => {
   const { schema: S } = harness();
@@ -160,15 +162,65 @@ test('locale dictionaries cover identical visible setting keys', () => {
   assert.deepEqual(Object.keys(S.I18N['zh-CN']).sort(), Object.keys(S.I18N['en-US']).sort());
   for (const key of [
     'contextWindow', 'contextWindowAuto', 'vialCapacity',
-    'vialSourceAutoMatched', 'vialSourceAutoFallback', 'vialSourceManual',
+    'vialSourceAutoMatched', 'vialSourceAutoFallback', 'vialSourceManual', 'vialSourceUnrecognized',
     'vialUncountedAttachments', 'vialAttachmentsUnit', 'vialAttachmentNote'
   ]) {
     assert.equal(Object.hasOwn(S.I18N['zh-CN'], key), true, `zh-CN missing ${key}`);
     assert.equal(Object.hasOwn(S.I18N['en-US'], key), true, `en-US missing ${key}`);
   }
-  assert.equal(S.I18N['zh-CN'].contextWindow, '参考容量');
+    assert.equal(S.I18N['zh-CN'].contextWindow, '参考容量');
   assert.equal(S.I18N['en-US'].contextWindow, 'Reference capacity');
+  for (const key of ['formulaShowSource', 'formulaShowPreview', 'formulaShowSourceLabel', 'formulaShowPreviewLabel']) {
+    assert.equal(Object.hasOwn(S.I18N['zh-CN'], key), true, `zh-CN missing ${key}`);
+    assert.equal(Object.hasOwn(S.I18N['en-US'], key), true, `en-US missing ${key}`);
+  }
+  assert.equal(S.I18N['zh-CN'].formulaShowSource, '源码');
+  assert.equal(S.I18N['zh-CN'].formulaShowPreview, '公式');
+  assert.equal(S.I18N['en-US'].formulaShowSource, 'Source');
+  assert.equal(S.I18N['en-US'].formulaShowPreview, 'Formula');
+  for (const key of ['formulaPreview', 'formulaPreviewHint']) {
+    assert.equal(Object.hasOwn(S.I18N['zh-CN'], key), true, `zh-CN missing ${key}`);
+    assert.equal(Object.hasOwn(S.I18N['en-US'], key), true, `en-US missing ${key}`);
+  }
+  assert.equal(S.I18N['zh-CN'].formulaPreview, '自动渲染公式代码块');
+  assert.equal(S.I18N['zh-CN'].formulaPreviewHint, '本地离线将 LaTeX 代码块渲染为原生公式，可随时切回源码。');
+  assert.equal(S.I18N['en-US'].formulaPreview, 'Formula preview');
+  assert.equal(S.I18N['en-US'].formulaPreviewHint, 'Render LaTeX code blocks locally as native math; switch back to source anytime.');
   for (const lang of ['zh-CN', 'en-US']) for (const [key, value] of Object.entries(S.I18N[lang])) assert.equal(typeof value === 'string' && value.length > 0, true, `${lang}.${key}`);
+});
+
+test('formulaPreview defaults to true, enforces strict boolean sanitization, falls back for legacy configs, roundtrips export/import, and syncs data-op-formula-preview', async () => {
+  const h = harness({ background: true });
+  const S = h.schema;
+  assert.equal(S.DEFAULT_CONFIG.formulaPreview, true);
+  assert.deepEqual(plain(S.sanitizePatch({ formulaPreview: true })), { formulaPreview: true });
+  assert.deepEqual(plain(S.sanitizePatch({ formulaPreview: false })), { formulaPreview: false });
+  for (const invalid of ['false', 'true', 0, 1, null, [], {}]) {
+    assert.deepEqual(plain(S.sanitizePatch({ formulaPreview: invalid })), {});
+  }
+
+  // Legacy config without formulaPreview falls back to true
+  h.state.storage[S.STORAGE_KEY] = { enabled: true };
+  const legacy = await S.loadConfig();
+  assert.equal(legacy.formulaPreview, true);
+
+  // Save/import/export roundtrip preserves false and true
+  await S.saveConfig({ formulaPreview: false });
+  const exported = plain(await S.loadConfig());
+  assert.equal(exported.formulaPreview, false);
+  const reimported = plain(S.sanitizeConfig(S.sanitizePatch(exported)));
+  assert.equal(reimported.formulaPreview, false);
+
+  // applyConfigToRoot sets data-op-formula-preview when enabled and removes it cleanly when disabled
+  const root = rootElement();
+  S.applyConfigToRoot({ ...S.DEFAULT_CONFIG, formulaPreview: true }, root);
+  assert.equal(root.getAttribute('data-op-formula-preview'), 'true');
+  S.applyConfigToRoot({ ...S.DEFAULT_CONFIG, formulaPreview: false }, root);
+  assert.equal(root.getAttribute('data-op-formula-preview'), 'false');
+  S.applyConfigToRoot({ ...S.DEFAULT_CONFIG, enabled: false, formulaPreview: false }, root);
+  assert.equal(root.getAttribute('data-op-formula-preview'), null);
+  S.applyConfigToRoot({ ...S.DEFAULT_CONFIG, enableChatGPT: false, formulaPreview: true }, root);
+  assert.equal(root.getAttribute('data-op-formula-preview'), null);
 });
 
 test('a Chrome Promise namespace does not request Firefox data collection permissions', () => {
@@ -243,3 +295,153 @@ for (const kind of ['chrome', 'firefox']) {
     assert.throws(() => S.permissionRequest('http://api.example.test/v1'), /INVALID_ENDPOINT/);
   });
 }
+
+test('uiThemeMode defaults to auto, enforces enum sanitization, handles legacy/roundtrip configs, and defines bilingual I18N keys', async () => {
+  const h = harness({ background: true });
+  const S = h.schema;
+  assert.equal(S.DEFAULT_CONFIG.uiThemeMode, 'auto');
+  assert.deepEqual(plain(S.ENUMS.uiThemeMode), ['auto', 'light', 'dark']);
+  for (const valid of ['auto', 'light', 'dark']) {
+    assert.deepEqual(plain(S.sanitizePatch({ uiThemeMode: valid })), { uiThemeMode: valid });
+  }
+  for (const invalid of ['system', 'host', true, null, 123, '', []]) {
+    assert.deepEqual(plain(S.sanitizePatch({ uiThemeMode: invalid })), {});
+  }
+
+  // Legacy config missing uiThemeMode falls back to auto
+  h.state.storage[S.STORAGE_KEY] = { enabled: true, themeMode: 'dark', palette: 'warm' };
+  const legacy = await S.loadConfig();
+  assert.equal(legacy.uiThemeMode, 'auto');
+
+  // Export/import roundtrip preserves uiThemeMode
+  for (const mode of ['light', 'dark', 'auto']) {
+    await S.saveConfig({ uiThemeMode: mode });
+    const exported = plain(await S.loadConfig());
+    assert.equal(exported.uiThemeMode, mode);
+    const reimported = plain(S.sanitizeConfig(S.sanitizePatch(exported)));
+    assert.equal(reimported.uiThemeMode, mode);
+  }
+
+  // Bilingual I18N keys match
+  assert.equal(S.I18N['zh-CN'].uiThemeMode, '设置界面主题');
+  assert.equal(S.I18N['en-US'].uiThemeMode, 'Settings UI theme');
+  assert.equal(S.I18N['zh-CN'].uiThemeToggle, '切换设置界面主题');
+  assert.equal(S.I18N['en-US'].uiThemeToggle, 'Switch settings UI theme');
+});
+
+test('resolveUiScheme, resolveUiPalette, and applyUiThemeToRoot decouple settings UI from Host Surface themeMode and enabled state', () => {
+  let darkPref = false;
+  let reducedPref = false;
+  const h = harness();
+  h.context.matchMedia = query => ({
+    matches: query.includes('prefers-color-scheme: dark')
+      ? darkPref
+      : query.includes('prefers-reduced-motion: reduce')
+        ? reducedPref
+        : false
+  });
+  const S = h.schema;
+
+  // auto follows prefers-color-scheme regardless of Host Surface themeMode
+  darkPref = true;
+  assert.equal(S.resolveUiScheme({ ...S.DEFAULT_CONFIG, uiThemeMode: 'auto', themeMode: 'light' }), 'dark');
+  darkPref = false;
+  assert.equal(S.resolveUiScheme({ ...S.DEFAULT_CONFIG, uiThemeMode: 'auto', themeMode: 'dark' }), 'light');
+
+  // explicit light/dark lock UI scheme regardless of system preference and Host Surface themeMode
+  darkPref = true;
+  assert.equal(S.resolveUiScheme({ ...S.DEFAULT_CONFIG, uiThemeMode: 'light', themeMode: 'dark' }), 'light');
+  darkPref = false;
+  assert.equal(S.resolveUiScheme({ ...S.DEFAULT_CONFIG, uiThemeMode: 'dark', themeMode: 'light' }), 'dark');
+
+  // resolveUiPalette picks dark/light group palette and falls back safely from Native Palette ('host')
+  assert.equal(S.resolveUiPalette({ ...S.DEFAULT_CONFIG, palette: 'warm', lightPreset: 'alabaster' }, 'dark'), 'warm');
+  assert.equal(S.resolveUiPalette({ ...S.DEFAULT_CONFIG, palette: 'warm', lightPreset: 'alabaster' }, 'light'), 'alabaster');
+  assert.equal(S.resolveUiPalette({ ...S.DEFAULT_CONFIG, palette: 'host', lightPreset: 'host' }, 'dark'), 'obsidian');
+  assert.equal(S.resolveUiPalette({ ...S.DEFAULT_CONFIG, palette: 'host', lightPreset: 'host' }, 'light'), 'crystal');
+  assert.equal(S.resolveUiPalette({ ...S.DEFAULT_CONFIG, uiThemeMode: 'light', palette: 'warm', lightPreset: 'host' }), 'crystal');
+
+  // applyUiThemeToRoot keeps settings UI enabled even when cfg.enabled === false
+  darkPref = false;
+  reducedPref = true;
+  const uiRoot = rootElement();
+  assert.equal(S.applyUiThemeToRoot({
+    ...S.DEFAULT_CONFIG,
+    enabled: false,
+    enableChatGPT: false,
+    enableGemini: false,
+    themeMode: 'dark',
+    uiThemeMode: 'light',
+    palette: 'host',
+    lightPreset: 'host',
+    accentTone: 'iris',
+    cornerStyle: 'soft',
+    codeFont: 'jetbrains',
+    codeLigatures: true,
+    motionLevel: 'ultra',
+    language: 'en-US',
+    ambientIntensity: 42
+  }, uiRoot), true);
+  assert.equal(uiRoot.getAttribute('data-op-enabled'), 'true');
+  assert.equal(uiRoot.getAttribute('data-op-scheme'), 'light');
+  assert.equal(uiRoot.getAttribute('data-op-effective-palette'), 'crystal');
+  assert.equal(uiRoot.getAttribute('data-op-ui-theme-mode'), 'light');
+  assert.equal(uiRoot.getAttribute('data-op-accent'), 'iris');
+  assert.equal(uiRoot.getAttribute('data-op-corners'), 'soft');
+  assert.equal(uiRoot.getAttribute('data-op-code-font'), 'jetbrains');
+  assert.equal(uiRoot.getAttribute('data-op-ligatures'), 'true');
+  assert.equal(uiRoot.getAttribute('data-op-motion'), 'off');
+  assert.equal(uiRoot.getAttribute('data-op-lang'), 'en-US');
+  assert.equal(uiRoot.style.getPropertyValue('--op-ambient-alpha'), '0.420');
+
+  // Strict Isolation: Host Surface resolvers and applyConfigToRoot completely ignore uiThemeMode
+  reducedPref = false;
+  darkPref = true;
+  const hostRootA = rootElement();
+  const hostRootB = rootElement();
+  const hostCfgAuto = { ...S.DEFAULT_CONFIG, themeMode: 'dark', palette: 'warm', lightPreset: 'crystal', uiThemeMode: 'auto' };
+  const hostCfgLight = { ...hostCfgAuto, uiThemeMode: 'light' };
+  assert.equal(S.resolveScheme(hostCfgLight), S.resolveScheme(hostCfgAuto));
+  assert.equal(S.resolvePalette(hostCfgLight), S.resolvePalette(hostCfgAuto));
+  S.applyConfigToRoot(hostCfgAuto, hostRootA);
+  S.applyConfigToRoot(hostCfgLight, hostRootB);
+  assert.deepEqual(hostRootB.attributes, hostRootA.attributes);
+  assert.equal(hostRootB.getAttribute('data-op-ui-theme-mode'), null);
+});
+
+test('popup and tokens statically declare color-scheme and pre-load light fallback', () => {
+  const popupHtml = fs.readFileSync(path.join(ROOT, 'popup', 'popup.html'), 'utf8');
+  const popupCss = fs.readFileSync(path.join(ROOT, 'popup', 'popup.css'), 'utf8');
+  const tokensCss = fs.readFileSync(path.join(ROOT, 'styles', 'prism-tokens.css'), 'utf8');
+
+  assert.match(popupHtml, /<meta\s+name=["']color-scheme["']\s+content=["']light dark["']\s*>/i);
+
+  const rootMatch = popupCss.match(/:root\s*\{([^}]*)\}/);
+  assert.ok(rootMatch, 'popup.css must define :root');
+  assert.match(rootMatch[1], /color-scheme\s*:\s*light dark\b/i);
+
+  const lightMediaMatch = popupCss.match(/@media\s*\(\s*prefers-color-scheme\s*:\s*light\s*\)\s*\{[\s\S]*?:root\s*\{([^}]*)\}/);
+  assert.ok(lightMediaMatch, 'popup.css must declare @media (prefers-color-scheme: light) :root fallback');
+  for (const [cssVar, token] of [
+    ['--ui-bg', '--op-canvas'],
+    ['--ui-panel', '--op-card'],
+    ['--ui-text', '--op-fg'],
+    ['--ui-muted', '--op-fg-muted'],
+    ['--ui-border', '--op-border'],
+    ['--ui-accent', '--op-accent'],
+    ['--ui-link', '--op-link']
+  ]) {
+    assert.match(
+      lightMediaMatch[1],
+      new RegExp(`${cssVar}\\s*:\\s*var\\(\\s*${token}\\s*,`),
+      `light pre-load fallback must define ${cssVar} using var(${token}, ...)`
+    );
+  }
+  assert.doesNotMatch(lightMediaMatch[1], /#0e0e11|#18181e|#f2f2f5|#9facff/i);
+
+  assert.match(popupCss, /html\[data-op-scheme=["']light["']\]\s*\{[^}]*color-scheme\s*:\s*light\b/i);
+  assert.match(popupCss, /html\[data-op-scheme=["']dark["']\]\s*\{[^}]*color-scheme\s*:\s*dark\b/i);
+
+  assert.match(tokensCss, /html\[data-op-enabled="true"\]\[data-op-effective-palette="host"\]\[data-op-scheme="dark"\]\s*\{[^}]*color-scheme\s*:\s*dark\b/i);
+  assert.match(tokensCss, /html\[data-op-enabled="true"\]\[data-op-effective-palette="host"\]\[data-op-scheme="light"\]\s*\{[^}]*color-scheme\s*:\s*light\b/i);
+});

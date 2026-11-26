@@ -10,19 +10,19 @@
   const DATA_PERMISSIONS = ['websiteContent', 'personalCommunications', 'authenticationInfo'];
   const DEFAULT_CONFIG = Object.freeze({
     enabled: true, enableChatGPT: true, enableGemini: true, language: 'zh-CN',
-    themeMode: 'auto', palette: 'obsidian', lightPreset: 'crystal', accentTone: 'follow',
+    themeMode: 'auto', uiThemeMode: 'auto', palette: 'obsidian', lightPreset: 'crystal', accentTone: 'follow',
     cornerStyle: 'balanced', codeFont: 'default', codeLigatures: false,
     ambientIntensity: 65, ambientStyle: 'aurora', ambientTexture: 'glyphs',
     motionSpeed: 'slow', composerGlow: true, sidebarStyle: 'glass',
     motionLevel: 'subtle', streamChoreography: true,
     semanticAura: true, composerRestyle: true, sidebarCompact: false,
-    stickyCodeHeader: true, longCodeFold: true, railOutline: true,
+    stickyCodeHeader: true, longCodeFold: true, formulaPreview: true, railOutline: true,
     turnJumpShortcuts: true, contentWidth: 'standard', contextVial: true, contextWindowTokens: 'auto',
     thoughtTranslate: false, thoughtView: 'bilingual',
     thoughtEndpoint: '', thoughtModel: ''
   });
   const ENUMS = Object.freeze({
-    language: ['zh-CN', 'en-US'], themeMode: ['auto', 'dark', 'light'],
+    language: ['zh-CN', 'en-US'], themeMode: ['auto', 'dark', 'light'], uiThemeMode: ['auto', 'light', 'dark'],
     palette: ['obsidian', 'warm', 'host'], lightPreset: ['crystal', 'alabaster', 'host'],
     accentTone: ['follow', 'cobalt', 'iris', 'amber', 'mono'],
     cornerStyle: ['sharp', 'balanced', 'soft'], codeFont: ['default', 'jetbrains', 'fira', 'cascadia'],
@@ -43,13 +43,13 @@
       masterEnable:'启用 Prism', masterHint:'随时关闭，恢复网页原有外观', hostChatGPT:'ChatGPT',hostGemini:'Gemini',
       tabAppearance:'外观',tabWorkbench:'阅读',tabMotion:'光影',tabThought:'翻译',tabAbout:'关于',
       scenePresets:'一键场景',presetUltra:'流光',presetFocus:'专注',presetEco:'静默',
-      themeMode:'明暗模式',modeAuto:'跟随系统',modeDark:'深色',modeLight:'浅色',
+      themeMode:'明暗模式',uiThemeMode:'设置界面主题',uiThemeToggle:'切换设置界面主题',modeAuto:'跟随系统',modeDark:'深色',modeLight:'浅色',
       darkPalette:'深色配色',lightPalette:'浅色配色',palObsidian:'深空黑曜',palWarm:'暖炭玄岩',palCrystal:'白昼冷晶',palAlabaster:'暖白画册',palHost:'保留原生配色',
       paletteHint:'选择色卡可立即预览对应的明暗模式。',accentTone:'点睛色',accFollow:'跟随站点',accCobalt:'钴蓝',accIris:'鸢尾紫',accAmber:'琥珀金',accMono:'银钛',
       cornerStyle:'圆角',cornerSharp:'利落',cornerBalanced:'均衡',cornerSoft:'柔和',languageLabel:'界面语言',
       previewTitle:'外观预览',previewPrompt:'让复杂的想法变得清楚。',previewReply:'从一个小问题开始，再慢慢深入。',previewInput:'继续探索…',previewBadge:'样式预览',
       readingTitle:'把长对话读得轻松一点',readingHint:'增强控件仅作用于支持的网站。',
-      stickyCodeHeader:'固定代码标题栏',longCodeFold:'手动折叠长代码',longCodeFoldHint:'48 行起显示折叠按钮，原文保持完整。',
+      stickyCodeHeader:'固定代码标题栏',longCodeFold:'手动折叠长代码',longCodeFoldHint:'48 行起显示折叠按钮，原文保持完整。',formulaPreview:'自动渲染公式代码块',formulaPreviewHint:'本地离线将 LaTeX 代码块渲染为原生公式，可随时切回源码。',
       railOutline:'会话大纲',railHint:'按提问查找与跳转。',turnJumpShortcuts:'Alt + ↑ / ↓ 跳转提问',shortcutHint:'输入文字时不会抢占按键。',
       contentWidth:'内容宽度',contentWidthHint:'切换标准、加宽与全栏阅读列。',widthStandard:'标准',widthWide:'加宽',widthFull:'全栏',widthToggleLabel:'切换内容宽度',
       contextVial:'上下文估算',contextHint:'仅估算已加载的对话，不代表实际用量、额度或模型容量。',contextWindow:'参考容量',contextWindowAuto:'自动匹配模型',
@@ -73,7 +73,8 @@
       independentNote:'本扩展为独立社区作品，与 RMvdesi、OpenAI 或 Google 没有官方隶属或背书关系。',
       privacyNote:'主题与阅读功能在本机运行，无统计追踪。只有主动启用并点击翻译时才会连接你授权的服务。',
       outlineTitle:'会话大纲',outlineSearch:'搜索提问…',outlineEmpty:'暂无匹配的提问',foldCollapse:'收起长代码',foldExpand:'展开全部代码',linesUnit:'行',
-      vialTitle:'当前会话估算',vialTotal:'估算总 Token',vialUser:'提问',vialAssistant:'回复',vialCode:'其中代码',vialCapacity:'参考容量',vialSourceAutoMatched:'自动匹配',vialSourceAutoFallback:'站点默认',vialSourceManual:'手动指定',vialUncountedAttachments:'未计入附件',vialAttachmentsUnit:'份',vialAttachmentNote:'已检测到可见附件，其真实内容未计入以上数字估算。',vialNote:'仅基于已加载文本粗略估算；不等于服务实际用量或可用额度。',
+      formulaShowSource:'源码',formulaShowPreview:'公式',formulaShowSourceLabel:'查看 LaTeX 源码',formulaShowPreviewLabel:'查看公式预览',
+      vialTitle:'当前会话估算',vialTotal:'估算总 Token',vialUser:'提问',vialAssistant:'回复',vialCode:'其中代码',vialCapacity:'参考容量',vialSourceAutoMatched:'自动匹配',vialSourceAutoFallback:'自动兜底',vialSourceUnrecognized:'未识别型号，可在设置中指定',vialSourceManual:'手动指定',vialUncountedAttachments:'未计入附件',vialAttachmentsUnit:'份',vialAttachmentNote:'已检测到可见附件，其真实内容未计入以上数字估算。',vialNote:'仅基于已加载文本粗略估算；不等于服务实际用量或可用额度。',
       translateBtn:'翻译已显示的思考',translating:'翻译中…',retranslateBtn:'重新翻译',toggleViewBtn:'切换译文视图',
       translationError:'翻译失败，请检查服务配置和授权。',translationConsent:'此文本将发送到设置中的服务。',translationDisabled:'请先在扩展设置中启用并授权翻译服务。',
       close:'关闭',search:'搜索',unknownError:'操作未完成，请重试。'
@@ -83,13 +84,13 @@
       masterEnable:'Enable Prism',masterHint:'Turn off anytime to restore the original page',hostChatGPT:'ChatGPT',hostGemini:'Gemini',
       tabAppearance:'Appearance',tabWorkbench:'Reading',tabMotion:'Effects',tabThought:'Translate',tabAbout:'About',
       scenePresets:'Quick scenes',presetUltra:'Aurora',presetFocus:'Focus',presetEco:'Still',
-      themeMode:'Color mode',modeAuto:'System',modeDark:'Dark',modeLight:'Light',darkPalette:'Dark palette',lightPalette:'Light palette',
+      themeMode:'Color mode',uiThemeMode:'Settings UI theme',uiThemeToggle:'Switch settings UI theme',modeAuto:'System',modeDark:'Dark',modeLight:'Light',darkPalette:'Dark palette',lightPalette:'Light palette',
       palObsidian:'Obsidian',palWarm:'Warm Basalt',palCrystal:'Crystal',palAlabaster:'Alabaster',palHost:'Keep native colors',paletteHint:'Choose a card to preview its light or dark mode.',
       accentTone:'Accent',accFollow:'Site',accCobalt:'Cobalt',accIris:'Iris',accAmber:'Amber',accMono:'Titanium',
       cornerStyle:'Corners',cornerSharp:'Sharp',cornerBalanced:'Balanced',cornerSoft:'Soft',languageLabel:'Language',
       previewTitle:'Appearance preview',previewPrompt:'Make complicated ideas feel clear.',previewReply:'Begin with one small question. Then go deeper.',previewInput:'Keep exploring…',previewBadge:'Style preview',
       readingTitle:'Make long conversations easier',readingHint:'Extra controls only appear on supported sites.',
-      stickyCodeHeader:'Sticky code headers',longCodeFold:'Fold long code manually',longCodeFoldHint:'Adds a button at 48 lines; original text stays intact.',
+      stickyCodeHeader:'Sticky code headers',longCodeFold:'Fold long code manually',longCodeFoldHint:'Adds a button at 48 lines; original text stays intact.',formulaPreview:'Formula preview',formulaPreviewHint:'Render LaTeX code blocks locally as native math; switch back to source anytime.',
       railOutline:'Conversation outline',railHint:'Find and jump to a question.',turnJumpShortcuts:'Alt + ↑ / ↓ between questions',shortcutHint:'Never takes over shortcuts while typing.',
       contentWidth:'Content width',contentWidthHint:'Switch between standard, wide, and full reading columns.',widthStandard:'Standard',widthWide:'Wide',widthFull:'Full',widthToggleLabel:'Toggle content width',
       contextVial:'Context estimate',contextHint:'Estimates loaded messages only, not actual usage, quota or model capacity.',contextWindow:'Reference capacity',contextWindowAuto:'Auto (match model)',
@@ -113,7 +114,8 @@
       independentNote:'An independent community project; not affiliated with or endorsed by RMvdesi, OpenAI or Google.',
       privacyNote:'Theme and reading features run locally without analytics. Only explicitly enabled, manually requested translations connect to your authorized service.',
       outlineTitle:'Conversation outline',outlineSearch:'Search questions…',outlineEmpty:'No matching questions',foldCollapse:'Fold long code',foldExpand:'Expand all code',linesUnit:'lines',
-      vialTitle:'Current conversation estimate',vialTotal:'Estimated tokens',vialUser:'Questions',vialAssistant:'Replies',vialCode:'Code subset',vialCapacity:'Reference capacity',vialSourceAutoMatched:'Auto-matched',vialSourceAutoFallback:'Host default',vialSourceManual:'Manual',vialUncountedAttachments:'Uncounted attachments',vialAttachmentsUnit:'files',vialAttachmentNote:'Visible attachments detected; their contents are not counted above.',vialNote:'A rough estimate of loaded text; not actual service usage or remaining quota.',
+      formulaShowSource:'Source',formulaShowPreview:'Formula',formulaShowSourceLabel:'Show LaTeX source',formulaShowPreviewLabel:'Show formula preview',
+      vialTitle:'Current conversation estimate',vialTotal:'Estimated tokens',vialUser:'Questions',vialAssistant:'Replies',vialCode:'Code subset',vialCapacity:'Reference capacity',vialSourceAutoMatched:'Auto-matched',vialSourceAutoFallback:'Auto fallback',vialSourceUnrecognized:'Unrecognized model; choose a capacity in settings',vialSourceManual:'Manual',vialUncountedAttachments:'Uncounted attachments',vialAttachmentsUnit:'files',vialAttachmentNote:'Visible attachments detected; their contents are not counted above.',vialNote:'A rough estimate of loaded text; not actual service usage or remaining quota.',
       translateBtn:'Translate displayed thoughts',translating:'Translating…',retranslateBtn:'Translate again',toggleViewBtn:'Switch translation view',
       translationError:'Translation failed. Check the service configuration and permissions.',translationConsent:'This text will be sent to the service in settings.',translationDisabled:'Enable and authorize a translation service in extension settings first.',
       close:'Close',search:'Search',unknownError:'Could not complete this action. Please retry.'
@@ -170,9 +172,12 @@
     if (host === 'gemini.google.com') return 'gemini';
     return 'unknown';
   }
+  function systemScheme() {
+    return global.matchMedia && global.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
   function preferredScheme(cfg) {
     if (cfg.themeMode === 'dark' || cfg.themeMode === 'light') return cfg.themeMode;
-    return global.matchMedia && global.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+    return systemScheme();
   }
   function resolvePalette(cfg) { return preferredScheme(cfg) === 'dark' ? cfg.palette : cfg.lightPreset; }
   function resolveScheme(cfg) {
@@ -193,6 +198,24 @@
     }
     return preferred;
   }
+  /** Resolve the light/dark scheme for the extension settings UI independently of Host Surface themeMode. */
+  function resolveUiScheme(cfg) {
+    const mode = cfg && cfg.uiThemeMode;
+    if (mode === 'light' || mode === 'dark') return mode;
+    return systemScheme();
+  }
+  /** Resolve the optical palette for the settings UI, falling back from Native Palette ('host') to standard Prism palettes. */
+  function resolveUiPalette(cfg, scheme) {
+    const clean = sanitizeConfig(cfg);
+    const resolved = scheme === 'light' || scheme === 'dark' ? scheme : resolveUiScheme(clean);
+    if (resolved === 'dark') return clean.palette === 'warm' ? 'warm' : 'obsidian';
+    return clean.lightPreset === 'alabaster' ? 'alabaster' : 'crystal';
+  }
+  function writeRootState(root, attributes, ambientIntensity) {
+    for (const [key, value] of Object.entries(attributes)) if (root.getAttribute('data-op-'+key) !== value) root.setAttribute('data-op-'+key,value);
+    const alpha = (ambientIntensity/100).toFixed(3);
+    if (root.style.getPropertyValue('--op-ambient-alpha') !== alpha) root.style.setProperty('--op-ambient-alpha',alpha);
+  }
   const originals = new WeakMap();
   function applyConfigToRoot(input, rootElement) {
     const cfg = sanitizeConfig(input), root = rootElement || global.document && global.document.documentElement;
@@ -200,15 +223,40 @@
     const host = detectHost();
     const enabled = cfg.enabled && ((host === 'chatgpt' && cfg.enableChatGPT) || (host === 'gemini' && cfg.enableGemini) || host === 'unknown');
     if (!originals.has(root)) {
+      const priorPrism = root.getAttribute('data-op-enabled') === 'true' || root.getAttribute('data-op-instance') !== null;
       const attrs = {};
-      for (const attr of Array.from(root.attributes)) if (attr.name.startsWith('data-op-')) attrs[attr.name] = attr.value;
-      originals.set(root, {attrs, alpha: root.style.getPropertyValue('--op-ambient-alpha'), priority: root.style.getPropertyPriority('--op-ambient-alpha')});
+      if (!priorPrism) {
+        for (const attr of Array.from(root.attributes)) if (attr.name.startsWith('data-op-')) attrs[attr.name] = attr.value;
+      }
+      let hadStyle = root.getAttribute('style') !== null;
+      if (priorPrism && hadStyle) {
+        if (typeof root.style?.length === 'number') {
+          hadStyle = false;
+          for (let i = 0; i < root.style.length; i++) {
+            if (!root.style[i].startsWith('--op-')) { hadStyle = true; break; }
+          }
+        } else {
+          hadStyle = root.getAttribute('style').split(';').some(decl => {
+            const colon = decl.indexOf(':');
+            const prop = (colon < 0 ? decl : decl.slice(0, colon)).trim();
+            return Boolean(prop) && !prop.startsWith('--op-');
+          });
+        }
+      }
+      originals.set(root, {
+        attrs,
+        alpha: priorPrism ? '' : root.style.getPropertyValue('--op-ambient-alpha'),
+        priority: priorPrism ? '' : root.style.getPropertyPriority('--op-ambient-alpha'),
+        hadStyle
+      });
     }
     if (!enabled) {
       const original = originals.get(root);
       for (const attr of Array.from(root.attributes)) if (attr.name.startsWith('data-op-')) root.removeAttribute(attr.name);
       for (const [key,value] of Object.entries(original.attrs)) root.setAttribute(key,value);
       if (original.alpha) root.style.setProperty('--op-ambient-alpha', original.alpha, original.priority); else root.style.removeProperty('--op-ambient-alpha');
+      // Review fix S2: no empty style="" residue on a root that had no style attribute.
+      if (!original.hadStyle && root.getAttribute('style')?.trim() === '') root.removeAttribute('style');
       return false;
     }
     const scheme = resolveScheme(cfg);
@@ -221,11 +269,25 @@
       'sticky-code':String(cfg.stickyCodeHeader), lang:cfg.language,
       'ambient-style':cfg.ambientStyle, texture:cfg.ambientTexture, 'motion-speed':cfg.motionSpeed,
       'composer-glow':String(cfg.composerGlow), 'sidebar-style':cfg.sidebarStyle,
-      'content-width':cfg.contentWidth
+      'content-width':cfg.contentWidth, 'formula-preview':String(cfg.formulaPreview)
     };
-    for (const [key,value] of Object.entries(attributes)) if (root.getAttribute('data-op-'+key) !== value) root.setAttribute('data-op-'+key,value);
-    const alpha = (cfg.ambientIntensity/100).toFixed(3);
-    if (root.style.getPropertyValue('--op-ambient-alpha') !== alpha) root.style.setProperty('--op-ambient-alpha',alpha);
+    writeRootState(root, attributes, cfg.ambientIntensity);
+    return true;
+  }
+  /** Apply decoupled settings-UI root attributes while keeping extension controls active regardless of cfg.enabled. */
+  function applyUiThemeToRoot(input, rootElement) {
+    const cfg = sanitizeConfig(input), root = rootElement || global.document && global.document.documentElement;
+    if (!root) return false;
+    const scheme = resolveUiScheme(cfg);
+    const reduced = global.matchMedia && global.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const attributes = {
+      enabled:'true', scheme, 'effective-palette': resolveUiPalette(cfg, scheme),
+      'ui-theme-mode': cfg.uiThemeMode,
+      accent:cfg.accentTone, corners:cfg.cornerStyle, 'code-font':cfg.codeFont,
+      ligatures:String(cfg.codeLigatures), motion: reduced ? 'off' : cfg.motionLevel,
+      lang:cfg.language
+    };
+    writeRootState(root, attributes, cfg.ambientIntensity);
     return true;
   }
   async function loadConfig() {
@@ -261,5 +323,5 @@
     if (api && api.runtime && typeof api.runtime.getBrowserInfo === 'function') value.data_collection = DATA_PERMISSIONS.slice();
     return value;
   }
-  global.ObsidianPrismSchema = Object.freeze({STORAGE_KEY,SECRETS_KEY,DATA_PERMISSIONS,DEFAULT_CONFIG,ENUMS,SCENE_PRESETS,I18N,getExtApi,callApi,validEndpoint,sanitizePatch,sanitizeConfig,detectHost,resolveScheme,resolvePalette,applyConfigToRoot,loadConfig,saveConfig,saveContentWidth,subscribe,t,sendMessage,permissionRequest});
+  global.ObsidianPrismSchema = Object.freeze({STORAGE_KEY,SECRETS_KEY,DATA_PERMISSIONS,DEFAULT_CONFIG,ENUMS,SCENE_PRESETS,I18N,getExtApi,callApi,validEndpoint,sanitizePatch,sanitizeConfig,detectHost,resolveScheme,resolvePalette,resolveUiScheme,resolveUiPalette,applyConfigToRoot,applyUiThemeToRoot,loadConfig,saveConfig,saveContentWidth,subscribe,t,sendMessage,permissionRequest});
 })(globalThis);

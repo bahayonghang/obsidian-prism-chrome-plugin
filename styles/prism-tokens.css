@@ -11,6 +11,8 @@ html[data-op-enabled="true"] {
   --op-radius-md: 12px;
   --op-radius-lg: 18px;
   --op-radius-pill: 999px;
+  --op-composer-radius: 12px;
+  --op-composer-attachment-radius: 8px;
   --op-code-font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
   --op-spring-fast: cubic-bezier(0.22, 1, 0.36, 1);
   --op-font-ui: "Inter", "Segoe UI Variable", "Segoe UI", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
@@ -18,6 +20,11 @@ html[data-op-enabled="true"] {
   --op-horizon-violet: #8B79EB;
   --op-horizon-cyan: #39B8D9;
   --op-horizon-ink: #6F83A7;
+  --op-prism-cobalt: #4285F4;
+  --op-prism-iris: #9B72CB;
+  --op-prism-coral: #EA4335;
+  --op-prism-amber: #FBBC04;
+  --op-composer-rim-gradient: linear-gradient(125deg, color-mix(in srgb, var(--op-accent) 72%, #FFFFFF) 0%, var(--op-prism-cobalt) 26%, var(--op-prism-iris) 52%, var(--op-prism-coral) 76%, var(--op-prism-amber) 100%);
   --op-drift-duration: 28s;
   --op-ambient-presence: 0.24;
   --op-glass-specular: #FFFFFF12;
@@ -31,6 +38,7 @@ html[data-op-enabled="true"][data-op-scheme="light"] {
   --op-glass-specular: #FFFFFFED;
   --op-surface-shadow: #253A651A;
   --op-horizon-ink: #8A9AB4;
+  --op-composer-rim-gradient: linear-gradient(125deg, var(--op-prism-cobalt) 0%, var(--op-prism-iris) 34%, var(--op-prism-coral) 68%, var(--op-prism-amber) 100%);
 }
 html[data-op-enabled="true"][data-op-effective-palette="warm"] {
   --op-horizon-blue: #687DD1;
@@ -97,6 +105,22 @@ html[data-op-enabled="true"][data-op-effective-palette="obsidian"] {
   --op-syn-comment: #8B93A7;
   --op-syn-operator: #B4C0D4;
   --op-syn-attr: #F497B8;
+  --op-composer-bg: rgba(20, 21, 26, 0.97);
+  --op-composer-sheen: linear-gradient(172deg, rgba(255, 255, 255, 0.046) 0%, rgba(160, 185, 245, 0.014) 36%, rgba(10, 11, 16, 0.2) 100%);
+  --op-composer-border: rgba(218, 228, 255, 0.10);
+  --op-composer-specular: rgba(255, 255, 255, 0.095);
+  --op-composer-focus-specular: rgba(255, 255, 255, 0.14);
+  --op-composer-shadow: 0 1px 2px rgba(0, 0, 0, 0.44), 0 8px 20px -6px rgba(0, 0, 0, 0.48), 0 20px 44px -14px rgba(0, 0, 0, 0.62);
+  --op-pill-bg: rgba(28, 29, 36, 0.78);
+  --op-pill-hover-bg: rgba(255, 255, 255, 0.075);
+  --op-pill-border: rgba(218, 228, 255, 0.09);
+  --op-pill-hover-border: rgba(218, 228, 255, 0.16);
+  --op-send-bg: #F2F3F7;
+  --op-send-fg: #0E0F14;
+  --op-send-sheen: linear-gradient(rgba(255, 255, 255, 0.68) 0%, rgba(255, 255, 255, 0) 58%);
+  --op-send-shadow: inset 0 1px 0 #FFFFFF, 0 2px 8px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  --op-send-disabled-bg: rgba(255, 255, 255, 0.07);
+  --op-send-disabled-fg: rgba(242, 243, 247, 0.28);
 }
 
 /* 1B. Warm Basalt (暖炭玄岩 — Dark, warm neutral) */
@@ -142,6 +166,22 @@ html[data-op-enabled="true"][data-op-effective-palette="warm"] {
   --op-syn-comment: #9B9488;
   --op-syn-operator: #C9C0B3;
   --op-syn-attr: #D6A2E8;
+  --op-composer-bg: rgba(28, 27, 25, 0.97);
+  --op-composer-sheen: linear-gradient(172deg, rgba(255, 248, 236, 0.042) 0%, rgba(217, 119, 87, 0.014) 38%, rgba(16, 15, 13, 0.2) 100%);
+  --op-composer-border: rgba(245, 240, 230, 0.11);
+  --op-composer-specular: rgba(255, 255, 255, 0.095);
+  --op-composer-focus-specular: rgba(255, 255, 255, 0.14);
+  --op-composer-shadow: 0 1px 2px rgba(0, 0, 0, 0.44), 0 10px 28px -6px rgba(0, 0, 0, 0.5);
+  --op-pill-bg: rgba(35, 33, 30, 0.8);
+  --op-pill-hover-bg: rgba(245, 240, 230, 0.075);
+  --op-pill-border: rgba(245, 240, 230, 0.095);
+  --op-pill-hover-border: rgba(245, 240, 230, 0.16);
+  --op-send-bg: #F2F3F7;
+  --op-send-fg: #0E0F14;
+  --op-send-sheen: linear-gradient(rgba(255, 255, 255, 0.68) 0%, rgba(255, 255, 255, 0) 58%);
+  --op-send-shadow: inset 0 1px 0 #FFFFFF, 0 2px 8px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(255, 255, 255, 0.12);
+  --op-send-disabled-bg: rgba(255, 255, 255, 0.07);
+  --op-send-disabled-fg: rgba(242, 243, 247, 0.28);
 }
 
 /* 1C. Daylight Crystal (白昼冷晶 — Light) */
@@ -187,6 +227,22 @@ html[data-op-enabled="true"][data-op-effective-palette="crystal"] {
   --op-syn-comment: #475569;
   --op-syn-operator: #334155;
   --op-syn-attr: #9D174D;
+  --op-composer-bg: #FFFFFF;
+  --op-composer-sheen: linear-gradient(176deg, rgba(255, 255, 255, 0.96) 0%, rgba(241, 246, 255, 0.55) 100%);
+  --op-composer-border: rgba(15, 23, 42, 0.15);
+  --op-composer-specular: rgba(255, 255, 255, 0.94);
+  --op-composer-focus-specular: rgba(37, 99, 235, 0.14);
+  --op-composer-shadow: 0 1px 3px rgba(15, 23, 42, 0.06), 0 10px 28px -6px rgba(30, 58, 138, 0.10);
+  --op-pill-bg: #EEF3FA;
+  --op-pill-hover-bg: rgba(15, 23, 42, 0.065);
+  --op-pill-border: rgba(15, 23, 42, 0.11);
+  --op-pill-hover-border: rgba(15, 23, 42, 0.18);
+  --op-send-bg: #0F172A;
+  --op-send-fg: #F8FAFC;
+  --op-send-sheen: linear-gradient(rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 58%);
+  --op-send-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 2px 8px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(15, 23, 42, 0.12);
+  --op-send-disabled-bg: rgba(15, 23, 42, 0.065);
+  --op-send-disabled-fg: rgba(15, 23, 42, 0.30);
 }
 
 /* 1D. Warm Alabaster (暖白画册 — Light, paper contrast) */
@@ -232,6 +288,22 @@ html[data-op-enabled="true"][data-op-effective-palette="alabaster"] {
   --op-syn-comment: #575046;
   --op-syn-operator: #3F3830;
   --op-syn-attr: #7E22CE;
+  --op-composer-bg: #FFFFFF;
+  --op-composer-sheen: linear-gradient(176deg, rgba(255, 255, 255, 0.97) 0%, rgba(250, 246, 238, 0.58) 100%);
+  --op-composer-border: rgba(42, 32, 20, 0.155);
+  --op-composer-specular: rgba(255, 255, 255, 0.94);
+  --op-composer-focus-specular: rgba(194, 89, 52, 0.14);
+  --op-composer-shadow: 0 1px 3px rgba(42, 32, 20, 0.06), 0 10px 26px -6px rgba(68, 52, 32, 0.10);
+  --op-pill-bg: #F2EFE7;
+  --op-pill-hover-bg: rgba(42, 32, 20, 0.065);
+  --op-pill-border: rgba(42, 32, 20, 0.115);
+  --op-pill-hover-border: rgba(42, 32, 20, 0.185);
+  --op-send-bg: #1C1814;
+  --op-send-fg: #FAF8F5;
+  --op-send-sheen: linear-gradient(rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 58%);
+  --op-send-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 2px 8px rgba(42, 32, 20, 0.22), 0 0 0 1px rgba(42, 32, 20, 0.12);
+  --op-send-disabled-bg: rgba(42, 32, 20, 0.065);
+  --op-send-disabled-fg: rgba(42, 32, 20, 0.30);
 }
 
 /* ==========================================================================
@@ -269,12 +341,20 @@ html[data-op-enabled="true"][data-op-accent="cobalt"][data-op-scheme="dark"] {
   --op-primary: #669DF6;
   --op-primary-fg: #0B101B;
   --op-link: #8AB4F8;
+  --op-prism-cobalt: #3B82F6;
+  --op-prism-iris: #60A5FA;
+  --op-prism-coral: #38BDF8;
+  --op-prism-amber: #93C5FD;
 }
 html[data-op-enabled="true"][data-op-accent="cobalt"][data-op-scheme="light"] {
   --op-accent: #2563EB;
   --op-primary: #2563EB;
   --op-primary-fg: #FFFFFF;
   --op-link: #1D4ED8;
+  --op-prism-cobalt: #2563EB;
+  --op-prism-iris: #3B82F6;
+  --op-prism-coral: #0284C7;
+  --op-prism-amber: #60A5FA;
 }
 
 /* Iris (鸢尾紫) */
@@ -283,12 +363,20 @@ html[data-op-enabled="true"][data-op-accent="iris"][data-op-scheme="dark"] {
   --op-primary: #A58AF8;
   --op-primary-fg: #120D24;
   --op-link: #BBA6FF;
+  --op-prism-cobalt: #8B5CF6;
+  --op-prism-iris: #A78BFA;
+  --op-prism-coral: #C084FC;
+  --op-prism-amber: #DDD6FE;
 }
 html[data-op-enabled="true"][data-op-accent="iris"][data-op-scheme="light"] {
   --op-accent: #7C3AED;
   --op-primary: #7C3AED;
   --op-primary-fg: #FFFFFF;
   --op-link: #6D28D9;
+  --op-prism-cobalt: #7C3AED;
+  --op-prism-iris: #8B5CF6;
+  --op-prism-coral: #9333EA;
+  --op-prism-amber: #A78BFA;
 }
 
 /* Amber (琥珀金) */
@@ -297,12 +385,20 @@ html[data-op-enabled="true"][data-op-accent="amber"][data-op-scheme="dark"] {
   --op-primary: #F2B84B;
   --op-primary-fg: #14120E;
   --op-link: #F6CB75;
+  --op-prism-cobalt: #F59E0B;
+  --op-prism-iris: #FBBF24;
+  --op-prism-coral: #EA580C;
+  --op-prism-amber: #FDE68A;
 }
 html[data-op-enabled="true"][data-op-accent="amber"][data-op-scheme="light"] {
   --op-accent: #D97706;
   --op-primary: #D97706;
   --op-primary-fg: #FFFFFF;
   --op-link: #B45309;
+  --op-prism-cobalt: #D97706;
+  --op-prism-iris: #F59E0B;
+  --op-prism-coral: #EA580C;
+  --op-prism-amber: #B45309;
 }
 
 /* Mono (纯银钛单色) */
@@ -311,12 +407,20 @@ html[data-op-enabled="true"][data-op-accent="mono"][data-op-scheme="dark"] {
   --op-primary: #D4D7E0;
   --op-primary-fg: #0E0F14;
   --op-link: #E2E5EE;
+  --op-prism-cobalt: #E2E8F0;
+  --op-prism-iris: #94A3B8;
+  --op-prism-coral: #CBD5E1;
+  --op-prism-amber: #F8FAFC;
 }
 html[data-op-enabled="true"][data-op-accent="mono"][data-op-scheme="light"] {
   --op-accent: #334155;
   --op-primary: #334155;
   --op-primary-fg: #F8FAFC;
   --op-link: #1E293B;
+  --op-prism-cobalt: #334155;
+  --op-prism-iris: #64748B;
+  --op-prism-coral: #475569;
+  --op-prism-amber: #0F172A;
 }
 
 /* ==========================================================================
@@ -327,18 +431,24 @@ html[data-op-enabled="true"][data-op-corners="sharp"] {
   --op-radius-sm: 4px;
   --op-radius-md: 6px;
   --op-radius-lg: 8px;
+  --op-composer-radius: 6px;
+  --op-composer-attachment-radius: 4px;
 }
 
 html[data-op-enabled="true"][data-op-corners="balanced"] {
   --op-radius-sm: 8px;
   --op-radius-md: 12px;
   --op-radius-lg: 18px;
+  --op-composer-radius: 12px;
+  --op-composer-attachment-radius: 8px;
 }
 
 html[data-op-enabled="true"][data-op-corners="soft"] {
   --op-radius-sm: 12px;
   --op-radius-md: 18px;
   --op-radius-lg: 26px;
+  --op-composer-radius: 16px;
+  --op-composer-attachment-radius: 10px;
 }
 
 html[data-op-enabled="true"][data-op-code-font="jetbrains"] {
@@ -386,6 +496,7 @@ html[data-op-enabled="true"][data-op-ligatures="false"] code {
 
 /* Native palette leaves host surfaces unchanged, while our widgets remain legible. */
 html[data-op-enabled="true"][data-op-effective-palette="host"][data-op-scheme="dark"] {
+  color-scheme: dark;
   --op-bg: #171717; --op-canvas: #212121; --op-sidebar: #171717;
   --op-card: #292929; --op-secondary: #323232; --op-muted: #292929;
   --op-tonal-0: #141414; --op-tonal-1: #212121; --op-tonal-2: #292929;
@@ -399,6 +510,7 @@ html[data-op-enabled="true"][data-op-effective-palette="host"][data-op-scheme="d
   --op-error: #ff8a80; --op-warning: #f6cb75; --op-success: #81c995;
 }
 html[data-op-enabled="true"][data-op-effective-palette="host"][data-op-scheme="light"] {
+  color-scheme: light;
   --op-bg: #fff; --op-canvas: #fff; --op-sidebar: #f5f5f5;
   --op-card: #fff; --op-secondary: #eee; --op-muted: #f6f6f6;
   --op-tonal-0: #ececec; --op-tonal-1: #f5f5f5; --op-tonal-2: #fff;

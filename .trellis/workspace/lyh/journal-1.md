@@ -5,3 +5,146 @@
 
 ---
 
+
+
+## Session 1: v0.3.1 线上回归分析：探针取证、spec 与 tickets
+<!-- trellis-session: v=3 fp=e8d6085ab4478fbc -->
+
+**Date**: 2026-11-22
+**Task**: v0.3.1 线上回归分析：探针取证、spec 与 tickets
+**Branch**: `dev`
+
+### Summary
+
+深入分析 Gemini/ChatGPT 宽度、Context Vial、黑色底栏、输入框、标题问题；用 ego-browser 只读探针核实线上 DOM；grill 两轮共 10 项决策（已约定未实现）；发布 spec #16 与 tickets #17-#22（含原生阻塞关系）。
+Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
+
+### Git Commits
+
+(No associated commits)
+
+### Next Steps
+
+- 从 #17（探针与夹具）开始实施；#18/#19/#20 在 #17 后可并行，#21/#22 依赖 #18。
+
+
+## Session 2: v0.4.3 线上取证：ChatGPT 底栏黑带根因与侧栏激活高亮，发布 spec #40 与 tickets #41-#43
+<!-- trellis-session: v=3 fp=8007a7fb2a4c4b0e -->
+
+**Date**: 2026-11-24
+**Task**: v0.4.3 线上取证：ChatGPT 底栏黑带根因与侧栏激活高亮，发布 spec #40 与 tickets #41-#43
+**Branch**: `dev`
+
+### Summary
+
+用 ego-browser 在已登录 ChatGPT（v0.4.2 生效）只读取证：黑带来自滚动容器内绝对定位底栏的 ::before/::after（锚点定位，不透明 --color-surface）；扩展识别最多走 14 层祖先，线上需 19-32 层且多为 display:contents，标记数为 0。侧栏激活态在图标按钮和会话行上各有两层高亮。发布 spec #40 与 tickets #41-#43（#43 被 #41、#42 阻塞）；方案为助手起草，未实现。
+Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
+
+### Git Commits
+
+(No associated commits)
+
+### Next Steps
+
+- 从 #41 与 #42 开始实施（互不阻塞），#43 收口 0.4.3 基线并做线上复看
+
+
+## Session 3: 用户确认 spec #40 方案：0.4.3、不加正文淡出、按已发布 tickets 执行
+<!-- trellis-session: v=3 fp=fdc489b24a2bfde1 -->
+
+**Date**: 2026-11-24
+**Task**: 用户确认 spec #40 方案：0.4.3、不加正文淡出、按已发布 tickets 执行
+**Branch**: `dev`
+
+### Summary
+
+用户确认按助手推荐执行：版本取 0.4.3；本次不加正文淡出，线上复看时再判断；spec #40 与 tickets #41-#43 按已发布内容执行。已约定，未实现。
+Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
+
+### Git Commits
+
+(No associated commits)
+
+
+## Session 4: v0.4.3 实施完成：spec #40 / #41–#43 合并到 dev 并关单
+<!-- trellis-session: v=3 fp=87a6208b1349d711 -->
+
+**Date**: 2026-11-24
+**Task**: v0.4.3 实施完成：spec #40 / #41–#43 合并到 dev 并关单
+**Branch**: `dev`
+
+### Summary
+
+按任务图实施 v0.4.3：#41 ChatGPT 底栏黑带（宿主标记为主、display: contents 不计层数、只清绘制）、#42 侧栏激活高亮（图标瓷片与整行单层）、#43 0.4.3 基线与文档；/code-review 双轴返修后全量验证通过（单测 146、有头 Chromium 59、Firefox 57、两次打包校验和一致），所有者线上复看：黑带消失、高亮符合设计、正文从输入框两侧经过可接受。dev 合并提交 fa33aa2，#40–#43 已关闭。复用：just ci 的私钥须作位置参数（just ci <key>），写 key=… 会被当成路径并生成新私钥。
+Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `fa33aa2` | merge(v043): 🔀 合并 feat/v043-spec-40（Spec #40 / #41–#43）至 dev |
+
+### Next Steps
+
+- 如需发布，按所有者授权推送 dev
+
+
+## Session 5: v0.4.4 线上取证与原版对照：确认方案并发布 spec #44
+<!-- trellis-session: v=3 fp=ee770081d1aff1e8 -->
+
+**Date**: 2026-11-24
+**Task**: v0.4.4 线上取证与原版对照：确认方案并发布 spec #44
+**Branch**: `dev`
+
+### Summary
+
+ego-browser 线上实测定位 Gemini 底栏两侧黑框（扩展自身全宽 Composer Scrim 44% 画布染色+模糊无横向裁剪）与 ChatGPT 底部 72px 空白（threadColumns 误命中含 --thread-content-* 外层壳注入 48px + [data-thread-scroll-footer]::after 24px 且 Thread Footer 跳过了贴底与免责声明扫描），对照 ref/obsidian-prism 原版确认双端纯透明底栏、12px 紧凑光学卡片/1px 描边/去静态外雾、中性微凸胶囊与空态语音幽灵化方案，发布 Spec #44。
+Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
+
+### Git Commits
+
+(No associated commits)
+
+
+## Session 6: v0.4.4 实施完成：spec #44 / #45–#48 合并到 dev 并关单
+<!-- trellis-session: v=3 fp=dbd87289fa04855b -->
+
+**Date**: 2026-11-25
+**Task**: v0.4.4 实施完成：spec #44 / #45–#48 合并到 dev 并关单
+**Branch**: `dev`
+
+### Summary
+
+隔离 worktree 按三波波前 TDD 完成 Spec #44 全部子票（#45 Gemini 纯透明底栏、#47 原版光学 Composer Surface 与控件分级、#46 探针扩展与 ChatGPT 外层防误伤/Thread Footer 留白收紧/宽度桥接、#48 0.4.4 版本与文档同步），完成双轴 /code-review 返修、just ci（148/148 单测 + 双次可复现打包）与 Chromium 有头 64 / Firefox 62 全量回归（离线夹具，未在真实登录会话验证）；按拓扑关闭远程 #45–#48 与 #44，并以 --no-ff 合并入本地 dev（未推送）。
+Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
+
+### Git Commits
+
+| Hash | Message |
+|------|---------|
+| `48dee45` | merge(v044): 🔀 合并 feat/v044-spec-44（Spec #44 / #45–#48）至 dev |
+
+### Next Steps
+
+- 在已登录 ChatGPT 与 Gemini 页面加载 dist/chrome 复看，并按所有者授权决定是否推送 dev
+
+
+## Session 7: v0.4.5 全链路性能优化与可复现基准门禁：spec #49 / #50–#54 实施完成、双轴审阅返修并合并到 dev
+<!-- trellis-session: v=3 fp=a94d7c1e6b305f12 -->
+
+**Date**: 2026-11-26
+**Task**: v0.4.5 全链路性能优化与可复现基准门禁（spec #49 / #50–#54）
+**Branch**: `dev`
+
+### Summary
+
+在 `feat/v045-spec-49` 完成 Spec #49 全部 5 张子票（`#50` 离线 1×/25× 基准门禁与 Formula Preview 批量/负缓存/分块/幂等写；`#51` 滚动过滤与二分查找、`withScanCache`、`checkVisibility` + `display: contents`/stylesheet `content-visibility: hidden` 兜底、三阶段读写几何分离与 `ResizeObserver` 防重；`#52` 零深拷贝 `textOf`/`cleanTurnText`、`charCodeAt` 估算、增量 Context Vial/Rail 缓存与分域 `MutationObserver`/rAF 复用 Range；`#53` 拆分为 `styles/common.css` + `host-chatgpt.css` + `host-gemini.css`、移除根 `:has()` 与通配 `*`、环境光 `contain: strict` + 按需内联 SVG 字符瓦片、`ObsidianPrismReady` 复用、Popup 缓存、`vendor/temml/temml.min.js` 单字符 `\uffff` 转义与 `check.mjs` `assertChromeUtf8` 永久守卫；`#54` 对齐 `0.4.5` 与归档 `docs/PERFORMANCE_PLAN.md`）。完成双轴 `/code-review` 返修并通过全量门禁（`npm run check`、`164/164` 单测、收紧版 25× 性能门禁全绿、有头 Chromium `64/64`、Firefox `62/62`、双次确定性打包校验和一致；均为离线夹具，未在真实登录会话验证）。复用发现：上游 `temml@0.14.0` 压缩产物 `temml.min.js` 在模板字面量内含 1 处原始 `U+FFFF` 非字符，会触发 Chromium MV3 `base::IsStringUTF8` 拒绝加载；`Element.prototype.checkVisibility()` 对 `display: contents` 返回 `false` 且对元素自身 `content-visibility: hidden` 返回 `true`，需配套回退与 `getStyle` 校验。
+Docs: [docs/PERFORMANCE_PLAN.md](../../../docs/PERFORMANCE_PLAN.md)
+
+### Git Commits
+
+- `feat/v045-spec-49` (`3101bc4`..HEAD) merged into local `dev` via `--no-ff` (not pushed).
+
+### Next Steps
+
+- 在已登录 ChatGPT 与 Gemini 长对话加载 `dist/chrome` / `dist/firefox` 复看并按所有者授权决定是否推送 `dev`。
