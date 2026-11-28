@@ -346,10 +346,22 @@ function makeMockDom(hostname, variant = 'default') {
       rect: { x: 400, y: 730, width: 768, height: 100 }
     });
     const formInnerCorner = create('button', {
-      attrs: { type: 'button', 'aria-label': 'Start Voice' },
+      attrs: { type: 'button', 'aria-label': 'Start Voice', 'data-composer-voice-start': 'true', 'data-secret-btn': 'Private voice prose' },
+      classes: ['voice-btn-dark'],
       rect: { x: 1400, y: 800, width: 36, height: 36 },
-      style: { position: 'absolute' }
+      style: { position: 'absolute', backgroundColor: 'rgb(255, 255, 255)', color: 'rgb(0, 0, 0)', '--icon-inverted': '#000000' }
     });
+    const voiceIconWrap = create('span', {
+      classes: ['text-black'],
+      rect: { x: 1408, y: 808, width: 20, height: 20 },
+      style: { color: 'rgb(0, 0, 0)' }
+    });
+    const voiceSvg = create('svg', {
+      rect: { x: 1408, y: 808, width: 20, height: 20 },
+      style: { color: 'rgb(0, 0, 0)', fill: 'rgb(0, 0, 0)', stroke: 'none' }
+    });
+    voiceIconWrap.append(voiceSvg);
+    formInnerCorner.append(voiceIconWrap);
     composerLayout.append(formInnerCorner);
     form.append(composerLayout);
     const spacer = create('div', { classes: ['composer-below-spacer'], rect: { x: 400, y: 830, width: 768, height: 24 }, style: { height: '24px' } });
@@ -655,6 +667,14 @@ test('structure probe collects pseudo paint/mask, full ancestor depth, siblingsA
   assert.deepEqual(gemini.bottomOffsets, { dockBottomOffset: 0, threadFooterBottomOffset: null, composerBottomOffset: 38 });
   assert.equal(gemini.targets.cornerFloats.count, 1, 'captures Gemini corner button while excluding input-area-v2 inner float');
   assert.deepEqual(gemini.targets.cornerFloats.samples[0].classes, ['host-corner-help']);
+
+  assert.equal(chatgpt.targets.composerButtons.count, 1, 'captures ChatGPT composer button with redacted subtree');
+  assert.equal(chatgpt.targets.composerButtons.samples[0].data['data-composer-voice-start'], 'true');
+  assert.equal(chatgpt.targets.composerButtons.samples[0].data['data-secret-btn'], '[text]');
+  assert.equal(chatgpt.targets.composerButtons.samples[0].style['--icon-inverted'], '#000000');
+  assert.equal(chatgpt.targets.composerButtons.samples[0].subtree[0].tag, 'span');
+  assert.equal(chatgpt.targets.composerButtons.samples[0].subtree[0].children[0].tag, 'svg');
+  assert.equal(chatgpt.targets.composerButtons.samples[0].subtree[0].children[0].style.fill, 'rgb(0, 0, 0)');
 
   const unknown = runProbe('unknown.example');
   assert.deepEqual(unknown.bottomOffsets, { dockBottomOffset: null, threadFooterBottomOffset: null, composerBottomOffset: null });

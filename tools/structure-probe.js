@@ -47,7 +47,7 @@
       composerForm: 'form[data-chatgpt-composer]',
       composerLayout: '[data-composer-layout]',
       composerGrids: { selector: 'form[data-chatgpt-composer] *', where: 'grid' },
-      composerButtons: 'form[data-chatgpt-composer] button',
+      composerButtons: { composerButtons: 'form[data-chatgpt-composer] button', limit: 12 },
       composerAncestors: { ancestorsOf: 'form[data-chatgpt-composer]', depth: 12 },
       composerSiblings: { siblingsAfter: 'form[data-chatgpt-composer]' },
       contentFades: { selector: '[class*="content-fade"], .content-fade, [class*="fade-mask"]', limit: 12 },
@@ -91,7 +91,7 @@
       inputAreaChildren: '.input-area-container > *, input-area-v2 > *',
       textInputField: '.text-input-field',
       composerGrids: { selector: 'input-area-v2 *', where: 'grid' },
-      composerButtons: 'input-area-v2 button',
+      composerButtons: { composerButtons: 'input-area-v2 button', limit: 12 },
       filePreviews: 'input-area-v2 [class*="file-preview"]',
       inputAncestors: { ancestorsOf: 'input-area-v2', depth: 10 },
       inputSiblings: { siblingsAfter: '.input-area-container' },
@@ -103,8 +103,9 @@
     'marginTop', 'marginBottom', 'marginLeft', 'marginRight',
     'paddingLeft', 'paddingRight', 'paddingTop', 'paddingBottom', 'top', 'bottom', 'zIndex', 'opacity',
     'color', 'backgroundColor', 'backgroundImage', 'boxShadow', 'borderRadius', 'maskImage', 'webkitMaskImage', 'backdropFilter',
+    'fill', 'stroke',
     'viewTransitionName',
-    'fontFamily', 'fontSize', 'fontWeight', 'lineHeight',
+    'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing',
     'gridTemplateColumns', 'gridTemplateRows', 'gridTemplateAreas', 'gridArea', 'flexDirection', 'alignItems', 'justifyContent'
   ];
   const PSEUDO_STYLE_KEYS = [
@@ -134,8 +135,13 @@
     '--main-surface-primary',
     '--sidebar-surface-primary',
     '--gem-sys-color--surface',
-    '--gem-sys-color--on-surface'
+    '--gem-sys-color--on-surface',
+    '--text-primary',
+    '--text-inverted',
+    '--icon-primary',
+    '--icon-inverted'
   ];
+  const SUBTREE_STYLE_KEYS = ['display', 'color', 'backgroundColor', 'fill', 'stroke', 'opacity', 'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing'];
   const VALUE_REDACTED_STYLES = new Set(['viewTransitionName']);
   const CSS_UNIT_NUMBER = /^\d+(?:px|em|rem|vh|vw|vmin|vmax|ch|ex|pt|pc|in|cm|mm|deg|rad|turn|ms|s|fr)$/i;
   const BOTTOM_SELECTORS = {
@@ -448,11 +454,38 @@
     const limit = spec.limit != null ? Math.max(1, Number(spec.limit) || SAMPLE_LIMIT) : 8;
     return { count: nodes.length, samples: nodes.slice(0, limit).map(describe) };
   }
+  function describeSubtree(element, depth = 0) {
+    const computed = getComputedStyle(element);
+    const out = {
+      tag: element.localName,
+      classes: [...element.classList].slice(0, 16).map(redactClass),
+      data: data(element),
+      role: element.getAttribute('role') || null,
+      rect: rect(element),
+      style: readRedactedStyles(computed, SUBTREE_STYLE_KEYS)
+    };
+    if (depth < 3 && element.children.length) {
+      out.children = [...element.children].slice(0, 8).map(child => describeSubtree(child, depth + 1));
+    }
+    return out;
+  }
+  function collectComposerButtons(spec) {
+    const nodes = [...document.querySelectorAll(spec.composerButtons)];
+    const limit = spec.limit != null ? Math.max(1, Number(spec.limit) || 12) : 12;
+    return {
+      count: nodes.length,
+      samples: nodes.slice(0, limit).map(node => ({
+        ...describe(node),
+        subtree: [...node.children].slice(0, 8).map(child => describeSubtree(child, 1))
+      }))
+    };
+  }
   function collect(spec) {
     if (typeof spec !== 'string' && spec.paintedFooter) return collectPaintedFooter(spec);
     if (typeof spec !== 'string' && spec.outerWrappers) return collectOuterWrappers(spec);
     if (typeof spec !== 'string' && spec.scrollerOverlap) return collectScrollerOverlap(spec.scrollerOverlap);
     if (typeof spec !== 'string' && spec.sidebarActive) return collectSidebarActive(spec);
+    if (typeof spec !== 'string' && spec.composerButtons) return collectComposerButtons(spec);
     if (typeof spec !== 'string' && spec.siblingsAfter) {
       const nodes = [];
       for (let node = document.querySelector(spec.siblingsAfter)?.nextElementSibling; node; node = node.nextElementSibling) nodes.push(node);
