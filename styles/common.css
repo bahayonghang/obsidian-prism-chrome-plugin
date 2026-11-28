@@ -483,7 +483,7 @@ html[data-op-texture="glyphs"] .op-ambient-glyphs { display: block; }
 .op-vial-tube { display: block;position: relative;width: 9px;height: 19px;flex-shrink: 0;border: 1px solid var(--op-border-strong);border-radius: 3px 3px 5px 5px;overflow: hidden;background: var(--op-secondary); }
 .op-vial-liquid { position: absolute;inset: auto 0 0;min-height: 0;background: var(--op-accent);border-radius: 2px; }
 .op-vial-summary { font-size: 11px;line-height: 1.4;font-weight: 500;font-variant-numeric: tabular-nums;white-space: nowrap;color: inherit;flex-shrink: 0; }
-.op-vial-popover { position: absolute;bottom: calc(100% + 12px);right: 0;transform: translateX(var(--op-vial-popover-shift-x, 0px));width: min(290px,calc(100vw - 32px));max-height: 60vh;overflow: auto;padding: 17px;border: 1px solid var(--op-border-strong);border-radius: var(--op-radius-lg);background: var(--op-card);box-shadow: 0 12px 44px #00000024; }
+.op-vial-popover { position: absolute;bottom: calc(100% + 12px);right: 0;transform: translateX(var(--op-vial-popover-shift-x, 0px));width: min(290px,calc(100vw - 32px));max-height: var(--op-vial-popover-max-h, 60vh);overflow: auto;padding: 17px;border: 1px solid var(--op-border-strong);border-radius: var(--op-radius-lg);background: var(--op-card);box-shadow: 0 12px 44px #00000024; }
 #op-bottom-dock[data-op-popover-side="below"] .op-vial-popover { top: calc(100% + 12px);bottom: auto; }
 .op-vial-title { display: block;font-size: 13px;margin-bottom: 12px; }
 .op-vial-details { display: grid;grid-template-columns: 1fr auto;gap: 8px 15px;font-size: 12px;margin: 0; }
@@ -749,24 +749,25 @@ html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-pal
 }
 
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-add="true"] {
-  min-width: 28px !important;
-  width: 28px !important;
-  height: 28px !important;
-  min-height: 28px !important;
+  min-width: 30px !important;
+  width: 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
   padding: 0 !important;
   border-radius: 999px !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  border: 1px solid var(--op-pill-border) !important;
-  background: var(--op-pill-bg) !important;
-  box-shadow: inset 0 1px 0 var(--op-composer-specular) !important;
-  color: var(--op-fg-secondary) !important;
-  transition: border-color .14s ease, background-color .14s ease, color .14s ease;
+  border: 1px solid var(--op-capsule-border) !important;
+  background-color: var(--op-capsule-bg) !important;
+  background-image: var(--op-capsule-sheen) !important;
+  box-shadow: inset 0 1px 0 var(--op-composer-specular), 0 1px 2px rgba(0, 0, 0, 0.14) !important;
+  color: var(--op-composer-icon) !important;
+  transition: border-color .14s ease, background-color .14s ease, color .14s ease, box-shadow .14s ease;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-add="true"]:hover {
-  border-color: var(--op-pill-hover-border) !important;
-  background: var(--op-pill-hover-bg) !important;
+  border-color: var(--op-capsule-hover-border) !important;
+  background-color: var(--op-capsule-hover-bg) !important;
   color: var(--op-fg) !important;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-add="true"]:focus-visible {
@@ -776,49 +777,113 @@ html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-pal
 
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] {
   border-radius: 999px !important;
-  border: 1px solid var(--op-pill-border) !important;
-  background: var(--op-pill-bg) !important;
-  box-shadow: inset 0 1px 0 var(--op-composer-specular) !important;
-  color: var(--op-fg-secondary) !important;
-  padding: 0 10px 0 8px !important;
-  min-height: 28px !important;
-  height: 28px !important;
-  gap: 6px !important;
+  border: 1px solid var(--op-capsule-border) !important;
+  background-color: var(--op-capsule-bg) !important;
+  background-image: var(--op-capsule-sheen) !important;
+  box-shadow: inset 0 1px 0 var(--op-composer-specular), 0 1px 2px rgba(0, 0, 0, 0.20) !important;
+  color: var(--op-capsule-fg) !important;
+  padding: 0 14px 0 13px !important;
+  min-height: 32px !important;
+  height: 32px !important;
+  min-width: 108px !important;
+  max-width: min(260px, 100%) !important;
+  gap: 7px !important;
   display: inline-flex !important;
   align-items: center !important;
+  justify-content: center !important;
   width: auto !important;
   flex: 0 0 auto !important;
-  transition: border-color .14s ease, background-color .14s ease, color .14s ease;
+  font-family: var(--op-font-ui) !important;
+  font-size: 13.5px !important;
+  font-weight: 500 !important;
+  line-height: 1 !important;
+  letter-spacing: 0.005em !important;
+  font-variant-numeric: tabular-nums !important;
+  white-space: nowrap !important;
+  text-rendering: optimizeLegibility;
+  transition: border-color .14s ease, background-color .14s ease, color .14s ease, box-shadow .14s ease;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"]::before {
   content: "";
-  width: 11px;
-  height: 11px;
+  width: 12px;
+  height: 12px;
   background: var(--op-accent);
-  clip-path: polygon(50% 0%, 64% 36%, 100% 50%, 64% 64%, 50% 100%, 36% 64%, 0% 50%, 36% 36%);
+  clip-path: polygon(50% 0%, 63% 37%, 100% 50%, 63% 63%, 50% 100%, 37% 63%, 0% 50%, 37% 37%);
   flex: none;
+  filter: drop-shadow(0 0 3.5px color-mix(in srgb, var(--op-accent) 44%, transparent));
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] :where(span, div, p, strong, em):not(.mat-icon, .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .google-symbols, [fonticon]) {
+  font-family: var(--op-font-ui) !important;
+  font-size: inherit !important;
+  line-height: inherit !important;
+  letter-spacing: inherit !important;
+  font-variant-numeric: inherit !important;
+  white-space: nowrap !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] :where(span, div, p):not(.model-tier, .mode-tier, .mat-icon, .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .google-symbols, [fonticon]) {
+  color: inherit !important;
+  font-weight: inherit !important;
+  opacity: 1 !important;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] :is(.model-tier, .mode-tier),
-html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"][data-selected-reasoning-effort] > span {
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"][data-selected-reasoning-effort] > span:not(:has(svg, mat-icon, .mat-icon)) {
   color: var(--op-accent) !important;
   font-weight: 600 !important;
+  opacity: 1 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] :is(span, div):has(> svg:only-child) {
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  flex: none !important;
+  color: var(--op-composer-icon) !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] :is(svg, mat-icon, .mat-icon):last-of-type {
+  margin-inline-start: 1px !important;
+  width: 13px !important;
+  height: 13px !important;
+  font-size: 13px !important;
+  line-height: 13px !important;
+  flex: none !important;
+  opacity: 0.56 !important;
+  color: var(--op-composer-icon) !important;
+  transition: opacity .14s ease, color .14s ease;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] > span[aria-hidden="true"]:last-child {
+  margin-inline-start: 1px !important;
+  opacity: 0.56 !important;
+  color: var(--op-composer-icon) !important;
+  flex: none !important;
+  transition: opacity .14s ease, color .14s ease;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"]:hover,
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"][aria-expanded="true"] {
-  border-color: var(--op-pill-hover-border) !important;
-  background: var(--op-pill-hover-bg) !important;
+  border-color: color-mix(in srgb, var(--op-accent) 28%, var(--op-capsule-hover-border)) !important;
+  background-color: var(--op-capsule-hover-bg) !important;
+  color: var(--op-fg) !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"]:is(:hover, [aria-expanded="true"]) :is(svg, mat-icon, .mat-icon):last-of-type,
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"]:is(:hover, [aria-expanded="true"]) > span[aria-hidden="true"]:last-child {
+  opacity: 0.92 !important;
   color: var(--op-fg) !important;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"]:focus-visible {
   outline: 2px solid var(--op-accent);
   outline-offset: 2px;
 }
+@media (max-width: 600px) {
+  html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] {
+    min-width: 88px !important;
+    padding: 0 11px !important;
+    gap: 6px !important;
+  }
+}
 
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-primary-action="true"] {
-  width: 30px !important;
-  min-width: 30px !important;
-  height: 30px !important;
-  min-height: 30px !important;
+  width: 32px !important;
+  min-width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
   padding: 0 !important;
   border-radius: 999px !important;
   border: 0 !important;
@@ -831,6 +896,9 @@ html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-pal
   justify-content: center !important;
   flex: none !important;
   transition: background-color .16s ease, color .16s ease, box-shadow .16s ease, opacity .12s ease;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-primary-action="true"] :is(span, div, svg, mat-icon, .mat-icon) {
+  color: inherit !important;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-primary-action="true"]:not(:disabled, [aria-disabled="true"]):hover {
   opacity: 0.9 !important;
@@ -849,26 +917,64 @@ html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-pal
 
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-toolbar="true"] :is(button, [role="button"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]),
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"], button[aria-label*="Microphone" i], button[aria-label*="Mic" i], button[aria-label*="麦克风"], button[aria-label*="Dictate" i], button[aria-label*="Dictation" i], button[aria-label*="听写"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]) {
-  width: 28px !important;
-  min-width: 28px !important;
-  height: 28px !important;
-  min-height: 28px !important;
+  --text-primary: currentColor !important;
+  --text-secondary: currentColor !important;
+  --text-inverted: currentColor !important;
+  --icon-primary: currentColor !important;
+  --icon-secondary: currentColor !important;
+  --icon-inverted: currentColor !important;
+  --interactive-label-primary-default: currentColor !important;
+  --mat-icon-color: currentColor !important;
+  --mdc-icon-button-icon-color: currentColor !important;
+  width: 30px !important;
+  min-width: 30px !important;
+  height: 30px !important;
+  min-height: 30px !important;
   padding: 0 !important;
   border-radius: 999px !important;
   background: transparent !important;
   background-image: none !important;
   border: 1px solid transparent !important;
   box-shadow: none !important;
-  color: var(--op-fg-muted) !important;
+  color: var(--op-composer-icon) !important;
   display: inline-flex !important;
   align-items: center !important;
   justify-content: center !important;
-  transition: background-color .14s ease, color .14s ease;
+  transition: background-color .14s ease, border-color .14s ease, color .14s ease, box-shadow .14s ease;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-toolbar="true"] :is(button, [role="button"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]):hover,
-html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"], button[aria-label*="Microphone" i], button[aria-label*="Mic" i], button[aria-label*="麦克风"], button[aria-label*="Dictate" i], button[aria-label*="Dictation" i], button[aria-label*="听写"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]):hover {
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is(button[aria-label*="Microphone" i], button[aria-label*="Mic" i], button[aria-label*="麦克风"], button[aria-label*="Dictate" i], button[aria-label*="Dictation" i], button[aria-label*="听写"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]):hover {
   background: var(--op-pill-hover-bg) !important;
   color: var(--op-fg) !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]) {
+  width: 32px !important;
+  min-width: 32px !important;
+  height: 32px !important;
+  min-height: 32px !important;
+  border: 1px solid var(--op-capsule-border) !important;
+  background-color: var(--op-capsule-bg) !important;
+  background-image: var(--op-capsule-sheen) !important;
+  box-shadow: inset 0 1px 0 var(--op-composer-specular), 0 1px 2px rgba(0, 0, 0, 0.14) !important;
+  color: var(--op-fg) !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]):hover {
+  border-color: color-mix(in srgb, var(--op-accent) 30%, var(--op-capsule-hover-border)) !important;
+  background-color: var(--op-capsule-hover-bg) !important;
+  color: var(--op-fg) !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-toolbar="true"] :is(button, [role="button"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]) :is(span, div, svg, mat-icon, .mat-icon),
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"], button[aria-label*="Microphone" i], button[aria-label*="Mic" i], button[aria-label*="麦克风"], button[aria-label*="Dictate" i], button[aria-label*="Dictation" i], button[aria-label*="听写"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]) :is(span, div, svg, mat-icon, .mat-icon) {
+  color: inherit !important;
+  --mat-icon-color: currentColor !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-toolbar="true"] :is(button, [role="button"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]) :is(svg, path, rect, circle, ellipse, polygon, polyline, line):is([fill]:not([fill="none"]):not([fill="transparent"]), [class*="fill-"]:not([class*="fill-none"])),
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"], button[aria-label*="Microphone" i], button[aria-label*="Mic" i], button[aria-label*="麦克风"], button[aria-label*="Dictate" i], button[aria-label*="Dictation" i], button[aria-label*="听写"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]) :is(svg, path, rect, circle, ellipse, polygon, polyline, line):is([fill]:not([fill="none"]):not([fill="transparent"]), [class*="fill-"]:not([class*="fill-none"])) {
+  fill: currentColor !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-toolbar="true"] :is(button, [role="button"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]) :is(svg, path, rect, circle, ellipse, polygon, polyline, line):is([stroke]:not([stroke="none"]):not([stroke="transparent"]), [class*="stroke-"]:not([class*="stroke-none"])),
+html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"], button[aria-label*="Microphone" i], button[aria-label*="Mic" i], button[aria-label*="麦克风"], button[aria-label*="Dictate" i], button[aria-label*="Dictation" i], button[aria-label*="听写"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]) :is(svg, path, rect, circle, ellipse, polygon, polyline, line):is([stroke]:not([stroke="none"]):not([stroke="transparent"]), [class*="stroke-"]:not([class*="stroke-none"])) {
+  stroke: currentColor !important;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-toolbar="true"] :is(button, [role="button"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]):focus-visible,
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"], button[aria-label*="Microphone" i], button[aria-label*="Mic" i], button[aria-label*="麦克风"], button[aria-label*="Dictate" i], button[aria-label*="Dictation" i], button[aria-label*="听写"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]):focus-visible {
@@ -878,28 +984,32 @@ html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-pal
 
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-chip="true"] {
   border-radius: 999px !important;
-  border: 1px solid var(--op-pill-border) !important;
-  background: var(--op-pill-bg) !important;
+  border: 1px solid var(--op-capsule-border) !important;
+  background-color: var(--op-capsule-bg) !important;
+  background-image: var(--op-capsule-sheen) !important;
   box-shadow: inset 0 1px 0 var(--op-composer-specular) !important;
-  color: var(--op-fg-secondary) !important;
-  padding: 3px 10px !important;
-  min-height: 28px !important;
-  height: 28px !important;
+  color: var(--op-capsule-fg) !important;
+  padding: 0 11px !important;
+  min-height: 30px !important;
+  height: 30px !important;
+  font-family: var(--op-font-ui) !important;
+  font-size: 12.5px !important;
+  font-weight: 500 !important;
   display: inline-flex !important;
   align-items: center !important;
   gap: 6px !important;
   transition: border-color .14s ease, background-color .14s ease, color .14s ease;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-chip="true"]:hover {
-  border-color: var(--op-pill-hover-border) !important;
-  background: var(--op-pill-hover-bg) !important;
+  border-color: var(--op-capsule-hover-border) !important;
+  background-color: var(--op-capsule-hover-bg) !important;
   color: var(--op-fg) !important;
 }
 html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-palette="host"]) [data-op-composer-chip="true"]:focus-visible {
   outline: 2px solid var(--op-accent);
   outline-offset: 2px;
 }
-html[data-op-enabled="true"][data-op-composer="true"][data-op-motion="off"]:not([data-op-effective-palette="host"]) :is([data-op-composer-add="true"], [data-op-model-capsule="true"], [data-op-composer-primary-action="true"], [data-op-composer-chip="true"], [data-op-composer-toolbar="true"] :is(button, [role="button"])) {
+html[data-op-enabled="true"][data-op-composer="true"][data-op-motion="off"]:not([data-op-effective-palette="host"]) :is([data-op-composer-add="true"], [data-op-model-capsule="true"], [data-op-model-capsule="true"] :is(svg, mat-icon, .mat-icon, span), [data-op-composer-primary-action="true"], [data-op-composer-chip="true"], [data-op-composer-toolbar="true"] :is(button, [role="button"])) {
   transition: none !important;
 }
 
@@ -975,6 +1085,7 @@ html[data-op-enabled="true"][data-op-composer="true"]:not([data-op-effective-pal
   flex-shrink: 0 !important;
   flex-basis: auto !important;
   width: auto !important;
+  max-width: min(260px, 52%) !important;
 }
 
 /* === v0.3.1 #20 conversation heading typography === */

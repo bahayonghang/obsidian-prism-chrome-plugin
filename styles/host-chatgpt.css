@@ -220,6 +220,32 @@ html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="
 }
 /* === end Content Width Presets (v0.3.1 #21) === */
 
+/* === Reference Composer Surface & Model Capsule (v0.3.0) === */
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] > :is(div, span):not(:has(> svg:only-child)) {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 4px !important;
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] > div > span:last-of-type:not(:first-child):not(:has(svg)) {
+  color: var(--op-accent) !important;
+  font-weight: 600 !important;
+  opacity: 1 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]) :is(div, span):has(svg) {
+  background: transparent !important;
+  background-image: none !important;
+  border-color: transparent !important;
+  box-shadow: none !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]) :is(div, span):empty:is([class*="bg-black"], [class*="bg-white"], [class*="bg-token-text-inverted"]) {
+  background-color: currentColor !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] :is([data-composer-voice-start], [data-testid="composer-speech-button"], [data-test-id="composer-speech-button"], button[aria-label*="Voice" i], button[aria-label*="语音"]):not([data-op-model-capsule="true"], [data-op-composer-chip="true"], [data-op-composer-primary-action="true"], [data-op-composer-add="true"], [data-op-owned]) :is(svg:not([fill="none"]):not([stroke]), svg:not([fill="none"]):not([stroke]) :is(path, rect, circle, ellipse, polygon):not([fill="none"]):not([stroke])) {
+  fill: currentColor !important;
+}
+
 /* === v0.3.1 #19 two-row composer === */
 html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] {
   grid-template-columns: auto minmax(0, 1fr) !important;

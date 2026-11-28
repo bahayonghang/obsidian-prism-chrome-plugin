@@ -1163,17 +1163,27 @@
     const margin = 8;
     dock.removeAttribute('data-op-popover-side');
     dock.style.removeProperty('--op-vial-popover-shift-x');
+    dock.style.removeProperty('--op-vial-popover-max-h');
     let rect = popover.getBoundingClientRect();
     if (!(rect.width > 0) || !(rect.height > 0)) return;
     const overflowY = r => Math.max(0, margin - r.top) + Math.max(0, r.bottom - (vh - margin));
+    let side = 'above';
     if (rect.top < margin || rect.bottom > vh - margin) {
       const aboveOverflow = overflowY(rect);
       dock.setAttribute('data-op-popover-side', 'below');
       const belowRect = popover.getBoundingClientRect();
       if (overflowY(belowRect) < aboveOverflow) {
         rect = belowRect;
+        side = 'below';
       } else {
         dock.removeAttribute('data-op-popover-side');
+        rect = popover.getBoundingClientRect();
+      }
+      if (overflowY(rect) > 0) {
+        const availH = side === 'below'
+          ? Math.max(96, Math.floor((vh - margin) - rect.top))
+          : Math.max(96, Math.floor(rect.bottom - margin));
+        dock.style.setProperty('--op-vial-popover-max-h', availH + 'px');
         rect = popover.getBoundingClientRect();
       }
     }
@@ -1192,6 +1202,7 @@
     } else {
       dock.removeAttribute('data-op-popover-side');
       dock.style.removeProperty('--op-vial-popover-shift-x');
+      dock.style.removeProperty('--op-vial-popover-max-h');
     }
   }
   function syncWidthToggle() {
@@ -1223,6 +1234,7 @@
       dock.querySelector('.op-vial-popover')?.remove();
       removeAttr(dock, 'data-op-popover-side');
       dock.style.removeProperty('--op-vial-popover-shift-x');
+      dock.style.removeProperty('--op-vial-popover-max-h');
       return;
     }
     if (!vial) {

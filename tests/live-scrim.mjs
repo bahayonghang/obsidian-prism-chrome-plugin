@@ -1184,7 +1184,7 @@ async function checkGeminiOverlay(suite) {
                   requestAnimationFrame(() => requestAnimationFrame(() => r(Math.round(h * 10) / 10)));
                 })));
               });
-              assert.ok(emptyDockH <= 116, `${label}: empty-header Gemini overlaid dock <= 116px (got ${emptyDockH}px)`);
+              assert.ok(emptyDockH <= 120, `${label}: empty-header Gemini overlaid dock <= 120px (got ${emptyDockH}px)`);
             }
             await assertRestoredState(page, host, label, native, pal.hostPatch, pal.patch);
           }

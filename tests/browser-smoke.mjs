@@ -632,7 +632,8 @@ async function composerControlsSnapshot(page) {
       modelBtn: modelBtn ? {
         attr: modelBtn.getAttribute('data-op-model-capsule'),
         parentTag: modelBtn.parentElement?.tagName || null,
-        style: readStyle(modelBtn, ['borderRadius', 'borderTopWidth', 'borderTopColor', 'backgroundColor', 'color', 'paddingTop', 'paddingLeft', 'minHeight', 'height', 'gap', 'display', 'alignItems']),
+        style: readStyle(modelBtn, ['borderRadius', 'borderTopWidth', 'borderTopColor', 'backgroundColor', 'color', 'paddingTop', 'paddingLeft', 'paddingRight', 'minHeight', 'height', 'minWidth', 'gap', 'display', 'alignItems', 'fontFamily', 'fontSize', 'fontWeight']),
+        rect: { width: Math.round(modelBtn.getBoundingClientRect().width), height: Math.round(modelBtn.getBoundingClientRect().height) },
         before: beforeStyle ? {
           content: beforeStyle.content,
           width: beforeStyle.width,
@@ -719,8 +720,8 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
 
   assert.equal(snap.addBtn.attr, 'true');
   assert.equal(snap.addBtn.parentTag, nativeControls.addBtn.parentTag);
-  assert.equal(snap.addBtn.rect.width, 28, `${host} ${palette}: circular + width is 28px`);
-  assert.equal(snap.addBtn.rect.height, 28, `${host} ${palette}: circular + height is 28px`);
+  assert.equal(snap.addBtn.rect.width, 30, `${host} ${palette}: circular + width is 30px`);
+  assert.equal(snap.addBtn.rect.height, 30, `${host} ${palette}: circular + height is 30px`);
   assert.ok(parseFloat(snap.addBtn.style.borderRadius) >= 999, `${host} ${palette}: circular + border-radius >= 999px`);
   assert.ok(parseFloat(snap.addBtn.style.borderTopWidth) >= 1);
   assert.ok(['inline-flex', 'flex'].includes(snap.addBtn.style.display), `${host} ${palette}: circular + uses flex layout, got ${snap.addBtn.style.display}`);
@@ -734,15 +735,20 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
   assert.ok(parseFloat(snap.modelBtn.style.borderTopWidth) >= 1);
   assert.ok(['inline-flex', 'flex'].includes(snap.modelBtn.style.display), `${host} ${palette}: model capsule uses flex layout, got ${snap.modelBtn.style.display}`);
   assert.equal(snap.modelBtn.style.alignItems, 'center');
-  assert.equal(snap.modelBtn.style.paddingLeft, '8px');
-  assert.equal(snap.modelBtn.style.minHeight, '28px');
-  assert.equal(snap.modelBtn.style.height, '28px');
-  assert.equal(snap.modelBtn.style.gap, '6px');
+  assert.equal(snap.modelBtn.style.paddingLeft, '13px');
+  assert.equal(snap.modelBtn.style.paddingRight, '14px');
+  assert.equal(snap.modelBtn.style.minHeight, '32px');
+  assert.equal(snap.modelBtn.style.height, '32px');
+  assert.equal(snap.modelBtn.style.minWidth, '108px');
+  assert.ok(snap.modelBtn.rect.width >= 108, `${host} ${palette}: model capsule width >= 108px (got ${snap.modelBtn.rect.width}px)`);
+  assert.equal(snap.modelBtn.style.gap, '7px');
+  assert.equal(snap.modelBtn.style.fontSize, '13.5px');
+  assert.doesNotMatch(snap.modelBtn.style.fontFamily, /monospace/i);
   assert.equal(snap.modelBtn.style.backgroundColor, snap.addBtn.style.backgroundColor, `${host} ${palette}: model capsule shares neutral pill fill with +`);
   assert.notEqual(snap.modelBtn.style.backgroundColor, nativeControls.modelBtn.style.backgroundColor);
   assert.equal(snap.modelBtn.before.content, '""');
-  assert.equal(snap.modelBtn.before.width, '11px');
-  assert.equal(snap.modelBtn.before.height, '11px');
+  assert.equal(snap.modelBtn.before.width, '12px');
+  assert.equal(snap.modelBtn.before.height, '12px');
   assert.notEqual(snap.modelBtn.before.borderRadius, '50%');
   assert.match(snap.modelBtn.before.clipPath, /^polygon\(/);
   assert.equal(snap.modelBtn.before.backgroundColor, snap.modelBtn.tier.color, `${host} ${palette}: ::before star and tier tag share --op-accent`);
@@ -753,8 +759,8 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
 
   assert.equal(snap.primaryAction.attr, 'true');
   assert.equal(snap.primaryAction.parentTag, nativeControls.primaryAction.parentTag);
-  assert.equal(snap.primaryAction.rect.width, 30, `${host} ${palette}: primary action width is 30px`);
-  assert.equal(snap.primaryAction.rect.height, 30, `${host} ${palette}: primary action height is 30px`);
+  assert.equal(snap.primaryAction.rect.width, 32, `${host} ${palette}: primary action width is 32px`);
+  assert.equal(snap.primaryAction.rect.height, 32, `${host} ${palette}: primary action height is 32px`);
   assert.ok(parseFloat(snap.primaryAction.style.borderRadius) >= 999);
   assert.ok(['inline-flex', 'flex'].includes(snap.primaryAction.style.display));
   assert.equal(snap.primaryAction.style.alignItems, 'center');
@@ -766,8 +772,8 @@ async function assertComposerControlsThemed(page, host, palette, nativeControls)
   assert.equal(snap.chip.parentTag, nativeControls.chip.parentTag);
   assert.ok(parseFloat(snap.chip.style.borderRadius) >= 999);
   assert.ok(parseFloat(snap.chip.style.borderTopWidth) >= 1);
-  assert.equal(snap.chip.style.paddingTop, '3px');
-  assert.equal(snap.chip.style.paddingLeft, '10px');
+  assert.equal(snap.chip.style.paddingTop, '0px');
+  assert.equal(snap.chip.style.paddingLeft, '11px');
   assert.notEqual(snap.chip.style.backgroundColor, nativeControls.chip.style.backgroundColor);
 
   assert.equal(await page.locator('.op-repo-capsule, .op-branch-capsule, [data-op-repo-capsule], [data-op-branch-capsule]').count(), 0);

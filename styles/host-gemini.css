@@ -178,6 +178,31 @@ html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not
   padding-bottom: 0 !important;
   min-height: 0 !important;
 }
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) bard-mode-switcher[data-op-model-capsule-item="true"] {
+  display: inline-flex !important;
+  align-items: center !important;
+  margin-block: 0 !important;
+  margin-inline-start: 0 !important;
+  padding: 0 !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] .mdc-button__label {
+  flex: 0 1 auto !important;
+  min-width: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  gap: 6px !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] :is(.mat-mdc-button-touch-target, .mat-mdc-button-persistent-ripple, .mat-ripple, .mat-focus-indicator) {
+  flex: none !important;
+  pointer-events: none !important;
+}
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] :is(mat-icon, .mat-icon, .material-icons, .material-symbols-outlined, .material-symbols-rounded, .material-symbols-sharp, .google-symbols, [fonticon]) {
+  color: inherit !important;
+  --mat-icon-color: currentColor !important;
+}
 
 /* === v0.3.1 #19 two-row composer === */
 html[data-op-enabled="true"][data-op-composer="true"][data-op-host="gemini"]:not([data-op-effective-palette="host"]) [data-op-composer-grid="true"] {

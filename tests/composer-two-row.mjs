@@ -174,6 +174,28 @@ function parseRgba(value) {
   };
 }
 
+function compositeOver(fgColor, bgColor) {
+  const fg = typeof fgColor === 'string' ? parseRgba(fgColor) : fgColor;
+  const bg = typeof bgColor === 'string' ? parseRgba(bgColor) : bgColor;
+  assert.ok(fg && bg, `expected parseable colors for compositing, got ${JSON.stringify({ fgColor, bgColor })}`);
+  const a = Math.max(0, Math.min(1, fg.a));
+  return {
+    r: fg.r * a + bg.r * (1 - a),
+    g: fg.g * a + bg.g * (1 - a),
+    b: fg.b * a + bg.b * (1 - a),
+    a: 1
+  };
+}
+
+function contrastRatioComposited(foregroundValue, surfaceBgValue, backdropBgValue = 'rgb(14, 14, 17)') {
+  const backdrop = parseRgba(backdropBgValue);
+  const surface = compositeOver(surfaceBgValue, backdrop);
+  const fg = compositeOver(foregroundValue, surface);
+  const lum = c => [c.r, c.g, c.b].map(v => v / 255).map(v => v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4).reduce((s, v, i) => s + v * [0.2126, 0.7152, 0.0722][i], 0);
+  const a = lum(fg), b = lum(surface);
+  return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+}
+
 function assertNeutralColor(value, label) {
   const c = parseRgba(value);
   assert.ok(c, `${label}: expected parseable color, got ${value}`);
@@ -239,18 +261,41 @@ async function assertTwoRow(page, host, label) {
         ...read(addNode, ['backgroundColor', 'borderTopWidth', 'borderTopColor', 'boxShadow', 'borderRadius', 'width', 'height', 'color'])
       } : null,
       model: modelNode ? {
-        ...read(modelNode, ['backgroundColor', 'borderTopWidth', 'borderTopColor', 'boxShadow', 'color', 'height', 'borderRadius']),
+        ...read(modelNode, ['backgroundColor', 'borderTopWidth', 'borderTopColor', 'boxShadow', 'color', 'height', 'minWidth', 'paddingLeft', 'paddingRight', 'gap', 'borderRadius', 'fontFamily', 'fontSize', 'fontWeight']),
+        width: modelNode.getBoundingClientRect().width,
         before: { content: before.content, width: before.width, height: before.height, borderRadius: before.borderRadius, clipPath: before.clipPath, backgroundColor: before.backgroundColor },
-        tier: read(tierNode, ['color', 'fontWeight'])
+        tier: read(tierNode, ['color', 'fontWeight', 'fontFamily', 'fontSize']),
+        chevron: (() => {
+          const icon = modelNode.querySelector('svg:last-of-type, mat-icon:last-of-type, .mat-icon:last-of-type');
+          if (!icon) return null;
+          const cr = icon.getBoundingClientRect();
+          const textEl = modelNode.querySelector('span:not(:has(svg))');
+          const tr = textEl ? textEl.getBoundingClientRect() : null;
+          return {
+            ...read(icon, ['opacity', 'width', 'height', 'color']),
+            gapFromText: tr ? Math.round((cr.left - tr.right) * 10) / 10 : null,
+            left: cr.left
+          };
+        })()
       } : null,
       trailing: trailingNode ? {
         primaryAttr: trailingNode.getAttribute('data-op-composer-primary-action'),
-        ...read(trailingNode, ['backgroundColor', 'borderTopColor', 'borderRadius', 'width', 'height', 'color'])
+        ...read(trailingNode, ['backgroundColor', 'borderTopWidth', 'borderTopColor', 'boxShadow', 'borderRadius', 'width', 'height', 'color']),
+        svg: (() => {
+          const svg = trailingNode.querySelector('svg');
+          const shape = svg?.querySelector('path, rect, circle, ellipse, polygon') || svg;
+          return shape ? read(shape, ['color', 'fill', 'stroke']) : null;
+        })()
       } : null,
       attachment: read(attachmentNode, ['borderRadius', 'borderTopWidth', 'backgroundColor', 'color']),
       dictate: dictateNode ? {
         primaryAttr: dictateNode.getAttribute('data-op-composer-primary-action'),
-        ...read(dictateNode, ['backgroundColor', 'borderTopColor', 'borderRadius', 'width', 'height'])
+        ...read(dictateNode, ['backgroundColor', 'borderTopColor', 'borderRadius', 'width', 'height', 'color']),
+        svg: (() => {
+          const svg = dictateNode.querySelector('svg');
+          const shape = svg?.querySelector('path, rect, circle, ellipse, polygon') || svg;
+          return shape ? read(shape, ['color', 'fill', 'stroke']) : null;
+        })()
       } : null
     };
   }, { add: s.add, model: s.model, trailing: s[TRAILING[host]], attachment: s.attachment, dictate: s.dictate || null });
@@ -297,27 +342,39 @@ async function assertTwoRow(page, host, label) {
     assert.equal(visual.dictate.primaryAttr, null, `${label}: dictate never receives primary-action mark`);
     assert.equal(visual.dictate.backgroundColor, 'rgba(0, 0, 0, 0)', `${label}: secondary dictate icon uses clean transparent background`);
     assert.equal(visual.dictate.borderTopColor, 'rgba(0, 0, 0, 0)', `${label}: secondary dictate icon uses transparent border`);
-    assert.ok(Math.abs(controls.dictate.width - 28) <= 1 && Math.abs(controls.dictate.height - 28) <= 1, `${label}: dictate is 28x28 ghost circle`);
+    assert.ok(Math.abs(controls.dictate.width - 30) <= 1 && Math.abs(controls.dictate.height - 30) <= 1, `${label}: dictate is 30x30 ghost circle`);
+    if (visual.dictate.svg) {
+      assert.equal(visual.dictate.svg.fill, 'none', `${label}: stroked dictate SVG keeps fill:none (not filled solid)`);
+      const dictatePaint = visual.dictate.svg.stroke && visual.dictate.svg.stroke !== 'none' ? visual.dictate.svg.stroke : visual.dictate.svg.color;
+      const dictateRatio = contrastRatioComposited(dictatePaint, card.background);
+      assert.ok(dictateRatio >= 4.5, `${label}: dictate icon contrast >= 4.5:1 (got ${dictateRatio.toFixed(2)}:1)`);
+    }
   }
   assert.ok(Math.abs(add.centerY - model.centerY) <= 10 && Math.abs(model.centerY - trailing.centerY) <= 10, `${label}: +, Model Capsule and ${TRAILING[host]} share the toolbar row`);
   assert.ok(add.left - card.left <= 8, `${label}: + leads the toolbar row at the left edge (${add.left})`);
   assert.ok(container.width - trailing.right <= card.left + 8, `${label}: ${TRAILING[host]} trails at the right edge (${trailing.right} of ${container.width})`);
 
   // Neutral low-saturation elevated pill hierarchy for + and Model Capsule (no accent wash on body/border).
-  assert.ok(Math.abs(add.width - 28) <= 1 && Math.abs(add.height - 28) <= 1, `${label}: + trigger is 28x28 circle`);
+  assert.ok(Math.abs(add.width - 30) <= 1 && Math.abs(add.height - 30) <= 1, `${label}: + trigger is 30x30 circle`);
   assert.equal(visual.add.borderTopWidth, '1px', `${label}: + trigger has 1px subtle border`);
   assert.match(visual.add.boxShadow, /inset/, `${label}: + trigger has top inset specular`);
   assertNeutralColor(visual.add.backgroundColor, `${label}: + trigger background`);
   assertNeutralColor(visual.add.borderTopColor, `${label}: + trigger border`);
 
-  assert.equal(visual.model.height, '28px', `${label}: Model Capsule height is 28px`);
+  assert.equal(visual.model.height, '32px', `${label}: Model Capsule height is 32px`);
+  assert.ok(visual.model.width >= 107.5, `${label}: Model Capsule min-width gives balanced >= 108px presence (got ${visual.model.width}px)`);
+  assert.equal(visual.model.paddingLeft, '13px', `${label}: Model Capsule paddingLeft is 13px`);
+  assert.equal(visual.model.paddingRight, '14px', `${label}: Model Capsule paddingRight is 14px`);
+  assert.equal(visual.model.gap, '7px', `${label}: Model Capsule gap is 7px`);
+  assert.equal(visual.model.fontSize, '13.5px', `${label}: Model Capsule fontSize is 13.5px`);
+  assert.doesNotMatch(visual.model.fontFamily, /monospace/i, `${label}: Model Capsule uses clean sans-serif UI font (got ${visual.model.fontFamily})`);
   assert.equal(visual.model.borderTopWidth, '1px', `${label}: Model Capsule has 1px subtle border`);
   assert.match(visual.model.boxShadow, /inset/, `${label}: Model Capsule has top inset specular`);
   assert.equal(visual.model.backgroundColor, visual.add.backgroundColor, `${label}: Model Capsule shares neutral pill background with +`);
   assert.equal(visual.model.borderTopColor, visual.add.borderTopColor, `${label}: Model Capsule shares neutral pill border with +`);
   assert.equal(visual.model.before.content, '""', `${label}: Model Capsule renders CSS ::before star`);
-  assert.equal(visual.model.before.width, '11px', `${label}: star width is 11px`);
-  assert.equal(visual.model.before.height, '11px', `${label}: star height is 11px`);
+  assert.equal(visual.model.before.width, '12px', `${label}: star width is 12px`);
+  assert.equal(visual.model.before.height, '12px', `${label}: star height is 12px`);
   assert.notEqual(visual.model.before.borderRadius, '50%', `${label}: star is not a round dot`);
   assert.match(visual.model.before.clipPath, /^polygon\(/, `${label}: Model Capsule ::before renders 4-pointed star polygon clip-path`);
   assert.notEqual(visual.model.before.backgroundColor, visual.model.color, `${label}: star accent differs from capsule text`);
@@ -325,17 +382,43 @@ async function assertTwoRow(page, host, label) {
     assert.equal(visual.model.tier.color, visual.model.before.backgroundColor, `${label}: star and tier share --op-accent`);
     assert.notEqual(visual.model.tier.color, visual.model.color, `${label}: tier accent differs from base capsule text`);
     assert.ok(Number(visual.model.tier.fontWeight) >= 600, `${label}: tier label is semibold`);
+    assert.equal(visual.model.tier.fontSize, '13.5px', `${label}: tier inherits 13.5px font size`);
+  }
+  if (visual.model.chevron) {
+    assert.ok(visual.model.chevron.gapFromText === null || (visual.model.chevron.gapFromText >= 4 && visual.model.chevron.gapFromText <= 14), `${label}: chevron stays compact beside model text without hollow gap (${visual.model.chevron.gapFromText}px)`);
+    assert.ok(parseFloat(visual.model.chevron.opacity) <= 0.65, `${label}: resting chevron is subdued (${visual.model.chevron.opacity})`);
+    assert.notEqual(visual.model.chevron.color, visual.model.before.backgroundColor, `${label}: chevron stays neutral instead of inheriting accent`);
   }
 
   assert.equal(visual.attachment.borderRadius, '8px', `${label}: attachment preview renders with compact balanced 8px optical radius`);
   assert.equal(visual.attachment.borderTopWidth, '1px', `${label}: attachment card carries 1px border`);
 
-  // Idle Start Voice (ChatGPT) & Microphone (Gemini) render as transparent 28x28 ghost circular buttons (never solid primary action).
+  // Idle Start Voice (ChatGPT) renders as a 32x32 neutral elevated circle with high-contrast icon;
+  // idle Microphone (Gemini) renders as a transparent 30x30 ghost circle with high-contrast icon.
   assert.equal(visual.trailing.primaryAttr, null, `${label}: idle ${TRAILING[host]} never receives data-op-composer-primary-action`);
-  assert.equal(visual.trailing.backgroundColor, 'rgba(0, 0, 0, 0)', `${label}: idle ${TRAILING[host]} uses transparent ghost background`);
-  assert.equal(visual.trailing.borderTopColor, 'rgba(0, 0, 0, 0)', `${label}: idle ${TRAILING[host]} uses transparent ghost border`);
-  assert.ok(Math.abs(trailing.width - 28) <= 1 && Math.abs(trailing.height - 28) <= 1, `${label}: idle ${TRAILING[host]} is 28x28 ghost circle (${trailing.width}x${trailing.height})`);
   assert.ok(parseFloat(visual.trailing.borderRadius) >= 999, `${label}: idle ${TRAILING[host]} is circular`);
+  if (host === 'chatgpt') {
+    assert.ok(Math.abs(trailing.width - 32) <= 1 && Math.abs(trailing.height - 32) <= 1, `${label}: idle Start Voice is 32x32 neutral elevated circle (${trailing.width}x${trailing.height})`);
+    assert.equal(visual.trailing.borderTopWidth, '1px', `${label}: idle Start Voice has 1px subtle border`);
+    assert.match(visual.trailing.boxShadow, /inset/, `${label}: idle Start Voice has top inset specular`);
+    assert.equal(visual.trailing.backgroundColor, visual.add.backgroundColor, `${label}: idle Start Voice shares neutral elevated pill fill`);
+    assertNeutralColor(visual.trailing.backgroundColor, `${label}: idle Start Voice background`);
+    const voiceBg = compositeOver(visual.trailing.backgroundColor, card.background);
+    const voicePaint = (visual.trailing.svg?.fill && visual.trailing.svg.fill !== 'none' ? visual.trailing.svg.fill : null) ||
+      (visual.trailing.svg?.stroke && visual.trailing.svg.stroke !== 'none' ? visual.trailing.svg.stroke : null) ||
+      visual.trailing.color;
+    const voiceRatio = contrastRatioComposited(voicePaint, `rgb(${Math.round(voiceBg.r)}, ${Math.round(voiceBg.g)}, ${Math.round(voiceBg.b)})`);
+    assert.ok(voiceRatio >= 4.5, `${label}: idle Start Voice icon contrast >= 4.5:1 (got ${voiceRatio.toFixed(2)}:1)`);
+  } else {
+    assert.equal(visual.trailing.backgroundColor, 'rgba(0, 0, 0, 0)', `${label}: idle ${TRAILING[host]} uses transparent ghost background`);
+    assert.equal(visual.trailing.borderTopColor, 'rgba(0, 0, 0, 0)', `${label}: idle ${TRAILING[host]} uses transparent ghost border`);
+    assert.ok(Math.abs(trailing.width - 30) <= 1 && Math.abs(trailing.height - 30) <= 1, `${label}: idle ${TRAILING[host]} is 30x30 ghost circle (${trailing.width}x${trailing.height})`);
+    if (visual.trailing.svg) {
+      const micPaint = (visual.trailing.svg.stroke && visual.trailing.svg.stroke !== 'none' ? visual.trailing.svg.stroke : null) || visual.trailing.svg.color;
+      const micRatio = contrastRatioComposited(micPaint, card.background);
+      assert.ok(micRatio >= 4.5, `${label}: idle Gemini mic icon contrast >= 4.5:1 (got ${micRatio.toFixed(2)}:1)`);
+    }
+  }
   return geometry;
 }
 
@@ -351,11 +434,19 @@ async function assertOpticalStatesAndActions(page, host, label, { testPresetsAnd
   const s = LIVE_SELECTORS[host];
   const surfaceSel = '[data-op-composer-surface="true"]';
 
-  // 1) Host border:0 + backdrop-filter:blur(12px) stress resistance
+  // 1) Host border:0 + backdrop-filter:blur(12px) stress resistance + inverted voice icon / monospace / Material icon stress
   await page.evaluate(sel => {
     const style = document.createElement('style');
     style.id = 'op-v044-stress-style';
-    style.textContent = '.op-v044-host-reset{border:0 !important;border-style:none !important;backdrop-filter:blur(12px) !important;-webkit-backdrop-filter:blur(12px) !important}.op-v044-voice-pill{background:#ffffff;color:#000000;border:1px solid #ffffff}';
+    style.textContent = [
+      '.op-v044-host-reset{border:0 !important;border-style:none !important;backdrop-filter:blur(12px) !important;-webkit-backdrop-filter:blur(12px) !important}',
+      '.op-v044-voice-pill{background:#ffffff;color:#000000;border:1px solid #ffffff;--icon-inverted:#000000;--text-inverted:#000000}',
+      '.op-stress-voice-shell{background:#ffffff;color:#000000;display:inline-flex;align-items:center;justify-content:center;border-radius:999px}',
+      '.op-stress-voice-svg{color:var(--icon-inverted,#000000);fill:#000000}',
+      '.op-stress-voice-svg path{fill:#000000}',
+      '.op-stress-mono{font-family:ui-monospace,Consolas,monospace;font-size:11px;color:#52525b}',
+      '.google-symbols{font-family:"Material Symbols Outlined",sans-serif;font-style:normal}'
+    ].join('');
     document.head.append(style);
     document.querySelector(sel)?.classList.add('op-v044-host-reset');
   }, surfaceSel);
@@ -371,14 +462,53 @@ async function assertOpticalStatesAndActions(page, host, label, { testPresetsAnd
   assert.deepEqual(stressed.styles, ['solid', 'solid', 'solid', 'solid'], `${label}: solid border survives host border-style:none !important reset`);
   assert.equal(stressed.backdrop, 'none', `${label}: backdrop-filter:none survives host blur(12px) !important`);
 
-  // 2) Active Send (enabled + disabled) & Stop 30x30 solid circles, while Voice/Mic remain ghost
+  // 2) Active Send (enabled + disabled) & Stop 32x32 solid circles, while Voice (inverted-icon stress) & Model Capsule (font/Material stress) stay legible
   const voiceOrMicSel = s[TRAILING[host]];
-  await page.evaluate(({ host, voiceOrMicSel }) => {
+  await page.evaluate(({ host, voiceOrMicSel, modelSel }) => {
     const trailing = document.querySelector('[data-op-composer-toolbar="true"]');
     const idleBtn = trailing?.querySelector(voiceOrMicSel);
+    const modelBtn = document.querySelector(modelSel);
+    window.__opSavedModelChildren = modelBtn ? [...modelBtn.childNodes] : null;
+    window.__opSavedIdleChildren = idleBtn ? [...idleBtn.childNodes] : null;
     if (host === 'chatgpt' && idleBtn) {
       idleBtn.setAttribute('data-composer-voice-start', 'true');
       idleBtn.classList.add('op-v044-voice-pill');
+      const shell = document.createElement('div');
+      shell.className = 'op-stress-voice-shell';
+      shell.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" class="op-stress-voice-svg"><path d="M4 10h2v4H4zM9 7h2v10H9zM14 4h2v16h-2zM19 8h2v8h-2z"/></svg>';
+      idleBtn.replaceChildren(shell);
+    }
+    if (modelBtn) {
+      if (host === 'chatgpt') {
+        const pair = document.createElement('div');
+        pair.className = 'op-stress-model-pair';
+        const baseSpan = document.createElement('span');
+        baseSpan.className = 'op-stress-mono';
+        baseSpan.textContent = '6';
+        const tierSpan = document.createElement('span');
+        tierSpan.className = 'op-stress-mono';
+        tierSpan.style.opacity = '0.55';
+        tierSpan.textContent = 'Pro';
+        pair.append(baseSpan, tierSpan);
+        const chevronWrap = document.createElement('span');
+        chevronWrap.className = 'op-stress-chevron-wrap';
+        chevronWrap.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>';
+        modelBtn.replaceChildren(pair, chevronWrap);
+      } else {
+        const labelSpan = document.createElement('span');
+        labelSpan.className = 'mdc-button__label';
+        const textSpan = document.createElement('span');
+        textSpan.className = 'op-stress-mono';
+        textSpan.textContent = 'Pro';
+        const matIcon = document.createElement('mat-icon');
+        matIcon.className = 'mat-icon google-symbols';
+        matIcon.setAttribute('fonticon', 'keyboard_arrow_down');
+        matIcon.textContent = 'keyboard_arrow_down';
+        const touch = document.createElement('span');
+        touch.className = 'mat-mdc-button-touch-target';
+        labelSpan.append(textSpan, matIcon);
+        modelBtn.replaceChildren(labelSpan, touch);
+      }
     }
     const send = document.createElement('button');
     send.type = 'button';
@@ -388,28 +518,94 @@ async function assertOpticalStatesAndActions(page, host, label, { testPresetsAnd
     send.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 19V5M6 11l6-6 6 6"/></svg>';
     trailing.append(send);
     ObsidianPrismRuntime.refresh();
-  }, { host, voiceOrMicSel });
+  }, { host, voiceOrMicSel, modelSel: `${CARD[host]} ${s.model}` });
   await page.waitForFunction(() => document.getElementById('op-v044-test-send')?.getAttribute('data-op-composer-primary-action') === 'true');
   await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
 
-  const sendState = await page.evaluate(sel => {
+  const sendState = await page.evaluate(({ sel, surfaceSel, modelSel, dictateSel }) => {
     const send = document.getElementById('op-v044-test-send');
     const idle = document.querySelector(sel);
+    const surface = document.querySelector(surfaceSel);
+    const model = document.querySelector(modelSel);
+    const dictate = dictateSel ? document.querySelector(dictateSel) : null;
     const ss = getComputedStyle(send);
     const sr = send.getBoundingClientRect();
     const is = idle ? getComputedStyle(idle) : null;
+    const ir = idle ? idle.getBoundingClientRect() : null;
+    const voiceShell = idle?.querySelector('.op-stress-voice-shell');
+    const voicePath = idle?.querySelector('.op-stress-voice-svg path');
+    const monoSpans = model ? [...model.querySelectorAll('.op-stress-mono')] : [];
+    const monoSpan = monoSpans[0] || null;
+    const tierSpan = monoSpans[1] || null;
+    const chevronSvg = model?.querySelector('.op-stress-chevron-wrap svg');
+    const matIcon = model?.querySelector('mat-icon.google-symbols');
+    const dictateSvg = dictate?.querySelector('svg');
+    const modelBefore = model ? getComputedStyle(model, '::before') : null;
     return {
+      surfaceBg: getComputedStyle(surface).backgroundColor,
       send: { bg: ss.backgroundColor, color: ss.color, radius: ss.borderRadius, w: sr.width, h: sr.height, attr: send.getAttribute('data-op-composer-primary-action') },
-      idle: idle ? { bg: is.backgroundColor, border: is.borderTopColor, attr: idle.getAttribute('data-op-composer-primary-action') } : null
+      idle: idle ? {
+        bg: is.backgroundColor, border: is.borderTopColor, color: is.color,
+        w: ir.width, h: ir.height, attr: idle.getAttribute('data-op-composer-primary-action'),
+        shellBg: voiceShell ? getComputedStyle(voiceShell).backgroundColor : null,
+        pathFill: voicePath ? getComputedStyle(voicePath).fill : null,
+        pathColor: voicePath ? getComputedStyle(voicePath).color : null
+      } : null,
+      modelStress: {
+        width: model ? model.getBoundingClientRect().width : 0,
+        height: model ? model.getBoundingClientRect().height : 0,
+        accent: modelBefore?.backgroundColor || null,
+        baseColor: model ? getComputedStyle(model).color : null,
+        spanFont: monoSpan ? getComputedStyle(monoSpan).fontFamily : null,
+        spanSize: monoSpan ? getComputedStyle(monoSpan).fontSize : null,
+        spanColor: monoSpan ? getComputedStyle(monoSpan).color : null,
+        spanRight: monoSpan ? monoSpan.getBoundingClientRect().right : null,
+        tierColor: tierSpan ? getComputedStyle(tierSpan).color : null,
+        tierWeight: tierSpan ? getComputedStyle(tierSpan).fontWeight : null,
+        tierOpacity: tierSpan ? getComputedStyle(tierSpan).opacity : null,
+        tierRight: tierSpan ? tierSpan.getBoundingClientRect().right : null,
+        chevronColor: chevronSvg ? getComputedStyle(chevronSvg).color : null,
+        chevronLeft: chevronSvg ? chevronSvg.getBoundingClientRect().left : null,
+        matIconFont: matIcon ? getComputedStyle(matIcon).fontFamily : null,
+        matIconLeft: matIcon ? matIcon.getBoundingClientRect().left : null
+      },
+      dictateStress: dictateSvg ? {
+        fill: getComputedStyle(dictateSvg).fill,
+        stroke: getComputedStyle(dictateSvg).stroke
+      } : null
     };
-  }, voiceOrMicSel);
+  }, { sel: voiceOrMicSel, surfaceSel, modelSel: `${CARD[host]} ${s.model}`, dictateSel: s.dictate || null });
   assert.equal(sendState.send.attr, 'true');
-  assert.ok(Math.abs(sendState.send.w - 30) <= 1 && Math.abs(sendState.send.h - 30) <= 1, `${label}: enabled Send is 30x30 circle (${sendState.send.w}x${sendState.send.h})`);
+  assert.ok(Math.abs(sendState.send.w - 32) <= 1 && Math.abs(sendState.send.h - 32) <= 1, `${label}: enabled Send is 32x32 circle (${sendState.send.w}x${sendState.send.h})`);
   assert.ok(parseFloat(sendState.send.radius) >= 999, `${label}: enabled Send is circular`);
   const sendRatio = contrastRatio(sendState.send.color, sendState.send.bg);
   assert.ok(sendRatio >= 4.5, `${label}: enabled Send contrast >= 4.5:1 (got ${sendRatio.toFixed(2)}:1)`);
   assert.equal(sendState.idle.attr, null, `${label}: Start Voice/Mic stays unmarked alongside Send`);
-  assert.equal(sendState.idle.bg, 'rgba(0, 0, 0, 0)', `${label}: Start Voice with host white paint stays transparent ghost button`);
+  assert.ok(sendState.modelStress.width >= 107.5, `${label}: stressed Model Capsule keeps >= 108px min-width (got ${sendState.modelStress.width}px)`);
+  assert.ok(Math.abs(sendState.modelStress.height - 32) <= 1, `${label}: stressed Model Capsule keeps 32px height`);
+  assert.doesNotMatch(sendState.modelStress.spanFont || '', /monospace/i, `${label}: Model Capsule inner span overrides host monospace font (${sendState.modelStress.spanFont})`);
+  assert.equal(sendState.modelStress.spanSize, '13.5px', `${label}: Model Capsule inner span inherits 13.5px font size`);
+  if (host === 'chatgpt') {
+    assert.equal(sendState.modelStress.spanColor, sendState.modelStress.baseColor, `${label}: ChatGPT primary model segment keeps crisp capsule foreground`);
+    assert.equal(sendState.modelStress.tierColor, sendState.modelStress.accent, `${label}: ChatGPT paired tier suffix ("Pro") receives --op-accent instead of host muted grey`);
+    assert.ok(Number(sendState.modelStress.tierWeight) >= 600, `${label}: ChatGPT paired tier suffix is semibold`);
+    assert.equal(sendState.modelStress.tierOpacity, '1', `${label}: ChatGPT paired tier suffix clears dimmed host opacity`);
+    assert.notEqual(sendState.modelStress.chevronColor, sendState.modelStress.accent, `${label}: wrapped chevron span under data-selected-reasoning-effort stays neutral (never tinted accent)`);
+    const chevronGap = sendState.modelStress.chevronLeft - sendState.modelStress.tierRight;
+    assert.ok(chevronGap >= 4 && chevronGap <= 16, `${label}: wrapped chevron sits closely beside "Pro" without hollow gap (${chevronGap.toFixed(1)}px)`);
+    assert.equal(sendState.idle.shellBg, 'rgba(0, 0, 0, 0)', `${label}: Start Voice inner host white shell is cleared to transparent`);
+    assert.ok(Math.abs(sendState.idle.w - 32) <= 1 && Math.abs(sendState.idle.h - 32) <= 1, `${label}: stressed Start Voice stays 32x32 elevated circle`);
+    assertNeutralColor(sendState.idle.bg, `${label}: stressed Start Voice keeps neutral elevated pill fill`);
+    const stressedBg = compositeOver(sendState.idle.bg, sendState.surfaceBg);
+    const stressedVoiceRatio = contrastRatioComposited(sendState.idle.pathFill, `rgb(${Math.round(stressedBg.r)}, ${Math.round(stressedBg.g)}, ${Math.round(stressedBg.b)})`);
+    assert.ok(stressedVoiceRatio >= 4.5, `${label}: stressed inverted-black Start Voice SVG path reaches >= 4.5:1 contrast (got ${stressedVoiceRatio.toFixed(2)}:1, fill=${sendState.idle.pathFill})`);
+    assert.equal(sendState.dictateStress.fill, 'none', `${label}: stroked dictate SVG remains fill:none alongside voice fill fix`);
+  } else {
+    assert.equal(sendState.idle.bg, 'rgba(0, 0, 0, 0)', `${label}: Gemini Mic stays transparent ghost button`);
+    assert.match(sendState.modelStress.matIconFont || '', /Material Symbols Outlined/i, `${label}: Gemini mat-icon preserves icon font (${sendState.modelStress.matIconFont})`);
+    const matGap = sendState.modelStress.matIconLeft - sendState.modelStress.spanRight;
+    assert.ok(matGap >= 2 && matGap <= 16, `${label}: Gemini mat-icon sits closely right of model text without overlap or hollow gap (${matGap.toFixed(1)}px)`);
+  }
 
   // Disabled Send -> subdued low-contrast neutral circle
   await page.evaluate(() => { document.getElementById('op-v044-test-send').disabled = true; });
@@ -424,7 +620,7 @@ async function assertOpticalStatesAndActions(page, host, label, { testPresetsAnd
   const disabledBg = parseRgba(disabledSend.bg);
   assert.ok(disabledBg && disabledBg.a <= 0.25, `${label}: disabled Send background is subdued low-opacity neutral (got ${disabledSend.bg})`);
 
-  // Active Stop button -> 30x30 solid circle with >= 4.5:1 contrast
+  // Active Stop button -> 32x32 solid circle with >= 4.5:1 contrast
   await page.evaluate(({ host }) => {
     const trailing = document.querySelector('[data-op-composer-toolbar="true"]');
     const stop = document.createElement('button');
@@ -448,14 +644,14 @@ async function assertOpticalStatesAndActions(page, host, label, { testPresetsAnd
       sendAttr: send.getAttribute('data-op-composer-primary-action')
     };
   });
-  assert.ok(Math.abs(stopState.w - 30) <= 1 && Math.abs(stopState.h - 30) <= 1, `${label}: active Stop is 30x30 circle (${stopState.w}x${stopState.h})`);
+  assert.ok(Math.abs(stopState.w - 32) <= 1 && Math.abs(stopState.h - 32) <= 1, `${label}: active Stop is 32x32 circle (${stopState.w}x${stopState.h})`);
   assert.ok(parseFloat(stopState.radius) >= 999, `${label}: active Stop is circular`);
   const stopRatio = contrastRatio(stopState.color, stopState.bg);
   assert.ok(stopRatio >= 4.5, `${label}: active Stop contrast >= 4.5:1 (got ${stopRatio.toFixed(2)}:1)`);
   assert.equal(stopState.sendAttr, null, `${label}: Send mark clears when Stop takes primary action`);
 
-  // Clean up dynamic stress/action test nodes
-  await page.evaluate(({ surfaceSel, voiceOrMicSel }) => {
+  // Clean up dynamic stress/action test nodes and restore exact original host nodes
+  await page.evaluate(({ surfaceSel, voiceOrMicSel, modelSel }) => {
     document.getElementById('op-v044-test-send')?.remove();
     document.getElementById('op-v044-test-stop')?.remove();
     document.getElementById('op-v044-stress-style')?.remove();
@@ -469,9 +665,22 @@ async function assertOpticalStatesAndActions(page, host, label, { testPresetsAnd
       idleBtn.removeAttribute('data-composer-voice-start');
       idleBtn.classList.remove('op-v044-voice-pill');
       if (!idleBtn.getAttribute('class')) idleBtn.removeAttribute('class');
+      if (window.__opSavedIdleChildren) {
+        idleBtn.replaceChildren(...window.__opSavedIdleChildren);
+        delete window.__opSavedIdleChildren;
+      }
+    }
+    const modelBtn = document.querySelector(modelSel);
+    if (modelBtn && window.__opSavedModelChildren) {
+      modelBtn.replaceChildren(...window.__opSavedModelChildren);
+      for (const span of modelBtn.querySelectorAll('.op-stress-mono')) {
+        span.classList.remove('op-stress-mono');
+        if (!span.getAttribute('class')) span.removeAttribute('class');
+      }
+      delete window.__opSavedModelChildren;
     }
     ObsidianPrismRuntime.refresh();
-  }, { surfaceSel, voiceOrMicSel });
+  }, { surfaceSel, voiceOrMicSel, modelSel: `${CARD[host]} ${s.model}` });
   await page.evaluate(() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r))));
 
   if (!testPresetsAndGlow) return;
