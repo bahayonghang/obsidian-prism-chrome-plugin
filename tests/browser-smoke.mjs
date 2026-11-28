@@ -313,7 +313,7 @@ async function surfaceSnapshot(page) {
       const style = getComputedStyle(node, type);
       return { background: style.backgroundColor, backgroundImage: style.backgroundImage, maskImage: style.maskImage || 'none', content: style.content, display: style.display };
     };
-    return { sidebar: read('[data-fixture-sidebar]'), composer: read('[data-fixture-composer]'), footerAttachment: read('[data-fixture-footer-attachment]'),
+    return { sidebar: read('[data-fixture-sidebar]'), composer: read('[data-fixture-composer]'), composerBody: read('[data-composer-body]'), footerAttachment: read('[data-fixture-footer-attachment]'),
       backdrops: [...document.querySelectorAll('[data-fixture-backdrop]')].map(node => ({ ...read(node), before: pseudo(node, '::before'), after: pseudo(node, '::after') })) };
   });
 }
@@ -896,6 +896,29 @@ async function exerciseHomeEffects(browser, host) {
     for (const content of scripts) await page.addScriptTag({ content });
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-home') === 'true');
     await page.waitForSelector('#op-ambient-stage', { state: 'attached' });
+    if (host === 'chatgpt') {
+      const { composer, composerBody } = await surfaceSnapshot(page);
+      const transparent = 'rgba(0, 0, 0, 0)';
+      assert.notEqual(nativeSurfaces.composerBody.background, transparent);
+      assert.match(nativeSurfaces.composerBody.shadow, /inset/);
+      assert.equal(composerBody.background, transparent, 'home composer body lets the outer gradient show through');
+      assert.equal(composerBody.shadow, 'none', 'home composer body has no inner capsule rim');
+      assert.equal(composerBody.radius, nativeSurfaces.composerBody.radius);
+      assert.match(composer.backgroundImage, /linear-gradient/);
+      assert.ok(composer.border);
+      assert.notEqual(composer.shadow, 'none');
+
+      await page.evaluate(() => __prismFixture.patch({ palette: 'host' }));
+      await page.waitForFunction(() => document.documentElement.dataset.opEffectivePalette === 'host');
+      assert.deepEqual((await surfaceSnapshot(page)).composerBody, nativeSurfaces.composerBody);
+      await page.evaluate(() => __prismFixture.patch({ palette: 'obsidian' }));
+      await page.waitForFunction(() => document.documentElement.dataset.opEffectivePalette === 'obsidian');
+      await page.evaluate(() => __prismFixture.patch({ enabled: false }));
+      await page.waitForFunction(() => !document.querySelector('[data-op-composer-surface="true"]'));
+      assert.deepEqual((await surfaceSnapshot(page)).composerBody, nativeSurfaces.composerBody);
+      await page.evaluate(() => __prismFixture.patch({ enabled: true }));
+      await page.waitForSelector('[data-op-composer-surface="true"]');
+    }
     assert.equal(await page.locator('.op-ambient-wash .op-aurora').count(), 3);
     assert.equal(await page.locator('[class*="mascot"],[id*="mascot"]').count(), 0, 'legacy pet settings never create a companion');
     assert.equal(await page.evaluate(() => Object.hasOwn(ObsidianPrismSchema.sanitizeConfig(__prismFixture.config()), 'mascot')), false);
@@ -993,6 +1016,7 @@ async function exerciseHomeEffects(browser, host) {
     const restored = await surfaceSnapshot(page);
     assert.deepEqual(restored.sidebar, nativeSurfaces.sidebar, 'Native sidebar mode preserves the host surface');
     assert.deepEqual(restored.composer, nativeSurfaces.composer, 'composer styling off restores the complete native shell');
+    assert.deepEqual(restored.composerBody, nativeSurfaces.composerBody, 'composer styling off restores the native body paint');
     await page.evaluate(() => __prismFixture.patch({ sidebarStyle: 'solid', composerRestyle: true, themeMode: 'light', lightPreset: 'crystal', motionLevel: 'subtle' }));
     await page.waitForFunction(() => document.documentElement.getAttribute('data-op-scheme') === 'light');
     await settleFixtureScreenshot(page);

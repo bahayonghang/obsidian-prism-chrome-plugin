@@ -148,3 +148,20 @@ Docs: [docs/PERFORMANCE_PLAN.md](../../../docs/PERFORMANCE_PLAN.md)
 ### Next Steps
 
 - 在已登录 ChatGPT 与 Gemini 长对话加载 `dist/chrome` / `dist/firefox` 复看并按所有者授权决定是否推送 `dev`。
+
+
+## Session 8: ChatGPT 首页输入框双层轮廓定位
+<!-- trellis-session: v=3 fp=d71d34d1ab9bec79 -->
+
+**Date**: 2026-11-28
+**Task**: ChatGPT 首页输入框双层轮廓定位
+**Branch**: `dev`
+
+### Summary
+
+Ego Browser 确认外卡和宿主 body 分别绘制。已验证临时样式与恢复，并创建实施和验收计划。
+Topics: [.trellis/research/live-host-dom.md](../../research/live-host-dom.md)
+
+### Git Commits
+
+(No associated commits)

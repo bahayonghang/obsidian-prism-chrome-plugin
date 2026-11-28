@@ -147,6 +147,10 @@ v0.3.0 的夹具是按推测的结构手写的，浏览器测试量的是扩展�
   - 次要对照观察（`OUT_OF_SCOPE_NOTED`）：ChatGPT 实机截图中窄图标轨为 `#E8EEF6` (`rgb(228, 236, 246)`)，宽会话侧栏底色呈近纯白 `rgb(252, 252, 252)`，叠加青绿异色相放大了局部反差；本次保持范围聚焦在侧栏激活态系统本身，未改动 ChatGPT 宽侧栏底色。
 - **已实现**：`styles/hosts.css` 引入分明暗语义变量（浅色 `17%` 混 `--op-sidebar` / 深色 `16%` 混 `--op-secondary`；悬停浅色 `6%` 混 `--op-sidebar` / 深色 `6%` 混 `--op-card`）、`3px` 左主色竖条 + `1px` 强调色四周微描边、`font-weight: 600` + 浅色深强调墨色、激活行 `::before`/`::after` 背景安全清绘、`@media (forced-colors: active)` `Highlight` 轮廓兜底，以及 Gemini 侧栏 `--gem-sys-color--on-surface: var(--op-fg-secondary)`；`popup/popup.css` 同步 `.preview-nav-active`；`tools/structure-probe.js` 新增双端 `sidebarActive` 只读采集及 `borderRadius` / 侧栏变量；`tests/fixtures/gemini-live.html` 补充 `.conversation-title`、`--gem-sys-color--on-surface` 与宿主 `::before` 压力层；`tests/sidebar-highlight.mjs` 新增全 4 配色 × 5 强调色及 `crystal/solid` 激活底板 `ΔE >= 9` / `channelGap >= 20`、悬停分离 `ΔE >= 5`、`3px+1px` 边缘与字重回归门禁（离线双引擎已通过，`未在真实登录会话验证`）。
 
+## 2026-11-28 ChatGPT 首页输入框内层绘制
+
+Ego Browser 的深色首页中，外层 `[data-op-composer-surface="true"]` 绘制 12px 圆角 Prism 卡片，宿主内层 `[data-composer-body][data-composer-layout]` 的底色及 1px 模糊内阴影曾形成第二道胶囊轮廓。已在首页主题下清除这两项绘制，并重载仓库构建的扩展复核。首页空态、聚焦与多行输入的内层均透明且无阴影，外卡和四个按钮的几何保持一致。该普通对话页的 body 本身透明、没有 `data-composer-layout`，修复前后局部截图逐像素相同。见[优化计划与验证记录](../../docs/CHATGPT_COMPOSER_SURFACE_PLAN.md)。
+
 ## 仍是推断值或未在线上验证
 
 - 2026-11-24 实测已确认（替代旧推断）：ChatGPT `#thread-bottom-container` / `#thread-bottom` 已下线，当前线上输入列限宽落在 `[data-thread-composer-backdrop="true"]`（承载 `--thread-content-max-width` 与 `--thread-body-max-width`）；外层应用壳含 `[--thread-content-*]` Tailwind 变量类名；`[data-thread-scroll-footer="true"]::after` 提供 `24px` `--thread-composer-bottom-inset`；Gemini 底部停靠层为全宽 `input-container.input-gradient.input-gradient-overlay.edge-to-edge` 包裹 `660px` `.input-area-container`。

@@ -221,6 +221,11 @@ html[data-op-enabled="true"][data-op-host="chatgpt"]:is([data-op-content-width="
 /* === end Content Width Presets (v0.3.1 #21) === */
 
 /* === Reference Composer Surface & Model Capsule (v0.3.0) === */
+/* The home composer body paints a second capsule inside the Prism card. */
+html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"][data-op-home="true"]:not([data-op-effective-palette="host"]) [data-op-composer-surface="true"] [data-composer-body][data-composer-layout] {
+  background-color: transparent !important;
+  box-shadow: none !important;
+}
 html[data-op-enabled="true"][data-op-composer="true"][data-op-host="chatgpt"]:not([data-op-effective-palette="host"]) [data-op-model-capsule="true"] > :is(div, span):not(:has(> svg:only-child)) {
   display: inline-flex !important;
   align-items: center !important;

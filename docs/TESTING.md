@@ -1,6 +1,6 @@
 # Validation and manual acceptance
 
-Updated 2026-11-26. This document distinguishes implemented checks from completed execution. The commands below are reproducible procedures, not a claim that every check has already run in every browser.
+Updated 2026-11-28. This document distinguishes implemented checks from completed execution. The commands below are reproducible procedures, not a claim that every check has already run in every browser.
 
 ## Automated commands
 
@@ -29,6 +29,8 @@ Run two builds from unchanged source using the same Python/zlib environment and 
 The package allowlist excludes tests, `.git`, dependencies and secrets. Verify that each browser ZIP contains its own manifest at the root and that Firefox has `background.scripts`, not `background.service_worker`.
 
 ## Manual acceptance on real websites
+
+2026-11-28 · Ego Browser verified the rebuilt extension on a signed-in ChatGPT home page and a regular conversation. The home composer retained its outer card through focus and multiline input, and the conversation composer crop matched its baseline pixel for pixel. [Composer surface evidence](CHATGPT_COMPOSER_SURFACE_PLAN.md#验收)
 
 Use a current Chrome and Firefox with a test conversation. These checks require the site to be accessible to the person testing; do not infer success from local fixture tests.
 
